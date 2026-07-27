@@ -85,18 +85,19 @@ func (s *Store) migrate() error {
 			PRIMARY KEY (scene_id, cell_x, cell_y)
 		);
 
-		CREATE TABLE IF NOT EXISTS roll (
+		CREATE TABLE IF NOT EXISTS message (
 			id                 TEXT PRIMARY KEY,
 			room_id            TEXT NOT NULL REFERENCES room(id) ON DELETE CASCADE,
-			scene_id           TEXT REFERENCES scene(id) ON DELETE SET NULL,
 			participant_id     TEXT REFERENCES participant(id) ON DELETE SET NULL,
 			participant_name   TEXT NOT NULL,
-			expression         TEXT NOT NULL,
-			result             INTEGER NOT NULL,
-			breakdown          TEXT NOT NULL,
+			kind               TEXT NOT NULL CHECK (kind IN ('text', 'roll')),
+			body               TEXT NOT NULL,
+			roll_expression    TEXT,
+			roll_result        INTEGER,
+			roll_breakdown     TEXT,
 			created_at         TEXT NOT NULL
 		);
-		CREATE INDEX IF NOT EXISTS idx_roll_room ON roll(room_id);
+		CREATE INDEX IF NOT EXISTS idx_message_room ON message(room_id);
 	`)
 	return err
 }

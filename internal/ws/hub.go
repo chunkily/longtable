@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/coder/websocket"
@@ -184,8 +185,8 @@ func (h *Hub) handleMessage(ctx context.Context, c *client, data []byte) {
 		h.handleSceneCreate(ctx, c, env.Payload)
 	case "scene.setActive":
 		h.handleSceneSetActive(ctx, c, env.Payload)
-	case "roll.request":
-		h.handleRollRequest(ctx, c, env.Payload)
+	case "chat.send":
+		h.handleChatSend(ctx, c, env.Payload)
 	default:
 		h.sendError(ctx, c, fmt.Sprintf("unknown command type %q", env.Type))
 	}
@@ -439,37 +440,91 @@ func (h *Hub) handleSceneSetActive(ctx context.Context, c *client, raw json.RawM
 	h.broadcast(ctx, c.roomID, "scene.activated", map[string]string{"sceneId": req.SceneID})
 }
 
-type rollRequest struct {
-	Expression string `json:"expression"`
+const maxMessageLength = 2000
+
+type chatSendRequest struct {
+	Text string `json:"text"`
 }
 
-func (h *Hub) handleRollRequest(ctx context.Context, c *client, raw json.RawMessage) {
-	var req rollRequest
-	if err := decodePayload(raw, &req); err != nil || req.Expression == "" {
-		h.sendError(ctx, c, "invalid roll.request payload")
+func (h *Hub) handleChatSend(ctx context.Context, c *client, raw json.RawMessage) {
+	var req chatSendRequest
+	if err := decodePayload(raw, &req); err != nil {
+		h.sendError(ctx, c, "invalid chat.send payload")
 		return
 	}
 
-	result, err := dice.Roll(req.Expression)
+	text := strings.TrimSpace(req.Text)
+	if text == "" {
+		h.sendError(ctx, c, "message text is required")
+		return
+	}
+	if len(text) > maxMessageLength {
+		h.sendError(ctx, c, fmt.Sprintf("message too long (max %d characters)", maxMessageLength))
+		return
+	}
+
+	if strings.HasPrefix(text, "/") {
+		h.handleSlashCommand(ctx, c, text)
+		return
+	}
+
+	participantID := c.participant.ID
+	h.postMessage(ctx, c, store.Message{
+		RoomID:          c.roomID,
+		ParticipantID:   &participantID,
+		ParticipantName: c.participant.DisplayName,
+		Kind:            store.MessageKindText,
+		Body:            text,
+	})
+}
+
+// handleSlashCommand dispatches a leading-"/" chat message to a known
+// command. Unrecognized commands get an error back to the sender only
+// — they never make it into the room's chat log.
+func (h *Hub) handleSlashCommand(ctx context.Context, c *client, text string) {
+	command, rest, _ := strings.Cut(strings.TrimPrefix(text, "/"), " ")
+	rest = strings.TrimSpace(rest)
+
+	switch strings.ToLower(command) {
+	case "roll", "r":
+		h.handleRollCommand(ctx, c, text, rest)
+	default:
+		h.sendError(ctx, c, fmt.Sprintf("unknown command \"/%s\"", command))
+	}
+}
+
+func (h *Hub) handleRollCommand(ctx context.Context, c *client, rawText, expression string) {
+	if expression == "" {
+		h.sendError(ctx, c, "usage: /roll <expression>, e.g. /roll 2d6+3")
+		return
+	}
+
+	result, err := dice.Roll(expression)
 	if err != nil {
 		h.sendError(ctx, c, fmt.Sprintf("invalid dice expression: %v", err))
 		return
 	}
 
 	participantID := c.participant.ID
-	roll, err := h.store.InsertRoll(store.Roll{
+	h.postMessage(ctx, c, store.Message{
 		RoomID:          c.roomID,
 		ParticipantID:   &participantID,
 		ParticipantName: c.participant.DisplayName,
-		Expression:      result.Expression,
-		Result:          result.Total,
-		Breakdown:       result.Breakdown,
+		Kind:            store.MessageKindRoll,
+		Body:            rawText,
+		RollExpression:  &result.Expression,
+		RollResult:      &result.Total,
+		RollBreakdown:   &result.Breakdown,
 	})
+}
+
+// postMessage persists and broadcasts a chat log entry.
+func (h *Hub) postMessage(ctx context.Context, c *client, m store.Message) {
+	msg, err := h.store.InsertMessage(m)
 	if err != nil {
-		slog.Error("ws: insert roll failed", "error", err)
-		h.sendError(ctx, c, "failed to record roll")
+		slog.Error("ws: insert message failed", "error", err)
+		h.sendError(ctx, c, "failed to send message")
 		return
 	}
-
-	h.broadcast(ctx, c.roomID, "roll.result", rollPayload(roll))
+	h.broadcast(ctx, c.roomID, "chat.posted", messagePayload(msg))
 }

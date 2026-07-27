@@ -9,7 +9,7 @@ import (
 
 // sendStateSync hydrates a freshly connected client with the room's
 // current state: the active scene (if any) with its tokens and
-// revealed fog, plus recent roll history, so it doesn't need to replay
+// revealed fog, plus recent chat history, so it doesn't need to replay
 // every event that has ever happened in the room.
 func (h *Hub) sendStateSync(ctx context.Context, c *client, room store.Room) {
 	payload := map[string]any{
@@ -24,11 +24,11 @@ func (h *Hub) sendStateSync(ctx context.Context, c *client, room store.Room) {
 		},
 	}
 
-	rolls, err := h.store.ListRecentRolls(room.ID, 50)
+	messages, err := h.store.ListRecentMessages(room.ID, 50)
 	if err != nil {
-		slog.Error("ws: list recent rolls failed", "error", err)
+		slog.Error("ws: list recent messages failed", "error", err)
 	} else {
-		payload["rolls"] = rollPayloads(rolls)
+		payload["messages"] = messagePayloads(messages)
 	}
 
 	if room.ActiveSceneID != nil {
@@ -92,21 +92,24 @@ func scenePayload(s store.Scene) map[string]any {
 	}
 }
 
-func rollPayload(r store.Roll) map[string]any {
+func messagePayload(m store.Message) map[string]any {
 	return map[string]any{
-		"id":              r.ID,
-		"participantName": r.ParticipantName,
-		"expression":      r.Expression,
-		"result":          r.Result,
-		"breakdown":       r.Breakdown,
-		"createdAt":       r.CreatedAt,
+		"id":              m.ID,
+		"participantId":   m.ParticipantID,
+		"participantName": m.ParticipantName,
+		"kind":            string(m.Kind),
+		"body":            m.Body,
+		"rollExpression":  m.RollExpression,
+		"rollResult":      m.RollResult,
+		"rollBreakdown":   m.RollBreakdown,
+		"createdAt":       m.CreatedAt,
 	}
 }
 
-func rollPayloads(rolls []store.Roll) []map[string]any {
-	out := make([]map[string]any, len(rolls))
-	for i, r := range rolls {
-		out[i] = rollPayload(r)
+func messagePayloads(messages []store.Message) []map[string]any {
+	out := make([]map[string]any, len(messages))
+	for i, m := range messages {
+		out[i] = messagePayload(m)
 	}
 	return out
 }
