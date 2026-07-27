@@ -1,6 +1,7 @@
 // Package db wires up the embedded SQLite database. There is no external
 // database process to install or configure — the data file lives next to
-// the binary.
+// the binary. Schema and queries live in internal/store; this package
+// only owns the connection.
 package db
 
 import (
@@ -24,21 +25,5 @@ func Open(path string) (*sql.DB, error) {
 	// avoids "database is locked" errors under concurrent requests.
 	database.SetMaxOpenConns(1)
 
-	if err := migrate(database); err != nil {
-		database.Close()
-		return nil, fmt.Errorf("migrate database: %w", err)
-	}
-
 	return database, nil
-}
-
-// migrate applies schema migrations. The schema itself (campaigns, maps,
-// tokens, ...) isn't designed yet — this just proves the connection works.
-func migrate(database *sql.DB) error {
-	_, err := database.Exec(`
-		CREATE TABLE IF NOT EXISTS schema_meta (
-			version INTEGER NOT NULL
-		);
-	`)
-	return err
 }

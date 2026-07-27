@@ -3,24 +3,38 @@
 package api
 
 import (
-	"database/sql"
 	"io/fs"
 	"net/http"
 	"strings"
 
+	"longtable/internal/blobstore"
+	"longtable/internal/store"
 	"longtable/internal/ws"
 )
 
-// NewRouter builds the top-level HTTP handler. database is threaded
-// through for future REST handlers (none exist yet beyond the health
-// check).
-func NewRouter(hub *ws.Hub, database *sql.DB, frontend fs.FS) http.Handler {
+type Server struct {
+	store    *store.Store
+	hub      *ws.Hub
+	blobs    *blobstore.Store
+	frontend fs.FS
+}
+
+func NewRouter(s *store.Store, hub *ws.Hub, blobs *blobstore.Store, frontend fs.FS) http.Handler {
+	srv := &Server{store: s, hub: hub, blobs: blobs, frontend: frontend}
+
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /api/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))
 	})
+
+	mux.HandleFunc("GET /api/rooms", srv.listRooms)
+	mux.HandleFunc("POST /api/rooms", srv.createRoom)
+	mux.HandleFunc("POST /api/rooms/{slug}/join", srv.joinRoom)
+	mux.HandleFunc("POST /api/rooms/{slug}/gm-login", srv.gmLogin)
+	mux.HandleFunc("POST /api/rooms/{slug}/assets", srv.uploadAsset)
+	mux.HandleFunc("GET /api/assets/{id}", srv.serveAsset)
 
 	mux.HandleFunc("GET /ws", hub.ServeHTTP)
 
