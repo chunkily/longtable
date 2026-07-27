@@ -1,9 +1,15 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
 	import { page } from '$app/state';
+	import { toast } from 'svelte-sonner';
 	import { gmLogin, joinRoom, type Session } from '$lib/api';
 	import { loadSession, saveSession } from '$lib/session';
 	import { RoomClient } from '$lib/room.svelte';
+	import { Button } from '$lib/components/ui/button';
+	import { Input } from '$lib/components/ui/input';
+	import { Label } from '$lib/components/ui/label';
+	import { Badge } from '$lib/components/ui/badge';
+	import * as Card from '$lib/components/ui/card';
 
 	const slug = $derived(page.params.slug ?? '');
 
@@ -14,7 +20,6 @@
 	let displayName = $state('');
 	let password = $state('');
 	let joining = $state(false);
-	let joinError = $state('');
 
 	let chatText = $state('');
 
@@ -27,6 +32,10 @@
 		client?.disconnect();
 	});
 
+	$effect(() => {
+		if (client?.error) toast.error(client.error);
+	});
+
 	function startSession(s: Session) {
 		session = s;
 		const c = new RoomClient();
@@ -37,7 +46,6 @@
 	async function handleJoin(event: SubmitEvent) {
 		event.preventDefault();
 		joining = true;
-		joinError = '';
 		try {
 			const s =
 				mode === 'gm'
@@ -46,7 +54,7 @@
 			saveSession(s);
 			startSession(s);
 		} catch (err) {
-			joinError = err instanceof Error ? err.message : 'failed to join';
+			toast.error(err instanceof Error ? err.message : 'failed to join');
 		} finally {
 			joining = false;
 		}
@@ -59,124 +67,99 @@
 		client.sendChat(text);
 		chatText = '';
 	}
+
+	const statusVariant = $derived(
+		client?.status === 'open'
+			? 'secondary'
+			: client?.status === 'closed'
+				? 'destructive'
+				: 'outline'
+	);
 </script>
 
 {#if !session || !client}
-	<h1>Join room</h1>
-	<form onsubmit={handleJoin}>
-		<fieldset>
-			<label>
-				<input type="radio" name="mode" value="player" bind:group={mode} />
-				Player
-			</label>
-			<label>
-				<input type="radio" name="mode" value="gm" bind:group={mode} />
-				I'm the GM
-			</label>
-		</fieldset>
-		<label>
-			Your name
-			<input type="text" bind:value={displayName} required />
-		</label>
-		{#if mode === 'gm'}
-			<label>
-				GM password
-				<input type="password" bind:value={password} required />
-			</label>
-		{/if}
-		{#if joinError}
-			<p class="error">{joinError}</p>
-		{/if}
-		<button type="submit" disabled={joining}>{joining ? 'Joining…' : 'Join'}</button>
-	</form>
-{:else}
-	<header>
-		<h1>{client.roomName || slug}</h1>
-		<p class="status">
-			Playing as <strong>{client.you?.displayName}</strong> ({client.you?.role}) — {client.status}
-		</p>
-		{#if client.error}
-			<p class="error">{client.error}</p>
-		{/if}
-	</header>
-
-	<section class="chat">
-		<ul class="log">
-			{#each client.messages as msg (msg.id)}
-				<li class={msg.kind}>
-					<strong>{msg.participantName}:</strong>
-					{#if msg.kind === 'roll'}
-						<span class="roll-body">{msg.body}</span> → <strong>{msg.rollResult}</strong>
-						<span class="breakdown">({msg.rollBreakdown})</span>
-					{:else}
-						{msg.body}
+	<div class="mx-auto max-w-md p-6">
+		<Card.Root>
+			<Card.Header>
+				<Card.Title>Join room</Card.Title>
+				<Card.Description>{slug}</Card.Description>
+			</Card.Header>
+			<Card.Content>
+				<form class="flex flex-col gap-4" onsubmit={handleJoin}>
+					<div class="flex gap-2">
+						<Button
+							type="button"
+							variant={mode === 'player' ? 'default' : 'outline'}
+							onclick={() => (mode = 'player')}
+							class="flex-1"
+						>
+							Player
+						</Button>
+						<Button
+							type="button"
+							variant={mode === 'gm' ? 'default' : 'outline'}
+							onclick={() => (mode = 'gm')}
+							class="flex-1"
+						>
+							I'm the GM
+						</Button>
+					</div>
+					<div class="flex flex-col gap-2">
+						<Label for="display-name">Your name</Label>
+						<Input id="display-name" bind:value={displayName} required />
+					</div>
+					{#if mode === 'gm'}
+						<div class="flex flex-col gap-2">
+							<Label for="gm-password">GM password</Label>
+							<Input id="gm-password" type="password" bind:value={password} required />
+						</div>
 					{/if}
-				</li>
-			{/each}
-		</ul>
-		<form onsubmit={handleSendChat}>
-			<input
-				type="text"
-				bind:value={chatText}
-				placeholder="Say something, or /roll 2d6+3"
-				autocomplete="off"
-			/>
-			<button type="submit">Send</button>
-		</form>
-	</section>
-{/if}
+					<Button type="submit" disabled={joining}>{joining ? 'Joining…' : 'Join'}</Button>
+				</form>
+			</Card.Content>
+		</Card.Root>
+	</div>
+{:else}
+	<div class="mx-auto flex max-w-2xl flex-col gap-4 p-6">
+		<header class="flex flex-wrap items-center gap-2">
+			<h1 class="text-2xl font-bold tracking-tight">{client.roomName || slug}</h1>
+			<Badge variant="outline">{client.you?.role}</Badge>
+			<Badge variant={statusVariant}>{client.status}</Badge>
+			<span class="text-sm text-muted-foreground">
+				playing as <strong>{client.you?.displayName}</strong>
+			</span>
+		</header>
 
-<style>
-	form {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-		max-width: 24rem;
-	}
-	fieldset {
-		display: flex;
-		gap: 1rem;
-		border: none;
-		padding: 0;
-	}
-	label {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-	}
-	.status {
-		color: #555;
-	}
-	.error {
-		color: #b00020;
-	}
-	.chat {
-		max-width: 40rem;
-	}
-	.log {
-		list-style: none;
-		margin: 0 0 1rem;
-		padding: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 0.35rem;
-		max-height: 24rem;
-		overflow-y: auto;
-		border: 1px solid #ddd;
-		border-radius: 4px;
-		padding: 0.75rem;
-	}
-	.log li.roll {
-		background: #f5f2ff;
-	}
-	.breakdown {
-		color: #777;
-		font-size: 0.85em;
-	}
-	.chat form {
-		flex-direction: row;
-	}
-	.chat input[type='text'] {
-		flex: 1;
-	}
-</style>
+		<Card.Root>
+			<Card.Content class="flex flex-col gap-3">
+				<ul class="flex max-h-96 flex-col gap-2 overflow-y-auto">
+					{#each client.messages as msg (msg.id)}
+						<li
+							class={[
+								'rounded-md px-2 py-1 text-sm',
+								msg.kind === 'roll' && 'bg-accent text-accent-foreground'
+							]}
+						>
+							<strong>{msg.participantName}:</strong>
+							{#if msg.kind === 'roll'}
+								{msg.body} → <strong>{msg.rollResult}</strong>
+								<span class="text-xs text-muted-foreground">({msg.rollBreakdown})</span>
+							{:else}
+								{msg.body}
+							{/if}
+						</li>
+					{/each}
+				</ul>
+				<form class="flex gap-2" onsubmit={handleSendChat}>
+					<Input
+						bind:value={chatText}
+						placeholder="Say something, or /roll 2d6+3"
+						autocomplete="off"
+						class="flex-1"
+					/>
+					<Button type="submit">Send</Button>
+				</form>
+			</Card.Content>
+		</Card.Root>
+	</div>
+{/if}

@@ -37,5 +37,14 @@ export default defineConfig(
 		// Override or add rule settings here, such as:
 		// 'svelte/button-has-type': 'error'
 		rules: {}
+	},
+	{
+		// shadcn-svelte vendored components: generated code we don't hand-edit.
+		// Button's `href` prop is intentionally generic (any URL, not just
+		// internal routes), so it can't use SvelteKit's resolve() helper.
+		files: ['src/lib/components/ui/**'],
+		rules: {
+			'svelte/no-navigation-without-resolve': 'off'
+		}
 	}
 );
