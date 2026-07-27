@@ -437,7 +437,16 @@ func (h *Hub) handleSceneSetActive(ctx context.Context, c *client, raw json.RawM
 		return
 	}
 
-	h.broadcast(ctx, c.roomID, "scene.activated", map[string]string{"sceneId": req.SceneID})
+	// Broadcast the full scene state (not just the ID) so connected
+	// clients can render the new scene immediately, without a separate
+	// round trip for its tokens and fog.
+	payload, err := h.sceneStatePayload(req.SceneID)
+	if err != nil {
+		slog.Error("ws: load activated scene state failed", "error", err)
+		h.sendError(ctx, c, "activated scene, but failed to load its state")
+		return
+	}
+	h.broadcast(ctx, c.roomID, "scene.activated", payload)
 }
 
 const maxMessageLength = 2000

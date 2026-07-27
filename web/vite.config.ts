@@ -12,5 +12,14 @@ export default defineConfig({
 			},
 			adapter: adapter({ fallback: 'index.html' })
 		})
-	]
+	],
+	server: {
+		// In production the Go binary serves the frontend and API from the
+		// same origin. In dev, `npm run dev` runs on its own port, so proxy
+		// API/WS calls through to a `go run ./cmd/longtable` instance.
+		proxy: {
+			'/api': 'http://localhost:8080',
+			'/ws': { target: 'ws://localhost:8080', ws: true }
+		}
+	}
 });

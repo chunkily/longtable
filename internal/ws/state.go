@@ -32,27 +32,45 @@ func (h *Hub) sendStateSync(ctx context.Context, c *client, room store.Room) {
 	}
 
 	if room.ActiveSceneID != nil {
-		scene, err := h.store.GetScene(*room.ActiveSceneID)
+		sceneState, err := h.sceneStatePayload(*room.ActiveSceneID)
 		if err != nil {
-			slog.Error("ws: load active scene failed", "error", err)
+			slog.Error("ws: load active scene state failed", "error", err)
 		} else {
-			payload["scene"] = scenePayload(scene)
-
-			if tokens, err := h.store.ListTokensForScene(scene.ID); err != nil {
-				slog.Error("ws: list tokens failed", "error", err)
-			} else {
-				payload["tokens"] = tokenPayloads(tokens)
-			}
-
-			if fogCells, err := h.store.ListFogCells(scene.ID); err != nil {
-				slog.Error("ws: list fog cells failed", "error", err)
-			} else {
-				payload["fogCells"] = fogCells
+			for k, v := range sceneState {
+				payload[k] = v
 			}
 		}
 	}
 
 	h.send(ctx, c, "state.sync", payload)
+}
+
+// sceneStatePayload builds the {scene, tokens, fogCells} triple used
+// both to hydrate a freshly connected client (as part of state.sync)
+// and to tell already-connected clients about a newly activated scene
+// (scene.activated) — both cases need the same full picture, not just
+// a bare scene ID.
+func (h *Hub) sceneStatePayload(sceneID string) (map[string]any, error) {
+	scene, err := h.store.GetScene(sceneID)
+	if err != nil {
+		return nil, err
+	}
+
+	tokens, err := h.store.ListTokensForScene(sceneID)
+	if err != nil {
+		return nil, err
+	}
+
+	fogCells, err := h.store.ListFogCells(sceneID)
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]any{
+		"scene":    scenePayload(scene),
+		"tokens":   tokenPayloads(tokens),
+		"fogCells": fogCells,
+	}, nil
 }
 
 func tokenPayload(t store.Token) map[string]any {
