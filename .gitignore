@@ -74,6 +74,16 @@ web_modules/
 .cache
 .parcel-cache
 
+# SvelteKit static adapter output (embedded into the Go binary at build time)
+build/
+
+# Go build output and local SQLite data
+/longtable
+/longtable.exe
+*.db
+*.db-wal
+*.db-shm
+
 # Next.js build output
 .next
 out
