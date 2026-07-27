@@ -142,6 +142,25 @@ func (h *Hub) broadcast(ctx context.Context, roomID, eventType string, payload a
 	}
 }
 
+// broadcastPerClient sends an event to every client in roomID, but lets
+// build compute a different payload per recipient — used wherever a
+// hidden token might be in the payload, since only the GM should
+// receive those. build returning nil skips that recipient entirely.
+func (h *Hub) broadcastPerClient(ctx context.Context, roomID, eventType string, build func(c *client) any) {
+	h.mu.Lock()
+	clients := make([]*client, 0, len(h.rooms[roomID]))
+	for c := range h.rooms[roomID] {
+		clients = append(clients, c)
+	}
+	h.mu.Unlock()
+
+	for _, c := range clients {
+		if payload := build(c); payload != nil {
+			h.send(ctx, c, eventType, payload)
+		}
+	}
+}
+
 // send delivers an event to a single client (used for state.sync and
 // per-client error responses).
 func (h *Hub) send(ctx context.Context, c *client, eventType string, payload any) {
@@ -344,7 +363,13 @@ func (h *Hub) handleTokenCreate(ctx context.Context, c *client, raw json.RawMess
 		return
 	}
 
-	h.broadcast(ctx, c.roomID, "token.created", tokenPayload(token))
+	payload := tokenPayload(token)
+	h.broadcastPerClient(ctx, c.roomID, "token.created", func(recipient *client) any {
+		if token.Visibility == store.VisibilityHidden && recipient.participant.Role != store.RoleGM {
+			return nil
+		}
+		return payload
+	})
 }
 
 type fogRevealRequest struct {
@@ -410,7 +435,17 @@ func (h *Hub) handleSceneCreate(ctx context.Context, c *client, raw json.RawMess
 		return
 	}
 
-	h.broadcast(ctx, c.roomID, "scene.created", scenePayload(scene))
+	// There's no scene-switcher UI yet and the WS protocol has no
+	// request/response correlation for the client to learn the new
+	// scene's ID otherwise, so a newly created scene just becomes the
+	// room's active one immediately.
+	if err := h.store.SetActiveScene(c.roomID, scene.ID); err != nil {
+		slog.Error("ws: activate new scene failed", "error", err)
+		h.sendError(ctx, c, "created scene, but failed to activate it")
+		return
+	}
+
+	h.broadcastSceneActivated(ctx, c, scene.ID)
 }
 
 type sceneSetActiveRequest struct {
@@ -437,16 +472,34 @@ func (h *Hub) handleSceneSetActive(ctx context.Context, c *client, raw json.RawM
 		return
 	}
 
-	// Broadcast the full scene state (not just the ID) so connected
-	// clients can render the new scene immediately, without a separate
-	// round trip for its tokens and fog.
-	payload, err := h.sceneStatePayload(req.SceneID)
+	h.broadcastSceneActivated(ctx, c, req.SceneID)
+}
+
+// broadcastSceneActivated tells every client in the room about the
+// newly active scene, including its tokens and fog — not just the bare
+// ID — so they can render it immediately without another round trip.
+// Hidden tokens are filtered out for non-GM recipients, so the two
+// roles get different payloads (computed once each, not per client).
+func (h *Hub) broadcastSceneActivated(ctx context.Context, initiator *client, sceneID string) {
+	gmPayload, err := h.sceneStatePayload(sceneID, store.RoleGM)
 	if err != nil {
 		slog.Error("ws: load activated scene state failed", "error", err)
-		h.sendError(ctx, c, "activated scene, but failed to load its state")
+		h.sendError(ctx, initiator, "activated scene, but failed to load its state")
 		return
 	}
-	h.broadcast(ctx, c.roomID, "scene.activated", payload)
+	playerPayload, err := h.sceneStatePayload(sceneID, store.RolePlayer)
+	if err != nil {
+		slog.Error("ws: load activated scene state failed", "error", err)
+		h.sendError(ctx, initiator, "activated scene, but failed to load its state")
+		return
+	}
+
+	h.broadcastPerClient(ctx, initiator.roomID, "scene.activated", func(recipient *client) any {
+		if recipient.participant.Role == store.RoleGM {
+			return gmPayload
+		}
+		return playerPayload
+	})
 }
 
 const maxMessageLength = 2000

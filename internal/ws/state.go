@@ -32,7 +32,7 @@ func (h *Hub) sendStateSync(ctx context.Context, c *client, room store.Room) {
 	}
 
 	if room.ActiveSceneID != nil {
-		sceneState, err := h.sceneStatePayload(*room.ActiveSceneID)
+		sceneState, err := h.sceneStatePayload(*room.ActiveSceneID, c.participant.Role)
 		if err != nil {
 			slog.Error("ws: load active scene state failed", "error", err)
 		} else {
@@ -49,8 +49,9 @@ func (h *Hub) sendStateSync(ctx context.Context, c *client, room store.Room) {
 // both to hydrate a freshly connected client (as part of state.sync)
 // and to tell already-connected clients about a newly activated scene
 // (scene.activated) — both cases need the same full picture, not just
-// a bare scene ID.
-func (h *Hub) sceneStatePayload(sceneID string) (map[string]any, error) {
+// a bare scene ID. Tokens marked hidden are only included for role ==
+// RoleGM; players never receive them, not even in filtered-out form.
+func (h *Hub) sceneStatePayload(sceneID string, role store.Role) (map[string]any, error) {
 	scene, err := h.store.GetScene(sceneID)
 	if err != nil {
 		return nil, err
@@ -59,6 +60,9 @@ func (h *Hub) sceneStatePayload(sceneID string) (map[string]any, error) {
 	tokens, err := h.store.ListTokensForScene(sceneID)
 	if err != nil {
 		return nil, err
+	}
+	if role != store.RoleGM {
+		tokens = visibleTokensOnly(tokens)
 	}
 
 	fogCells, err := h.store.ListFogCells(sceneID)
@@ -71,6 +75,16 @@ func (h *Hub) sceneStatePayload(sceneID string) (map[string]any, error) {
 		"tokens":   tokenPayloads(tokens),
 		"fogCells": fogCells,
 	}, nil
+}
+
+func visibleTokensOnly(tokens []store.Token) []store.Token {
+	out := make([]store.Token, 0, len(tokens))
+	for _, t := range tokens {
+		if t.Visibility != store.VisibilityHidden {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 func tokenPayload(t store.Token) map[string]any {

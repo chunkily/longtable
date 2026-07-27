@@ -158,8 +158,15 @@ export class RoomClient {
 		this.send('scene.setActive', { sceneId });
 	}
 
-	createToken(sceneId: string, name: string, imageAssetId: string | null, x: number, y: number) {
-		this.send('token.create', { sceneId, name, imageAssetId, x, y });
+	createToken(
+		sceneId: string,
+		name: string,
+		imageAssetId: string | null,
+		x: number,
+		y: number,
+		visibility: 'visible' | 'hidden' = 'visible'
+	) {
+		this.send('token.create', { sceneId, name, imageAssetId, x, y, visibility });
 	}
 
 	revealFog(sceneId: string, cells: FogCell[]) {

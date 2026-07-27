@@ -10,6 +10,9 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Badge } from '$lib/components/ui/badge';
 	import * as Card from '$lib/components/ui/card';
+	import GameCanvas from '$lib/components/game-canvas.svelte';
+	import CreateSceneDialog from '$lib/components/create-scene-dialog.svelte';
+	import CreateTokenDialog from '$lib/components/create-token-dialog.svelte';
 
 	const slug = $derived(page.params.slug ?? '');
 
@@ -22,6 +25,7 @@
 	let joining = $state(false);
 
 	let chatText = $state('');
+	let fogToolActive = $state(false);
 
 	onMount(() => {
 		const existing = loadSession(slug);
@@ -75,6 +79,7 @@
 				? 'destructive'
 				: 'outline'
 	);
+	const isGM = $derived(client?.you?.role === 'gm');
 </script>
 
 {#if !session || !client}
@@ -120,7 +125,7 @@
 		</Card.Root>
 	</div>
 {:else}
-	<div class="mx-auto flex max-w-2xl flex-col gap-4 p-6">
+	<div class="mx-auto flex max-w-7xl flex-col gap-4 p-6">
 		<header class="flex flex-wrap items-center gap-2">
 			<h1 class="text-2xl font-bold tracking-tight">{client.roomName || slug}</h1>
 			<Badge variant="outline">{client.you?.role}</Badge>
@@ -130,36 +135,73 @@
 			</span>
 		</header>
 
-		<Card.Root>
-			<Card.Content class="flex flex-col gap-3">
-				<ul class="flex max-h-96 flex-col gap-2 overflow-y-auto">
-					{#each client.messages as msg (msg.id)}
-						<li
-							class={[
-								'rounded-md px-2 py-1 text-sm',
-								msg.kind === 'roll' && 'bg-accent text-accent-foreground'
-							]}
-						>
-							<strong>{msg.participantName}:</strong>
-							{#if msg.kind === 'roll'}
-								{msg.body} → <strong>{msg.rollResult}</strong>
-								<span class="text-xs text-muted-foreground">({msg.rollBreakdown})</span>
-							{:else}
-								{msg.body}
-							{/if}
-						</li>
-					{/each}
-				</ul>
-				<form class="flex gap-2" onsubmit={handleSendChat}>
-					<Input
-						bind:value={chatText}
-						placeholder="Say something, or /roll 2d6+3"
-						autocomplete="off"
-						class="flex-1"
-					/>
-					<Button type="submit">Send</Button>
-				</form>
-			</Card.Content>
-		</Card.Root>
+		<div class="flex flex-wrap items-start gap-4">
+			<div class="flex flex-col gap-2">
+				{#if isGM}
+					<div class="flex flex-wrap gap-2">
+						<CreateSceneDialog
+							room={client}
+							roomSlug={session.roomSlug}
+							sessionToken={session.sessionToken}
+						/>
+						{#if client.scene}
+							<CreateTokenDialog
+								room={client}
+								sceneId={client.scene.id}
+								roomSlug={session.roomSlug}
+								sessionToken={session.sessionToken}
+							/>
+							<Button
+								variant={fogToolActive ? 'default' : 'outline'}
+								onclick={() => (fogToolActive = !fogToolActive)}
+							>
+								{fogToolActive ? 'Painting fog…' : 'Reveal fog'}
+							</Button>
+						{/if}
+					</div>
+				{/if}
+				{#if client.scene}
+					<GameCanvas room={client} {fogToolActive} />
+				{:else}
+					<Card.Root class="flex h-64 w-[800px] max-w-full items-center justify-center">
+						<p class="text-sm text-muted-foreground">
+							{isGM ? 'Create a scene to get started.' : 'Waiting for the GM to start a scene…'}
+						</p>
+					</Card.Root>
+				{/if}
+			</div>
+
+			<Card.Root class="w-full max-w-sm">
+				<Card.Content class="flex flex-col gap-3">
+					<ul class="flex max-h-96 flex-col gap-2 overflow-y-auto">
+						{#each client.messages as msg (msg.id)}
+							<li
+								class={[
+									'rounded-md px-2 py-1 text-sm',
+									msg.kind === 'roll' && 'bg-accent text-accent-foreground'
+								]}
+							>
+								<strong>{msg.participantName}:</strong>
+								{#if msg.kind === 'roll'}
+									{msg.body} → <strong>{msg.rollResult}</strong>
+									<span class="text-xs text-muted-foreground">({msg.rollBreakdown})</span>
+								{:else}
+									{msg.body}
+								{/if}
+							</li>
+						{/each}
+					</ul>
+					<form class="flex gap-2" onsubmit={handleSendChat}>
+						<Input
+							bind:value={chatText}
+							placeholder="Say something, or /roll 2d6+3"
+							autocomplete="off"
+							class="flex-1"
+						/>
+						<Button type="submit">Send</Button>
+					</form>
+				</Card.Content>
+			</Card.Root>
+		</div>
 	</div>
 {/if}
