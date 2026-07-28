@@ -18,7 +18,9 @@
 
 	let session = $state<Session | null>(null);
 	let client = $state<RoomClient | null>(null);
-	let canvasRef: { resetView: () => void } | undefined = $state();
+	let canvasRef:
+		{ resetView: () => void; viewCenterCell: () => { x: number; y: number } } | undefined =
+		$state();
 
 	let mode = $state<'player' | 'gm'>('player');
 	let displayName = $state('');
@@ -151,6 +153,7 @@
 								sceneId={client.scene.id}
 								roomSlug={session.roomSlug}
 								sessionToken={session.sessionToken}
+								spawnCell={() => canvasRef?.viewCenterCell() ?? { x: 0, y: 0 }}
 							/>
 							<Button
 								variant={fogToolActive ? 'default' : 'outline'}

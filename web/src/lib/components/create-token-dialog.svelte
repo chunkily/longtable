@@ -11,8 +11,15 @@
 		room,
 		sceneId,
 		roomSlug,
-		sessionToken
-	}: { room: RoomClient; sceneId: string; roomSlug: string; sessionToken: string } = $props();
+		sessionToken,
+		spawnCell
+	}: {
+		room: RoomClient;
+		sceneId: string;
+		roomSlug: string;
+		sessionToken: string;
+		spawnCell: () => { x: number; y: number };
+	} = $props();
 
 	let open = $state(false);
 	let name = $state('');
@@ -34,8 +41,10 @@
 				const asset = await uploadAsset(roomSlug, sessionToken, file);
 				imageAssetId = asset.id;
 			}
-			// dropped at the origin — drag it into place on the canvas after creation
-			room.createToken(sceneId, name, imageAssetId, 0, 0, visibility);
+			// dropped near the middle of whatever the GM is currently looking
+			// at — drag it into place on the canvas after creation
+			const { x, y } = spawnCell();
+			room.createToken(sceneId, name, imageAssetId, x, y, visibility);
 			open = false;
 			name = '';
 			file = null;
@@ -58,7 +67,7 @@
 		<Dialog.Header>
 			<Dialog.Title>New token</Dialog.Title>
 			<Dialog.Description
-				>It appears at the top-left corner — drag it into place.</Dialog.Description
+				>It appears near the center of your current view — drag it into place.</Dialog.Description
 			>
 		</Dialog.Header>
 		<form class="flex flex-col gap-4" onsubmit={handleSubmit}>

@@ -128,6 +128,23 @@
 		renderGrid();
 	}
 
+	// The grid cell currently at the center of the viewport, in the same
+	// cell-coordinate units tokens are placed in. Exposed so new tokens
+	// can spawn near what the GM is actually looking at instead of
+	// always at the map's origin.
+	export function viewCenterCell(): { x: number; y: number } {
+		const gridSize = room.scene?.gridSize;
+		if (!stage || !gridSize) return { x: 0, y: 0 };
+
+		const scale = stage.scaleX();
+		const centerWorldX = (-stage.x() + stage.width() / 2) / scale;
+		const centerWorldY = (-stage.y() + stage.height() / 2) / scale;
+		return {
+			x: Math.round(centerWorldX / gridSize),
+			y: Math.round(centerWorldY / gridSize)
+		};
+	}
+
 	// render() is async and awaits partway through (loading the map
 	// image), so Svelte's $effect dependency tracking — which only sees
 	// reads that happen synchronously before the first await — would
