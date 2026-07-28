@@ -1,0 +1,337 @@
+package ws
+
+import (
+	"encoding/json"
+	"testing"
+
+	"longtable/internal/store"
+)
+
+func TestDrawCreate_PlayerCanDrawAndItPersists(t *testing.T) {
+	ts := newTestServer(t)
+	room, _, err := ts.store.CreateRoom("Room", "GM", "password")
+	if err != nil {
+		t.Fatalf("CreateRoom: %v", err)
+	}
+	player, err := ts.store.JoinRoom(room.ID, "Bob")
+	if err != nil {
+		t.Fatalf("JoinRoom: %v", err)
+	}
+	scene, err := ts.store.CreateScene(room.ID, "Scene", nil, 70, 10, 10)
+	if err != nil {
+		t.Fatalf("CreateScene: %v", err)
+	}
+
+	client := ts.connect(t, room.Slug, player.SessionToken)
+	client.readEnvelope(t) // state.sync
+
+	client.send(t, "draw.create", map[string]any{
+		"sceneId": scene.ID,
+		"kind":    "freehand",
+		"points":  []map[string]float64{{"x": 1, "y": 2}, {"x": 3, "y": 4}, {"x": 5, "y": 6}},
+	})
+
+	env := client.readEnvelope(t)
+	if env.Type != "drawing.created" {
+		t.Fatalf("type = %q, want drawing.created", env.Type)
+	}
+	var payload struct {
+		Kind   string `json:"kind"`
+		Color  string `json:"color"`
+		Points []struct {
+			X, Y float64
+		} `json:"points"`
+	}
+	if err := json.Unmarshal(env.Payload, &payload); err != nil {
+		t.Fatalf("unmarshal drawing.created payload: %v", err)
+	}
+	if payload.Kind != "freehand" {
+		t.Fatalf("kind = %q, want freehand", payload.Kind)
+	}
+	if payload.Color == "" {
+		t.Fatal("expected a default color to be applied")
+	}
+	if len(payload.Points) != 3 {
+		t.Fatalf("len(points) = %d, want 3", len(payload.Points))
+	}
+
+	drawings, err := ts.store.ListDrawingsForScene(scene.ID)
+	if err != nil {
+		t.Fatalf("ListDrawingsForScene: %v", err)
+	}
+	if len(drawings) != 1 {
+		t.Fatalf("len(drawings) = %d, want 1 (should be persisted)", len(drawings))
+	}
+}
+
+func TestDrawCreate_BroadcastsToOtherClients(t *testing.T) {
+	ts := newTestServer(t)
+	room, gm, err := ts.store.CreateRoom("Room", "GM", "password")
+	if err != nil {
+		t.Fatalf("CreateRoom: %v", err)
+	}
+	player, err := ts.store.JoinRoom(room.ID, "Bob")
+	if err != nil {
+		t.Fatalf("JoinRoom: %v", err)
+	}
+	scene, err := ts.store.CreateScene(room.ID, "Scene", nil, 70, 10, 10)
+	if err != nil {
+		t.Fatalf("CreateScene: %v", err)
+	}
+
+	gmClient := ts.connect(t, room.Slug, gm.SessionToken)
+	gmClient.readEnvelope(t) // state.sync
+	playerClient := ts.connect(t, room.Slug, player.SessionToken)
+	playerClient.readEnvelope(t) // state.sync
+
+	gmClient.send(t, "draw.create", map[string]any{
+		"sceneId": scene.ID,
+		"kind":    "line",
+		"points":  []map[string]float64{{"x": 0, "y": 0}, {"x": 10, "y": 10}},
+	})
+
+	gmClient.readEnvelope(t) // drawing.created echoed back to sender
+	env := playerClient.readEnvelope(t)
+	if env.Type != "drawing.created" {
+		t.Fatalf("player did not receive drawing.created, got type = %q", env.Type)
+	}
+}
+
+func TestDrawCreate_RejectsUnknownKind(t *testing.T) {
+	ts := newTestServer(t)
+	room, gm, err := ts.store.CreateRoom("Room", "GM", "password")
+	if err != nil {
+		t.Fatalf("CreateRoom: %v", err)
+	}
+	scene, err := ts.store.CreateScene(room.ID, "Scene", nil, 70, 10, 10)
+	if err != nil {
+		t.Fatalf("CreateScene: %v", err)
+	}
+
+	client := ts.connect(t, room.Slug, gm.SessionToken)
+	client.readEnvelope(t) // state.sync
+
+	client.send(t, "draw.create", map[string]any{
+		"sceneId": scene.ID,
+		"kind":    "triangle",
+		"points":  []map[string]float64{{"x": 0, "y": 0}, {"x": 1, "y": 1}},
+	})
+	env := client.readEnvelope(t)
+	if env.Type != "error" {
+		t.Fatalf("type = %q, want error", env.Type)
+	}
+}
+
+func TestDrawCreate_RejectsWrongPointCountForFixedShapes(t *testing.T) {
+	ts := newTestServer(t)
+	room, gm, err := ts.store.CreateRoom("Room", "GM", "password")
+	if err != nil {
+		t.Fatalf("CreateRoom: %v", err)
+	}
+	scene, err := ts.store.CreateScene(room.ID, "Scene", nil, 70, 10, 10)
+	if err != nil {
+		t.Fatalf("CreateScene: %v", err)
+	}
+
+	client := ts.connect(t, room.Slug, gm.SessionToken)
+	client.readEnvelope(t) // state.sync
+
+	client.send(t, "draw.create", map[string]any{
+		"sceneId": scene.ID,
+		"kind":    "rect",
+		"points":  []map[string]float64{{"x": 0, "y": 0}, {"x": 1, "y": 1}, {"x": 2, "y": 2}},
+	})
+	env := client.readEnvelope(t)
+	if env.Type != "error" {
+		t.Fatalf("type = %q, want error (rect needs exactly 2 points)", env.Type)
+	}
+
+	drawings, err := ts.store.ListDrawingsForScene(scene.ID)
+	if err != nil {
+		t.Fatalf("ListDrawingsForScene: %v", err)
+	}
+	if len(drawings) != 0 {
+		t.Fatalf("len(drawings) = %d, want 0", len(drawings))
+	}
+}
+
+func TestDrawCreate_RejectsSceneFromAnotherRoom(t *testing.T) {
+	ts := newTestServer(t)
+	roomA, _, err := ts.store.CreateRoom("Room A", "GM", "password")
+	if err != nil {
+		t.Fatalf("CreateRoom: %v", err)
+	}
+	roomB, gmB, err := ts.store.CreateRoom("Room B", "GM", "password")
+	if err != nil {
+		t.Fatalf("CreateRoom: %v", err)
+	}
+	sceneA, err := ts.store.CreateScene(roomA.ID, "Scene", nil, 70, 10, 10)
+	if err != nil {
+		t.Fatalf("CreateScene: %v", err)
+	}
+
+	clientB := ts.connect(t, roomB.Slug, gmB.SessionToken)
+	clientB.readEnvelope(t) // state.sync
+
+	clientB.send(t, "draw.create", map[string]any{
+		"sceneId": sceneA.ID,
+		"kind":    "line",
+		"points":  []map[string]float64{{"x": 0, "y": 0}, {"x": 1, "y": 1}},
+	})
+	env := clientB.readEnvelope(t)
+	if env.Type != "error" {
+		t.Fatalf("type = %q, want error", env.Type)
+	}
+
+	drawings, err := ts.store.ListDrawingsForScene(sceneA.ID)
+	if err != nil {
+		t.Fatalf("ListDrawingsForScene: %v", err)
+	}
+	if len(drawings) != 0 {
+		t.Fatalf("len(drawings) = %d, want 0", len(drawings))
+	}
+}
+
+func TestDrawCreate_UsesGivenColorWhenProvided(t *testing.T) {
+	ts := newTestServer(t)
+	room, gm, err := ts.store.CreateRoom("Room", "GM", "password")
+	if err != nil {
+		t.Fatalf("CreateRoom: %v", err)
+	}
+	scene, err := ts.store.CreateScene(room.ID, "Scene", nil, 70, 10, 10)
+	if err != nil {
+		t.Fatalf("CreateScene: %v", err)
+	}
+
+	client := ts.connect(t, room.Slug, gm.SessionToken)
+	client.readEnvelope(t) // state.sync
+
+	client.send(t, "draw.create", map[string]any{
+		"sceneId": scene.ID,
+		"kind":    "circle",
+		"points":  []map[string]float64{{"x": 0, "y": 0}, {"x": 5, "y": 0}},
+		"color":   "#00ff00",
+	})
+	env := client.readEnvelope(t)
+	var payload struct {
+		Color string `json:"color"`
+	}
+	if err := json.Unmarshal(env.Payload, &payload); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if payload.Color != "#00ff00" {
+		t.Fatalf("color = %q, want #00ff00", payload.Color)
+	}
+}
+
+func TestStateSync_IncludesDrawings(t *testing.T) {
+	ts := newTestServer(t)
+	room, gm, err := ts.store.CreateRoom("Room", "GM", "password")
+	if err != nil {
+		t.Fatalf("CreateRoom: %v", err)
+	}
+	scene, err := ts.store.CreateScene(room.ID, "Scene", nil, 70, 10, 10)
+	if err != nil {
+		t.Fatalf("CreateScene: %v", err)
+	}
+	if err := ts.store.SetActiveScene(room.ID, scene.ID); err != nil {
+		t.Fatalf("SetActiveScene: %v", err)
+	}
+	if _, err := ts.store.CreateDrawing(scene.ID, store.DrawingKindLine, []store.Point{{X: 0, Y: 0}, {X: 1, Y: 1}}, "#cc0000"); err != nil {
+		t.Fatalf("CreateDrawing: %v", err)
+	}
+
+	client := ts.connect(t, room.Slug, gm.SessionToken)
+	env := client.readEnvelope(t)
+	if env.Type != "state.sync" {
+		t.Fatalf("type = %q, want state.sync", env.Type)
+	}
+
+	var payload struct {
+		Drawings []json.RawMessage `json:"drawings"`
+	}
+	if err := json.Unmarshal(env.Payload, &payload); err != nil {
+		t.Fatalf("unmarshal state.sync payload: %v", err)
+	}
+	if len(payload.Drawings) != 1 {
+		t.Fatalf("len(drawings) = %d, want 1", len(payload.Drawings))
+	}
+}
+
+func TestPing_BroadcastsWithoutPersisting(t *testing.T) {
+	ts := newTestServer(t)
+	room, gm, err := ts.store.CreateRoom("Room", "GM", "password")
+	if err != nil {
+		t.Fatalf("CreateRoom: %v", err)
+	}
+	player, err := ts.store.JoinRoom(room.ID, "Bob")
+	if err != nil {
+		t.Fatalf("JoinRoom: %v", err)
+	}
+	scene, err := ts.store.CreateScene(room.ID, "Scene", nil, 70, 10, 10)
+	if err != nil {
+		t.Fatalf("CreateScene: %v", err)
+	}
+
+	gmClient := ts.connect(t, room.Slug, gm.SessionToken)
+	gmClient.readEnvelope(t) // state.sync
+	playerClient := ts.connect(t, room.Slug, player.SessionToken)
+	playerClient.readEnvelope(t) // state.sync
+
+	// Non-GM participants must be able to ping too.
+	playerClient.send(t, "ping", map[string]any{"sceneId": scene.ID, "x": 42.0, "y": 99.0})
+
+	playerClient.readEnvelope(t) // echoed back to sender
+	env := gmClient.readEnvelope(t)
+	if env.Type != "ping" {
+		t.Fatalf("type = %q, want ping", env.Type)
+	}
+
+	var payload struct {
+		X               float64 `json:"x"`
+		Y               float64 `json:"y"`
+		ParticipantName string  `json:"participantName"`
+	}
+	if err := json.Unmarshal(env.Payload, &payload); err != nil {
+		t.Fatalf("unmarshal ping payload: %v", err)
+	}
+	if payload.X != 42 || payload.Y != 99 {
+		t.Fatalf("ping coords = (%v, %v), want (42, 99)", payload.X, payload.Y)
+	}
+	if payload.ParticipantName != "Bob" {
+		t.Fatalf("participantName = %q, want Bob", payload.ParticipantName)
+	}
+
+	drawings, err := ts.store.ListDrawingsForScene(scene.ID)
+	if err != nil {
+		t.Fatalf("ListDrawingsForScene: %v", err)
+	}
+	if len(drawings) != 0 {
+		t.Fatalf("len(drawings) = %d, want 0 (pings must not be persisted)", len(drawings))
+	}
+}
+
+func TestPing_RejectsSceneFromAnotherRoom(t *testing.T) {
+	ts := newTestServer(t)
+	roomA, _, err := ts.store.CreateRoom("Room A", "GM", "password")
+	if err != nil {
+		t.Fatalf("CreateRoom: %v", err)
+	}
+	roomB, gmB, err := ts.store.CreateRoom("Room B", "GM", "password")
+	if err != nil {
+		t.Fatalf("CreateRoom: %v", err)
+	}
+	sceneA, err := ts.store.CreateScene(roomA.ID, "Scene", nil, 70, 10, 10)
+	if err != nil {
+		t.Fatalf("CreateScene: %v", err)
+	}
+
+	clientB := ts.connect(t, roomB.Slug, gmB.SessionToken)
+	clientB.readEnvelope(t) // state.sync
+
+	clientB.send(t, "ping", map[string]any{"sceneId": sceneA.ID, "x": 1.0, "y": 1.0})
+	env := clientB.readEnvelope(t)
+	if env.Type != "error" {
+		t.Fatalf("type = %q, want error", env.Type)
+	}
+}

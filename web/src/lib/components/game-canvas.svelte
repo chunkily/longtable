@@ -2,26 +2,41 @@
 	import { onDestroy, onMount } from 'svelte';
 	import Konva from 'konva';
 	import { assetUrl } from '$lib/api';
-	import type { RoomClient, Token } from '$lib/room.svelte';
+	import type { Drawing, DrawingKind, DrawingPoint, RoomClient, Token } from '$lib/room.svelte';
+
+	// 'none' is plain pan/token-drag mode. Every other tool takes over
+	// the stage's pointer handling exclusively — only one can be active
+	// at a time, since they all interpret a left-drag differently.
+	export type Tool = 'none' | 'fog' | DrawingKind | 'ping';
 
 	let {
 		room,
-		fogToolActive = false
+		activeTool = 'none',
+		strokeColor = '#000000'
 	}: {
 		room: RoomClient;
-		fogToolActive?: boolean;
+		activeTool?: Tool;
+		strokeColor?: string;
 	} = $props();
 
 	const MIN_SCALE = 0.2;
 	const MAX_SCALE = 4;
 	const ZOOM_STEP = 1.05;
+	// Minimum world-space distance between consecutive freehand points —
+	// keeps strokes from accumulating an unbounded number of points
+	// while the pointer is held down.
+	const MIN_FREEHAND_SPACING = 3;
+	const PING_TWEEN_SECONDS = 1.4;
 
 	let container: HTMLDivElement;
 	let stage: Konva.Stage | undefined;
 	let mapLayer: Konva.Layer;
 	let gridLayer: Konva.Layer;
 	let fogLayer: Konva.Layer;
+	let drawingLayer: Konva.Layer;
 	let tokenLayer: Konva.Layer;
+	let pingLayer: Konva.Layer;
+	let previewLayer: Konva.Layer;
 	let resizeObserver: ResizeObserver | undefined;
 
 	// Tracks the active scene so a switch to a different scene resets
@@ -65,8 +80,11 @@
 		mapLayer = new Konva.Layer();
 		gridLayer = new Konva.Layer({ listening: false });
 		fogLayer = new Konva.Layer();
+		drawingLayer = new Konva.Layer({ listening: false });
 		tokenLayer = new Konva.Layer();
-		stage.add(mapLayer, gridLayer, fogLayer, tokenLayer);
+		pingLayer = new Konva.Layer({ listening: false });
+		previewLayer = new Konva.Layer({ listening: false });
+		stage.add(mapLayer, gridLayer, fogLayer, drawingLayer, tokenLayer, pingLayer, previewLayer);
 
 		stage.on('wheel', handleWheel);
 		stage.on('dragmove', () => renderGrid());
@@ -155,16 +173,42 @@
 	}
 
 	$effect(() => {
-		track(room.scene, room.tokens, room.fogCells, room.you);
+		track(room.scene, room.tokens, room.fogCells, room.drawings, room.you);
 		render();
 	});
 
 	$effect(() => {
-		track(fogToolActive, room.scene, room.you);
-		attachFogPaintHandlers();
+		track(activeTool, room.scene, room.you);
+		attachToolHandlers();
 	});
 
-	// --- fog-of-war paint tool (GM only) ---
+	$effect(() => {
+		track(room.pings);
+		renderPings();
+	});
+
+	// --- shape geometry shared between committed drawings and the live
+	// rubber-band preview while a shape is being drawn ---
+
+	function lineGeometry(a: DrawingPoint, b: DrawingPoint) {
+		return { points: [a.x, a.y, b.x, b.y] };
+	}
+
+	function rectGeometry(a: DrawingPoint, b: DrawingPoint) {
+		return {
+			x: Math.min(a.x, b.x),
+			y: Math.min(a.y, b.y),
+			width: Math.abs(b.x - a.x),
+			height: Math.abs(b.y - a.y)
+		};
+	}
+
+	function circleGeometry(a: DrawingPoint, b: DrawingPoint) {
+		return { x: a.x, y: a.y, radius: Math.hypot(b.x - a.x, b.y - a.y) };
+	}
+
+	// --- pointer-driven tools: fog paint, freehand/line/rect/circle
+	// drawing, and ping. Exactly one owns the stage's pointer at a time. ---
 
 	let painting = false;
 	// Transient drag-stroke bookkeeping, cleared every stroke — not
@@ -172,36 +216,162 @@
 	// eslint-disable-next-line svelte/prefer-svelte-reactivity
 	let pendingCells = new Map<string, { x: number; y: number }>();
 
-	function attachFogPaintHandlers() {
+	let drawStart: DrawingPoint | null = null;
+	let freehandPoints: DrawingPoint[] = [];
+	let previewShape: Konva.Shape | null = null;
+
+	function clearPreview() {
+		previewShape?.destroy();
+		previewShape = null;
+		drawStart = null;
+		freehandPoints = [];
+		previewLayer?.batchDraw();
+	}
+
+	function attachToolHandlers() {
 		if (!stage) return;
-		stage.off('mousedown.fog touchstart.fog mousemove.fog touchmove.fog mouseup.fog touchend.fog');
+		stage.off(
+			'mousedown.tool touchstart.tool mousemove.tool touchmove.tool mouseup.tool touchend.tool'
+		);
 		painting = false;
 		pendingCells.clear();
+		clearPreview();
 
 		const scene = room.scene;
-		const active = fogToolActive && room.you?.role === 'gm' && !!scene;
-		// Painting and panning both start on left-drag, so only one can
-		// own the gesture at a time.
-		stage.draggable(!active);
-		if (!active) return;
+		const isActive = activeTool !== 'none' && !!scene;
+		// Tools and panning both start on left-drag, so only one can own
+		// the gesture at a time.
+		stage.draggable(!isActive);
+		if (!isActive || !scene) return;
+
 		const gridSize = scene.gridSize;
 		const sceneId = scene.id;
 
-		stage.on('mousedown.fog touchstart.fog', () => {
-			painting = true;
-			paintAtPointer(gridSize);
+		if (activeTool === 'fog') {
+			if (room.you?.role !== 'gm') return; // fog stays GM-only
+			stage.on('mousedown.tool touchstart.tool', () => {
+				painting = true;
+				paintAtPointer(gridSize);
+			});
+			stage.on('mousemove.tool touchmove.tool', () => {
+				if (painting) paintAtPointer(gridSize);
+			});
+			stage.on('mouseup.tool touchend.tool', () => {
+				if (!painting) return;
+				painting = false;
+				if (pendingCells.size > 0) {
+					room.revealFog(sceneId, Array.from(pendingCells.values()));
+				}
+				pendingCells.clear();
+			});
+			return;
+		}
+
+		if (activeTool === 'ping') {
+			stage.on('mousedown.tool touchstart.tool', () => {
+				const pos = stage!.getRelativePointerPosition();
+				if (!pos) return;
+				room.sendPing(sceneId, pos.x, pos.y);
+			});
+			return;
+		}
+
+		if (activeTool === 'freehand') {
+			stage.on('mousedown.tool touchstart.tool', () => {
+				const pos = stage!.getRelativePointerPosition();
+				if (!pos) return;
+				freehandPoints = [pos];
+				previewShape = new Konva.Line({
+					points: [pos.x, pos.y],
+					stroke: strokeColor,
+					strokeWidth: 3,
+					lineCap: 'round',
+					lineJoin: 'round',
+					dash: [6, 4],
+					listening: false
+				});
+				previewLayer.add(previewShape);
+			});
+			stage.on('mousemove.tool touchmove.tool', () => {
+				if (!previewShape) return;
+				const pos = stage!.getRelativePointerPosition();
+				if (!pos) return;
+				const last = freehandPoints[freehandPoints.length - 1];
+				if (Math.hypot(pos.x - last.x, pos.y - last.y) < MIN_FREEHAND_SPACING) return;
+				freehandPoints.push(pos);
+				(previewShape as Konva.Line).points(freehandPoints.flatMap((p) => [p.x, p.y]));
+				previewLayer.batchDraw();
+			});
+			stage.on('mouseup.tool touchend.tool', () => {
+				if (freehandPoints.length >= 2) {
+					room.createDrawing(sceneId, 'freehand', freehandPoints, strokeColor);
+				}
+				clearPreview();
+			});
+			return;
+		}
+
+		// line, rect, circle: rubber-band from a fixed start point to
+		// wherever the pointer currently is.
+		const kind = activeTool;
+		stage.on('mousedown.tool touchstart.tool', () => {
+			const pos = stage!.getRelativePointerPosition();
+			if (!pos) return;
+			drawStart = pos;
+			previewShape = buildPreviewShape(kind, pos, pos);
+			previewLayer.add(previewShape);
 		});
-		stage.on('mousemove.fog touchmove.fog', () => {
-			if (painting) paintAtPointer(gridSize);
+		stage.on('mousemove.tool touchmove.tool', () => {
+			if (!drawStart || !previewShape) return;
+			const pos = stage!.getRelativePointerPosition();
+			if (!pos) return;
+			updatePreviewShape(previewShape, kind, drawStart, pos);
+			previewLayer.batchDraw();
 		});
-		stage.on('mouseup.fog touchend.fog', () => {
-			if (!painting) return;
-			painting = false;
-			if (pendingCells.size > 0) {
-				room.revealFog(sceneId, Array.from(pendingCells.values()));
+		stage.on('mouseup.tool touchend.tool', () => {
+			if (drawStart) {
+				const pos = stage!.getRelativePointerPosition() ?? drawStart;
+				if (pos.x !== drawStart.x || pos.y !== drawStart.y) {
+					room.createDrawing(sceneId, kind, [drawStart, pos], strokeColor);
+				}
 			}
-			pendingCells.clear();
+			clearPreview();
 		});
+	}
+
+	function buildPreviewShape(
+		kind: 'line' | 'rect' | 'circle',
+		a: DrawingPoint,
+		b: DrawingPoint
+	): Konva.Shape {
+		const strokeProps = { stroke: strokeColor, strokeWidth: 2, dash: [6, 4], listening: false };
+		switch (kind) {
+			case 'line':
+				return new Konva.Line({ ...lineGeometry(a, b), ...strokeProps });
+			case 'rect':
+				return new Konva.Rect({ ...rectGeometry(a, b), ...strokeProps });
+			case 'circle':
+				return new Konva.Circle({ ...circleGeometry(a, b), ...strokeProps });
+		}
+	}
+
+	function updatePreviewShape(
+		shape: Konva.Shape,
+		kind: 'line' | 'rect' | 'circle',
+		a: DrawingPoint,
+		b: DrawingPoint
+	) {
+		switch (kind) {
+			case 'line':
+				shape.setAttrs(lineGeometry(a, b));
+				break;
+			case 'rect':
+				shape.setAttrs(rectGeometry(a, b));
+				break;
+			case 'circle':
+				shape.setAttrs(circleGeometry(a, b));
+				break;
+		}
 	}
 
 	function paintAtPointer(gridSize: number) {
@@ -242,10 +412,12 @@
 			mapLayer.destroyChildren();
 			gridLayer.destroyChildren();
 			fogLayer.destroyChildren();
+			drawingLayer.destroyChildren();
 			tokenLayer.destroyChildren();
 			mapLayer.draw();
 			gridLayer.draw();
 			fogLayer.draw();
+			drawingLayer.draw();
 			tokenLayer.draw();
 			return;
 		}
@@ -256,6 +428,7 @@
 		await renderMap(scene.mapAssetId, width, height);
 		renderGrid();
 		renderFog(scene.gridSize, width, height);
+		renderDrawings();
 		renderTokens(scene.gridSize);
 	}
 
@@ -380,6 +553,79 @@
 		fogLayer.batchDraw();
 	}
 
+	// Drawings are visible to everyone regardless of role — they're a
+	// shared communication tool, not game-hidden state — so they render
+	// above fog rather than being subject to it.
+	function renderDrawings() {
+		drawingLayer.destroyChildren();
+		for (const d of room.drawings) {
+			drawingLayer.add(shapeForDrawing(d));
+		}
+		drawingLayer.batchDraw();
+	}
+
+	function shapeForDrawing(d: Drawing): Konva.Shape {
+		const strokeProps = { stroke: d.color, strokeWidth: 3, listening: false };
+		switch (d.kind) {
+			case 'freehand':
+				return new Konva.Line({
+					points: d.points.flatMap((p) => [p.x, p.y]),
+					lineCap: 'round',
+					lineJoin: 'round',
+					...strokeProps
+				});
+			case 'line':
+				return new Konva.Line({ ...lineGeometry(d.points[0], d.points[1]), ...strokeProps });
+			case 'rect':
+				return new Konva.Rect({ ...rectGeometry(d.points[0], d.points[1]), ...strokeProps });
+			case 'circle':
+				return new Konva.Circle({ ...circleGeometry(d.points[0], d.points[1]), ...strokeProps });
+		}
+	}
+
+	// Ping markers are ephemeral: RoomClient removes each ping from
+	// room.pings on its own after a short lifetime, which is what
+	// actually clears its shape here (via the "no longer present"
+	// branch below) — the tween is just the fade-out look, not the
+	// mechanism that ends the ping.
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity
+	const pingShapes = new Map<string, Konva.Circle>();
+
+	function renderPings() {
+		if (!pingLayer) return;
+
+		const currentIds = new Set(room.pings.map((p) => p.id));
+		for (const [id, shape] of pingShapes) {
+			if (!currentIds.has(id)) {
+				shape.destroy();
+				pingShapes.delete(id);
+			}
+		}
+
+		for (const ping of room.pings) {
+			if (pingShapes.has(ping.id)) continue;
+			const circle = new Konva.Circle({
+				x: ping.x,
+				y: ping.y,
+				radius: 6,
+				stroke: '#f59e0b',
+				strokeWidth: 3,
+				listening: false
+			});
+			pingLayer.add(circle);
+			pingShapes.set(ping.id, circle);
+			new Konva.Tween({
+				node: circle,
+				duration: PING_TWEEN_SECONDS,
+				radius: 40,
+				opacity: 0,
+				easing: Konva.Easings.EaseOut
+			}).play();
+		}
+
+		pingLayer.batchDraw();
+	}
+
 	function renderTokens(gridSize: number) {
 		tokenLayer.destroyChildren();
 
@@ -387,7 +633,7 @@
 			const group = new Konva.Group({
 				x: token.x * gridSize,
 				y: token.y * gridSize,
-				draggable: !fogToolActive
+				draggable: activeTool === 'none'
 			});
 
 			const w = token.width * gridSize;

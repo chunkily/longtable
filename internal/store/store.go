@@ -85,6 +85,16 @@ func (s *Store) migrate() error {
 			PRIMARY KEY (scene_id, cell_x, cell_y)
 		);
 
+		CREATE TABLE IF NOT EXISTS drawing (
+			id         TEXT PRIMARY KEY,
+			scene_id   TEXT NOT NULL REFERENCES scene(id) ON DELETE CASCADE,
+			kind       TEXT NOT NULL CHECK (kind IN ('freehand', 'line', 'rect', 'circle')),
+			points     TEXT NOT NULL,
+			color      TEXT NOT NULL,
+			created_at TEXT NOT NULL
+		);
+		CREATE INDEX IF NOT EXISTS idx_drawing_scene ON drawing(scene_id);
+
 		CREATE TABLE IF NOT EXISTS message (
 			id                 TEXT PRIMARY KEY,
 			room_id            TEXT NOT NULL REFERENCES room(id) ON DELETE CASCADE,

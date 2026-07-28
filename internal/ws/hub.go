@@ -206,6 +206,10 @@ func (h *Hub) handleMessage(ctx context.Context, c *client, data []byte) {
 		h.handleSceneSetActive(ctx, c, env.Payload)
 	case "chat.send":
 		h.handleChatSend(ctx, c, env.Payload)
+	case "draw.create":
+		h.handleDrawCreate(ctx, c, env.Payload)
+	case "ping":
+		h.handlePing(ctx, c, env.Payload)
 	default:
 		h.sendError(ctx, c, fmt.Sprintf("unknown command type %q", env.Type))
 	}
@@ -400,6 +404,96 @@ func (h *Hub) handleFogReveal(ctx context.Context, c *client, raw json.RawMessag
 	h.broadcast(ctx, c.roomID, "fog.revealed", map[string]any{
 		"sceneId": req.SceneID,
 		"cells":   req.Cells,
+	})
+}
+
+// drawingKinds maps the wire-format kind string to its typed
+// store.DrawingKind, and doubles as the set of recognized kinds.
+var drawingKinds = map[string]store.DrawingKind{
+	"freehand": store.DrawingKindFreehand,
+	"line":     store.DrawingKindLine,
+	"rect":     store.DrawingKindRect,
+	"circle":   store.DrawingKindCircle,
+}
+
+// defaultDrawingColor matches the frontend's color palette (see
+// game-canvas.svelte) — used only if a client omits color entirely.
+const defaultDrawingColor = "#cc0000"
+
+type drawCreateRequest struct {
+	SceneID string        `json:"sceneId"`
+	Kind    string        `json:"kind"`
+	Points  []store.Point `json:"points"`
+	Color   string        `json:"color"`
+}
+
+// handleDrawCreate persists a map annotation. Unlike token/scene
+// commands, this isn't GM-only — drawing and pinging are meant as a
+// shared communication tool for everyone at the table.
+func (h *Hub) handleDrawCreate(ctx context.Context, c *client, raw json.RawMessage) {
+	var req drawCreateRequest
+	if err := decodePayload(raw, &req); err != nil || req.SceneID == "" {
+		h.sendError(ctx, c, "invalid draw.create payload")
+		return
+	}
+	if !h.requireSceneInRoom(ctx, c, req.SceneID) {
+		return
+	}
+
+	kind, ok := drawingKinds[req.Kind]
+	if !ok {
+		h.sendError(ctx, c, fmt.Sprintf("unknown drawing kind %q", req.Kind))
+		return
+	}
+	// Freehand strokes can have any number of points; every other kind
+	// is defined by exactly two (start/end, opposite corners, or
+	// center+edge).
+	wantPoints := 2
+	if (kind == store.DrawingKindFreehand && len(req.Points) < wantPoints) ||
+		(kind != store.DrawingKindFreehand && len(req.Points) != wantPoints) {
+		h.sendError(ctx, c, "invalid number of points for drawing kind")
+		return
+	}
+
+	color := req.Color
+	if color == "" {
+		color = defaultDrawingColor
+	}
+
+	drawing, err := h.store.CreateDrawing(req.SceneID, kind, req.Points, color)
+	if err != nil {
+		slog.Error("ws: create drawing failed", "error", err)
+		h.sendError(ctx, c, "failed to create drawing")
+		return
+	}
+
+	h.broadcast(ctx, c.roomID, "drawing.created", drawingPayload(drawing))
+}
+
+type pingRequest struct {
+	SceneID string  `json:"sceneId"`
+	X       float64 `json:"x"`
+	Y       float64 `json:"y"`
+}
+
+// handlePing broadcasts a transient pointer-ping — it's never
+// persisted or included in state.sync, since it only makes sense in
+// the moment.
+func (h *Hub) handlePing(ctx context.Context, c *client, raw json.RawMessage) {
+	var req pingRequest
+	if err := decodePayload(raw, &req); err != nil || req.SceneID == "" {
+		h.sendError(ctx, c, "invalid ping payload")
+		return
+	}
+	if !h.requireSceneInRoom(ctx, c, req.SceneID) {
+		return
+	}
+
+	h.broadcast(ctx, c.roomID, "ping", map[string]any{
+		"sceneId":         req.SceneID,
+		"x":               req.X,
+		"y":               req.Y,
+		"participantName": c.participant.DisplayName,
 	})
 }
 

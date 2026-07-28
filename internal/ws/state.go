@@ -70,10 +70,16 @@ func (h *Hub) sceneStatePayload(sceneID string, role store.Role) (map[string]any
 		return nil, err
 	}
 
+	drawings, err := h.store.ListDrawingsForScene(sceneID)
+	if err != nil {
+		return nil, err
+	}
+
 	return map[string]any{
 		"scene":    scenePayload(scene),
 		"tokens":   tokenPayloads(tokens),
 		"fogCells": fogCells,
+		"drawings": drawingPayloads(drawings),
 	}, nil
 }
 
@@ -122,6 +128,24 @@ func scenePayload(s store.Scene) map[string]any {
 		"width":       s.Width,
 		"height":      s.Height,
 	}
+}
+
+func drawingPayload(d store.Drawing) map[string]any {
+	return map[string]any{
+		"id":      d.ID,
+		"sceneId": d.SceneID,
+		"kind":    string(d.Kind),
+		"points":  d.Points,
+		"color":   d.Color,
+	}
+}
+
+func drawingPayloads(drawings []store.Drawing) []map[string]any {
+	out := make([]map[string]any, len(drawings))
+	for i, d := range drawings {
+		out[i] = drawingPayload(d)
+	}
+	return out
 }
 
 func messagePayload(m store.Message) map[string]any {

@@ -44,6 +44,32 @@ export interface FogCell {
 	y: number;
 }
 
+export type DrawingKind = 'freehand' | 'line' | 'rect' | 'circle';
+
+export interface DrawingPoint {
+	x: number;
+	y: number;
+}
+
+export interface Drawing {
+	id: string;
+	sceneId: string;
+	kind: DrawingKind;
+	points: DrawingPoint[];
+	color: string;
+}
+
+// A transient pointer-ping. id is generated client-side on arrival
+// (the server doesn't assign one, since pings are fire-and-forget) so
+// the canvas can track and remove each marker independently.
+export interface Ping {
+	id: string;
+	sceneId: string;
+	x: number;
+	y: number;
+	participantName: string;
+}
+
 export interface You {
 	participantId: string;
 	displayName: string;
@@ -64,6 +90,7 @@ interface StateSyncPayload {
 	scene?: Scene | null;
 	tokens?: Token[];
 	fogCells?: FogCell[];
+	drawings?: Drawing[];
 }
 
 interface TokenMovedPayload {
@@ -81,11 +108,22 @@ interface SceneActivatedPayload {
 	scene: Scene;
 	tokens?: Token[];
 	fogCells?: FogCell[];
+	drawings?: Drawing[];
+}
+
+interface PingPayload {
+	sceneId: string;
+	x: number;
+	y: number;
+	participantName: string;
 }
 
 interface ErrorPayload {
 	message: string;
 }
+
+// How long a ping marker stays on screen before RoomClient removes it.
+const PING_LIFETIME_MS = 1500;
 
 export class RoomClient {
 	status = $state<ConnectionStatus>('connecting');
@@ -98,6 +136,8 @@ export class RoomClient {
 	scene = $state<Scene | null>(null);
 	tokens = $state<Token[]>([]);
 	fogCells = $state<FogCell[]>([]);
+	drawings = $state<Drawing[]>([]);
+	pings = $state<Ping[]>([]);
 
 	private socket: WebSocket | null = null;
 
@@ -173,6 +213,14 @@ export class RoomClient {
 		this.send('fog.reveal', { sceneId, cells });
 	}
 
+	createDrawing(sceneId: string, kind: DrawingKind, points: DrawingPoint[], color: string) {
+		this.send('draw.create', { sceneId, kind, points, color });
+	}
+
+	sendPing(sceneId: string, x: number, y: number) {
+		this.send('ping', { sceneId, x, y });
+	}
+
 	private handleEnvelope(env: Envelope) {
 		switch (env.type) {
 			case 'state.sync': {
@@ -184,6 +232,7 @@ export class RoomClient {
 				this.scene = payload.scene ?? null;
 				this.tokens = payload.tokens ?? [];
 				this.fogCells = payload.fogCells ?? [];
+				this.drawings = payload.drawings ?? [];
 				break;
 			}
 
@@ -216,6 +265,21 @@ export class RoomClient {
 				this.scene = payload.scene;
 				this.tokens = payload.tokens ?? [];
 				this.fogCells = payload.fogCells ?? [];
+				this.drawings = payload.drawings ?? [];
+				break;
+			}
+
+			case 'drawing.created':
+				this.drawings = [...this.drawings, env.payload as Drawing];
+				break;
+
+			case 'ping': {
+				const payload = env.payload as PingPayload;
+				const ping: Ping = { id: crypto.randomUUID(), ...payload };
+				this.pings = [...this.pings, ping];
+				setTimeout(() => {
+					this.pings = this.pings.filter((p) => p.id !== ping.id);
+				}, PING_LIFETIME_MS);
 				break;
 			}
 

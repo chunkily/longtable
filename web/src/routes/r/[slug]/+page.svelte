@@ -11,7 +11,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import * as Card from '$lib/components/ui/card';
 	import ChevronUpIcon from '@lucide/svelte/icons/chevron-up';
-	import GameCanvas from '$lib/components/game-canvas.svelte';
+	import GameCanvas, { type Tool } from '$lib/components/game-canvas.svelte';
 	import CreateSceneDialog from '$lib/components/create-scene-dialog.svelte';
 	import CreateTokenDialog from '$lib/components/create-token-dialog.svelte';
 
@@ -29,7 +29,23 @@
 	let joining = $state(false);
 
 	let chatText = $state('');
-	let fogToolActive = $state(false);
+
+	// The map toolbar: 'none' is plain pan/token-drag mode. Fog stays
+	// GM-only (gated in the template below); drawing and pinging are
+	// open to everyone, since they're meant as a shared pointer/annotation
+	// tool rather than GM-only map control.
+	let activeTool = $state<Tool>('none');
+	const STROKE_COLORS = [
+		{ label: 'Black', value: '#000000' },
+		{ label: 'Red', value: '#cc0000' },
+		{ label: 'Green', value: '#008000' },
+		{ label: 'Blue', value: '#0033cc' }
+	];
+	let strokeColor = $state(STROKE_COLORS[0].value);
+
+	function selectTool(tool: Tool) {
+		activeTool = activeTool === tool ? 'none' : tool;
+	}
 	// Below the lg breakpoint the chat panel isn't shown inline — it's a
 	// bottom sheet toggled by the "Chat" bar, since there isn't room for
 	// canvas + chat side by side there (see viewport-layout discussion).
@@ -194,21 +210,73 @@
 								spawnCell={() => canvasRef?.viewCenterCell() ?? { x: 0, y: 0 }}
 							/>
 							<Button
-								variant={fogToolActive ? 'default' : 'outline'}
-								onclick={() => (fogToolActive = !fogToolActive)}
+								variant={activeTool === 'fog' ? 'default' : 'outline'}
+								onclick={() => selectTool('fog')}
 							>
-								{fogToolActive ? 'Painting fog…' : 'Reveal fog'}
+								{activeTool === 'fog' ? 'Painting fog…' : 'Reveal fog'}
 							</Button>
 						{/if}
 					</div>
 				{/if}
 				{#if client.scene}
-					<div class="flex justify-end">
+					<div class="flex flex-wrap items-center justify-between gap-2">
+						<div class="flex flex-wrap gap-2">
+							<Button
+								variant={activeTool === 'freehand' ? 'default' : 'outline'}
+								size="sm"
+								onclick={() => selectTool('freehand')}
+							>
+								Freehand
+							</Button>
+							<Button
+								variant={activeTool === 'line' ? 'default' : 'outline'}
+								size="sm"
+								onclick={() => selectTool('line')}
+							>
+								Line
+							</Button>
+							<Button
+								variant={activeTool === 'rect' ? 'default' : 'outline'}
+								size="sm"
+								onclick={() => selectTool('rect')}
+							>
+								Rectangle
+							</Button>
+							<Button
+								variant={activeTool === 'circle' ? 'default' : 'outline'}
+								size="sm"
+								onclick={() => selectTool('circle')}
+							>
+								Circle
+							</Button>
+							<Button
+								variant={activeTool === 'ping' ? 'default' : 'outline'}
+								size="sm"
+								onclick={() => selectTool('ping')}
+							>
+								Ping
+							</Button>
+							<div class="flex items-center gap-1 px-1">
+								{#each STROKE_COLORS as opt (opt.value)}
+									<button
+										type="button"
+										aria-label={opt.label}
+										title={opt.label}
+										class={[
+											'h-6 w-6 rounded-full border-2',
+											strokeColor === opt.value ? 'border-foreground' : 'border-transparent'
+										]}
+										style="background-color: {opt.value}"
+										onclick={() => (strokeColor = opt.value)}
+									></button>
+								{/each}
+							</div>
+						</div>
 						<Button variant="outline" size="sm" onclick={() => canvasRef?.resetView()}>
 							Reset view
 						</Button>
 					</div>
-					<GameCanvas room={client} {fogToolActive} bind:this={canvasRef} />
+					<GameCanvas room={client} {activeTool} {strokeColor} bind:this={canvasRef} />
 				{:else}
 					<Card.Root class="flex h-64 w-full items-center justify-center">
 						<p class="text-sm text-muted-foreground">

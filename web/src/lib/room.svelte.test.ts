@@ -166,4 +166,91 @@ describe('RoomClient', () => {
 		expect(socket.sent).toHaveLength(1);
 		expect(JSON.parse(socket.sent[0])).toEqual({ type: 'chat.send', payload: { text: 'hello' } });
 	});
+
+	it('loads drawings from state.sync and appends drawing.created events', () => {
+		const { client, socket } = connectedClient();
+		socket.emit({
+			type: 'state.sync',
+			payload: {
+				room: { slug: 'abc123', name: 'Room' },
+				you: { participantId: 'p1', displayName: 'A', role: 'gm' },
+				drawings: [{ id: 'd1', sceneId: 's1', kind: 'line', points: [], color: '#cc0000' }]
+			}
+		});
+		expect(client.drawings.map((d) => d.id)).toEqual(['d1']);
+
+		socket.emit({
+			type: 'drawing.created',
+			payload: { id: 'd2', sceneId: 's1', kind: 'rect', points: [], color: '#0033cc' }
+		});
+		expect(client.drawings.map((d) => d.id)).toEqual(['d1', 'd2']);
+	});
+
+	it('resets drawings on scene.activated', () => {
+		const { client, socket } = connectedClient();
+		socket.emit({
+			type: 'state.sync',
+			payload: {
+				room: { slug: 'abc123', name: 'Room' },
+				you: { participantId: 'p1', displayName: 'A', role: 'gm' },
+				drawings: [{ id: 'd1', sceneId: 's1', kind: 'line', points: [], color: '#cc0000' }]
+			}
+		});
+
+		socket.emit({
+			type: 'scene.activated',
+			payload: {
+				scene: { id: 's2' },
+				drawings: [{ id: 'd3', sceneId: 's2', kind: 'circle', points: [], color: '#008000' }]
+			}
+		});
+		expect(client.drawings.map((d) => d.id)).toEqual(['d3']);
+	});
+
+	it('sends draw.create with sceneId, kind, points, and color', () => {
+		const { client, socket } = connectedClient();
+		const points = [
+			{ x: 1, y: 2 },
+			{ x: 3, y: 4 }
+		];
+		client.createDrawing('scene1', 'line', points, '#cc0000');
+		expect(JSON.parse(socket.sent[0])).toEqual({
+			type: 'draw.create',
+			payload: { sceneId: 'scene1', kind: 'line', points, color: '#cc0000' }
+		});
+	});
+
+	it('adds a ping with a generated id and removes it after it expires', () => {
+		vi.useFakeTimers();
+		try {
+			const { client, socket } = connectedClient();
+			socket.emit({
+				type: 'ping',
+				payload: { sceneId: 'scene1', x: 10, y: 20, participantName: 'Bob' }
+			});
+
+			expect(client.pings).toHaveLength(1);
+			expect(client.pings[0]).toMatchObject({
+				sceneId: 'scene1',
+				x: 10,
+				y: 20,
+				participantName: 'Bob'
+			});
+			expect(client.pings[0].id).toBeTruthy();
+
+			vi.advanceTimersByTime(1500);
+			expect(client.pings).toHaveLength(0);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('sends ping with sceneId, x, and y', () => {
+		const { client, socket } = connectedClient();
+		client.sendPing('scene1', 5, 6);
+		expect(JSON.parse(socket.sent[0])).toEqual({
+			type: 'ping',
+			payload: { sceneId: 'scene1', x: 5, y: 6 }
+		});
+	});
 });
