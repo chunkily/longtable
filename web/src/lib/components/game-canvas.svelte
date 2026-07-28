@@ -12,13 +12,21 @@
 		fogToolActive?: boolean;
 	} = $props();
 
-	const DEFAULT_SIZE = 800;
+	const MIN_SCALE = 0.2;
+	const MAX_SCALE = 4;
+	const ZOOM_STEP = 1.05;
 
 	let container: HTMLDivElement;
 	let stage: Konva.Stage | undefined;
 	let mapLayer: Konva.Layer;
+	let gridLayer: Konva.Layer;
 	let fogLayer: Konva.Layer;
 	let tokenLayer: Konva.Layer;
+	let resizeObserver: ResizeObserver | undefined;
+
+	// Tracks the active scene so a switch to a different scene resets
+	// the camera, rather than carrying over an unrelated pan/zoom.
+	let lastSceneId: string | null = null;
 
 	// Imperative Konva bookkeeping, not template state — doesn't need to
 	// be a SvelteMap since nothing reactive reads it.
@@ -48,17 +56,77 @@
 	}
 
 	onMount(() => {
-		stage = new Konva.Stage({ container, width: DEFAULT_SIZE, height: DEFAULT_SIZE });
+		stage = new Konva.Stage({
+			container,
+			width: container.clientWidth,
+			height: container.clientHeight,
+			draggable: true
+		});
 		mapLayer = new Konva.Layer();
+		gridLayer = new Konva.Layer({ listening: false });
 		fogLayer = new Konva.Layer();
 		tokenLayer = new Konva.Layer();
-		stage.add(mapLayer, fogLayer, tokenLayer);
+		stage.add(mapLayer, gridLayer, fogLayer, tokenLayer);
+
+		stage.on('wheel', handleWheel);
+		stage.on('dragmove', () => renderGrid());
+
+		resizeObserver = new ResizeObserver(() => {
+			if (!stage) return;
+			stage.width(container.clientWidth);
+			stage.height(container.clientHeight);
+			renderGrid();
+		});
+		resizeObserver.observe(container);
+
 		render();
 	});
 
 	onDestroy(() => {
+		resizeObserver?.disconnect();
 		stage?.destroy();
 	});
+
+	// Standard Konva "zoom to pointer" recipe: keep the world point under
+	// the cursor fixed on screen while scaling around it.
+	function handleWheel(e: Konva.KonvaEventObject<WheelEvent>) {
+		e.evt.preventDefault();
+		if (!stage) return;
+
+		const oldScale = stage.scaleX();
+		const pointer = stage.getPointerPosition();
+		if (!pointer) return;
+
+		const mousePointTo = {
+			x: (pointer.x - stage.x()) / oldScale,
+			y: (pointer.y - stage.y()) / oldScale
+		};
+		const direction = e.evt.deltaY > 0 ? -1 : 1;
+		const newScale = Math.min(
+			MAX_SCALE,
+			Math.max(MIN_SCALE, direction > 0 ? oldScale * ZOOM_STEP : oldScale / ZOOM_STEP)
+		);
+
+		stage.scale({ x: newScale, y: newScale });
+		stage.position({
+			x: pointer.x - mousePointTo.x * newScale,
+			y: pointer.y - mousePointTo.y * newScale
+		});
+		stage.batchDraw();
+		renderGrid();
+	}
+
+	// Resets the camera to its identity transform (pan at the origin,
+	// no zoom) — the same view a scene starts in, since the map's
+	// origin (0,0) is always its top-left corner. Exposed for the
+	// "Reset view" button in the room page via bind:this.
+	export function resetView() {
+		if (!stage) return;
+		stage.scale({ x: 1, y: 1 });
+		stage.position({ x: 0, y: 0 });
+		stage.batchDraw();
+		renderGrid();
+	}
 
 	// render() is async and awaits partway through (loading the map
 	// image), so Svelte's $effect dependency tracking — which only sees
@@ -94,7 +162,11 @@
 		pendingCells.clear();
 
 		const scene = room.scene;
-		if (!fogToolActive || room.you?.role !== 'gm' || !scene) return;
+		const active = fogToolActive && room.you?.role === 'gm' && !!scene;
+		// Painting and panning both start on left-drag, so only one can
+		// own the gesture at a time.
+		stage.draggable(!active);
+		if (!active) return;
 		const gridSize = scene.gridSize;
 		const sceneId = scene.id;
 
@@ -116,7 +188,9 @@
 	}
 
 	function paintAtPointer(gridSize: number) {
-		const pos = stage?.getPointerPosition();
+		// Pointer position adjusted for the stage's own pan/zoom, so
+		// painting still lands on the right cell after the camera moves.
+		const pos = stage?.getRelativePointerPosition();
 		if (!pos) return;
 		const cell = { x: Math.floor(pos.x / gridSize), y: Math.floor(pos.y / gridSize) };
 		const key = `${cell.x},${cell.y}`;
@@ -141,63 +215,105 @@
 		if (!stage) return;
 		const scene = room.scene;
 
+		const sceneId = scene?.id ?? null;
+		if (sceneId !== lastSceneId) {
+			lastSceneId = sceneId;
+			resetView();
+		}
+
 		if (!scene) {
-			stage.width(DEFAULT_SIZE);
-			stage.height(DEFAULT_SIZE);
 			mapLayer.destroyChildren();
+			gridLayer.destroyChildren();
 			fogLayer.destroyChildren();
 			tokenLayer.destroyChildren();
 			mapLayer.draw();
+			gridLayer.draw();
 			fogLayer.draw();
 			tokenLayer.draw();
 			return;
 		}
 
-		const width = scene.width || DEFAULT_SIZE;
-		const height = scene.height || DEFAULT_SIZE;
-		stage.width(width);
-		stage.height(height);
+		const width = scene.width || 0;
+		const height = scene.height || 0;
 
-		await renderMap(scene.mapAssetId, width, height, scene.gridSize);
+		await renderMap(scene.mapAssetId, width, height);
+		renderGrid();
 		renderFog(scene.gridSize, width, height);
 		renderTokens(scene.gridSize);
 	}
 
-	async function renderMap(
-		mapAssetId: string | null,
-		width: number,
-		height: number,
-		gridSize: number
-	) {
+	// The map image/background only covers the scene's defined bounds —
+	// that's "the map". Panning beyond it shows bare infinite grid.
+	async function renderMap(mapAssetId: string | null, width: number, height: number) {
 		mapLayer.destroyChildren();
 
-		if (mapAssetId) {
-			try {
-				const img = await loadImage(assetUrl(mapAssetId));
-				mapLayer.add(new Konva.Image({ image: img, width, height }));
-			} catch {
-				mapLayer.add(new Konva.Rect({ width, height, fill: '#3f3f46' }));
+		if (width > 0 && height > 0) {
+			if (mapAssetId) {
+				try {
+					const img = await loadImage(assetUrl(mapAssetId));
+					mapLayer.add(new Konva.Image({ image: img, width, height }));
+				} catch {
+					mapLayer.add(new Konva.Rect({ width, height, fill: '#3f3f46' }));
+				}
+			} else {
+				mapLayer.add(new Konva.Rect({ width, height, fill: '#e4e4e7' }));
 			}
-		} else {
-			mapLayer.add(new Konva.Rect({ width, height, fill: '#e4e4e7' }));
-		}
-
-		for (let x = 0; x <= width; x += gridSize) {
-			mapLayer.add(
-				new Konva.Line({ points: [x, 0, x, height], stroke: '#00000022', strokeWidth: 1 })
-			);
-		}
-		for (let y = 0; y <= height; y += gridSize) {
-			mapLayer.add(
-				new Konva.Line({ points: [0, y, width, y], stroke: '#00000022', strokeWidth: 1 })
-			);
 		}
 
 		mapLayer.batchDraw();
 	}
 
+	// Draws grid lines across whatever part of the infinite plane is
+	// currently visible, recomputed on every pan/zoom/resize — rather
+	// than once over a fixed scene size — so the grid never runs out.
+	function renderGrid() {
+		gridLayer.destroyChildren();
+
+		const gridSize = room.scene?.gridSize;
+		if (!stage || !gridSize) {
+			gridLayer.batchDraw();
+			return;
+		}
+
+		const scale = stage.scaleX();
+		const viewLeft = -stage.x() / scale;
+		const viewTop = -stage.y() / scale;
+		const viewRight = viewLeft + stage.width() / scale;
+		const viewBottom = viewTop + stage.height() / scale;
+
+		const startX = Math.floor(viewLeft / gridSize) * gridSize;
+		const startY = Math.floor(viewTop / gridSize) * gridSize;
+		// Constant on-screen thickness regardless of zoom level.
+		const strokeWidth = 1 / scale;
+
+		for (let x = startX; x <= viewRight; x += gridSize) {
+			gridLayer.add(
+				new Konva.Line({
+					points: [x, viewTop, x, viewBottom],
+					stroke: '#00000022',
+					strokeWidth
+				})
+			);
+		}
+		for (let y = startY; y <= viewBottom; y += gridSize) {
+			gridLayer.add(
+				new Konva.Line({
+					points: [viewLeft, y, viewRight, y],
+					stroke: '#00000022',
+					strokeWidth
+				})
+			);
+		}
+
+		gridLayer.batchDraw();
+	}
+
 	function renderFog(gridSize: number, width: number, height: number) {
 		fogLayer.destroyChildren();
+		if (width <= 0 || height <= 0) {
+			fogLayer.batchDraw();
+			return;
+		}
 
 		const isGM = room.you?.role === 'gm';
 		const cover = new Konva.Rect({
@@ -322,4 +438,7 @@
 	}
 </script>
 
-<div bind:this={container} class="inline-block overflow-auto rounded-md border"></div>
+<div
+	bind:this={container}
+	class="h-[70vh] min-h-[480px] w-full overflow-hidden rounded-md border bg-muted"
+></div>

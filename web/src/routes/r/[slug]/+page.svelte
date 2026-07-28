@@ -18,6 +18,7 @@
 
 	let session = $state<Session | null>(null);
 	let client = $state<RoomClient | null>(null);
+	let canvasRef: { resetView: () => void } | undefined = $state();
 
 	let mode = $state<'player' | 'gm'>('player');
 	let displayName = $state('');
@@ -136,7 +137,7 @@
 		</header>
 
 		<div class="flex flex-wrap items-start gap-4">
-			<div class="flex flex-col gap-2">
+			<div class="flex min-w-0 flex-1 flex-col gap-2">
 				{#if isGM}
 					<div class="flex flex-wrap gap-2">
 						<CreateSceneDialog
@@ -161,9 +162,14 @@
 					</div>
 				{/if}
 				{#if client.scene}
-					<GameCanvas room={client} {fogToolActive} />
+					<div class="flex justify-end">
+						<Button variant="outline" size="sm" onclick={() => canvasRef?.resetView()}>
+							Reset view
+						</Button>
+					</div>
+					<GameCanvas room={client} {fogToolActive} bind:this={canvasRef} />
 				{:else}
-					<Card.Root class="flex h-64 w-[800px] max-w-full items-center justify-center">
+					<Card.Root class="flex h-64 w-full items-center justify-center">
 						<p class="text-sm text-muted-foreground">
 							{isGM ? 'Create a scene to get started.' : 'Waiting for the GM to start a scene…'}
 						</p>

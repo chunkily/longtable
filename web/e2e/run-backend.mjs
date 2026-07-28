@@ -17,7 +17,10 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '..', '..');
 const dataDir = path.join(repoRoot, 'web', '.e2e-data');
-const binPath = path.join(dataDir, process.platform === 'win32' ? 'longtable-e2e.exe' : 'longtable-e2e');
+const binPath = path.join(
+	dataDir,
+	process.platform === 'win32' ? 'longtable-e2e.exe' : 'longtable-e2e'
+);
 
 mkdirSync(dataDir, { recursive: true });
 
@@ -31,7 +34,14 @@ if (build.status !== 0) {
 
 const server = spawn(
 	binPath,
-	['-addr', ':8080', '-db', path.join(dataDir, 'longtable.db'), '-assets', path.join(dataDir, 'assets')],
+	[
+		'-addr',
+		':8080',
+		'-db',
+		path.join(dataDir, 'longtable.db'),
+		'-assets',
+		path.join(dataDir, 'assets')
+	],
 	{ stdio: 'inherit' }
 );
 server.on('exit', (code) => process.exit(code ?? 0));
