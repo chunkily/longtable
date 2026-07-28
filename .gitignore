@@ -83,6 +83,7 @@ build/
 *.db
 *.db-wal
 *.db-shm
+/longtable-assets/
 
 # Next.js build output
 .next
