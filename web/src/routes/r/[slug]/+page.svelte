@@ -128,7 +128,7 @@
 		</Card.Root>
 	</div>
 {:else}
-	<div class="mx-auto flex max-w-7xl flex-col gap-4 p-6">
+	<div class="flex flex-col gap-4 p-6">
 		<header class="flex flex-wrap items-center gap-2">
 			<h1 class="text-2xl font-bold tracking-tight">{client.roomName || slug}</h1>
 			<Badge variant="outline">{client.you?.role}</Badge>
