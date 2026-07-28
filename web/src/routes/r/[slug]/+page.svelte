@@ -10,6 +10,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Badge } from '$lib/components/ui/badge';
 	import * as Card from '$lib/components/ui/card';
+	import ChevronUpIcon from '@lucide/svelte/icons/chevron-up';
 	import GameCanvas from '$lib/components/game-canvas.svelte';
 	import CreateSceneDialog from '$lib/components/create-scene-dialog.svelte';
 	import CreateTokenDialog from '$lib/components/create-token-dialog.svelte';
@@ -29,6 +30,10 @@
 
 	let chatText = $state('');
 	let fogToolActive = $state(false);
+	// Below the lg breakpoint the chat panel isn't shown inline — it's a
+	// bottom sheet toggled by the "Chat" bar, since there isn't room for
+	// canvas + chat side by side there (see viewport-layout discussion).
+	let mobileChatOpen = $state(false);
 
 	onMount(() => {
 		const existing = loadSession(slug);
@@ -128,7 +133,40 @@
 		</Card.Root>
 	</div>
 {:else}
-	<div class="flex flex-col gap-4 p-6">
+	{#snippet chatMessages(room: RoomClient, maxHeightClass: string)}
+		<ul class={['flex flex-col gap-2 overflow-y-auto', maxHeightClass]}>
+			{#each room.messages as msg (msg.id)}
+				<li
+					class={[
+						'rounded-md px-2 py-1 text-sm',
+						msg.kind === 'roll' && 'bg-accent text-accent-foreground'
+					]}
+				>
+					<strong>{msg.participantName}:</strong>
+					{#if msg.kind === 'roll'}
+						{msg.body} → <strong>{msg.rollResult}</strong>
+						<span class="text-xs text-muted-foreground">({msg.rollBreakdown})</span>
+					{:else}
+						{msg.body}
+					{/if}
+				</li>
+			{/each}
+		</ul>
+	{/snippet}
+
+	{#snippet chatForm()}
+		<form class="flex gap-2" onsubmit={handleSendChat}>
+			<Input
+				bind:value={chatText}
+				placeholder="Say something, or /roll 2d6+3"
+				autocomplete="off"
+				class="flex-1"
+			/>
+			<Button type="submit">Send</Button>
+		</form>
+	{/snippet}
+
+	<div class="flex flex-col gap-4 p-6 pb-16 lg:pb-6">
 		<header class="flex flex-wrap items-center gap-2">
 			<h1 class="text-2xl font-bold tracking-tight">{client.roomName || slug}</h1>
 			<Badge variant="outline">{client.you?.role}</Badge>
@@ -138,7 +176,7 @@
 			</span>
 		</header>
 
-		<div class="flex flex-wrap items-start gap-4">
+		<div class="flex flex-col gap-4 lg:flex-row lg:items-start">
 			<div class="flex min-w-0 flex-1 flex-col gap-2">
 				{#if isGM}
 					<div class="flex flex-wrap gap-2">
@@ -180,37 +218,29 @@
 				{/if}
 			</div>
 
-			<Card.Root class="w-full max-w-sm">
+			<Card.Root class="hidden w-full lg:flex lg:max-w-sm">
 				<Card.Content class="flex flex-col gap-3">
-					<ul class="flex max-h-96 flex-col gap-2 overflow-y-auto">
-						{#each client.messages as msg (msg.id)}
-							<li
-								class={[
-									'rounded-md px-2 py-1 text-sm',
-									msg.kind === 'roll' && 'bg-accent text-accent-foreground'
-								]}
-							>
-								<strong>{msg.participantName}:</strong>
-								{#if msg.kind === 'roll'}
-									{msg.body} → <strong>{msg.rollResult}</strong>
-									<span class="text-xs text-muted-foreground">({msg.rollBreakdown})</span>
-								{:else}
-									{msg.body}
-								{/if}
-							</li>
-						{/each}
-					</ul>
-					<form class="flex gap-2" onsubmit={handleSendChat}>
-						<Input
-							bind:value={chatText}
-							placeholder="Say something, or /roll 2d6+3"
-							autocomplete="off"
-							class="flex-1"
-						/>
-						<Button type="submit">Send</Button>
-					</form>
+					{@render chatMessages(client, 'max-h-96')}
+					{@render chatForm()}
 				</Card.Content>
 			</Card.Root>
 		</div>
+	</div>
+
+	<div class="fixed inset-x-0 bottom-0 lg:hidden">
+		{#if mobileChatOpen}
+			<div class="flex max-h-[60vh] flex-col gap-3 border-t bg-background p-4 shadow-lg">
+				{@render chatMessages(client, 'flex-1')}
+				{@render chatForm()}
+			</div>
+		{/if}
+		<button
+			type="button"
+			class="flex w-full items-center justify-center gap-2 border-t bg-background py-2 text-sm font-medium"
+			onclick={() => (mobileChatOpen = !mobileChatOpen)}
+		>
+			<ChevronUpIcon class={mobileChatOpen ? 'rotate-180' : ''} />
+			Chat
+		</button>
 	</div>
 {/if}
