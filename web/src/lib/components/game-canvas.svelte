@@ -7,7 +7,7 @@
 	// 'none' is plain pan/token-drag mode. Every other tool takes over
 	// the stage's pointer handling exclusively — only one can be active
 	// at a time, since they all interpret a left-drag differently.
-	export type Tool = 'none' | 'fog' | DrawingKind | 'ping';
+	export type Tool = 'none' | 'fog' | DrawingKind | 'ping' | 'eraser';
 
 	let {
 		room,
@@ -27,6 +27,11 @@
 	// while the pointer is held down.
 	const MIN_FREEHAND_SPACING = 3;
 	const PING_TWEEN_SECONDS = 1.4;
+	// Clickable width of a drawing's stroke while erasing, in world
+	// pixels. Strokes render 3px wide, which is a needle to hit with a
+	// mouse — let alone a fingertip — so the eraser's hit area is
+	// deliberately much fatter than the line it erases.
+	const ERASER_HIT_WIDTH = 16;
 
 	let container: HTMLDivElement;
 	let stage: Konva.Stage | undefined;
@@ -80,7 +85,9 @@
 		mapLayer = new Konva.Layer();
 		gridLayer = new Konva.Layer({ listening: false });
 		fogLayer = new Konva.Layer();
-		drawingLayer = new Konva.Layer({ listening: false });
+		// Listening, unlike the other decorative layers: the eraser hit-tests
+		// against this layer's shapes to find what was clicked.
+		drawingLayer = new Konva.Layer();
 		tokenLayer = new Konva.Layer();
 		pingLayer = new Konva.Layer({ listening: false });
 		previewLayer = new Konva.Layer({ listening: false });
@@ -172,8 +179,11 @@
 		return values.length;
 	}
 
+	// activeTool is tracked here too, not just by the handler effect
+	// below: tokens are only draggable in 'none' mode, so switching to
+	// any tool has to re-render them to take that away.
 	$effect(() => {
-		track(room.scene, room.tokens, room.fogCells, room.drawings, room.you);
+		track(room.scene, room.tokens, room.fogCells, room.drawings, room.you, activeTool);
 		render();
 	});
 
@@ -263,6 +273,17 @@
 					room.revealFog(sceneId, Array.from(pendingCells.values()));
 				}
 				pendingCells.clear();
+			});
+			return;
+		}
+
+		if (activeTool === 'eraser') {
+			stage.on('mousedown.tool touchstart.tool', () => {
+				const pointer = stage!.getPointerPosition();
+				if (!pointer) return;
+				const drawingId = drawingLayer.getIntersection(pointer)?.getAttr('drawingId');
+				const drawing = room.drawings.find((d) => d.id === drawingId);
+				if (drawing && canErase(drawing)) room.deleteDrawing(drawing.id);
 			});
 			return;
 		}
@@ -556,16 +577,42 @@
 	// Drawings are visible to everyone regardless of role — they're a
 	// shared communication tool, not game-hidden state — so they render
 	// above fog rather than being subject to it.
+	//
+	// Their shapes stay in the hit graph at all times, rather than only
+	// while the eraser is selected: whether a click can find a stroke
+	// then doesn't depend on a re-render having already run for the
+	// current tool. Tokens sit on a layer above this one and keep
+	// winning their own clicks regardless.
 	function renderDrawings() {
 		drawingLayer.destroyChildren();
 		for (const d of room.drawings) {
 			drawingLayer.add(shapeForDrawing(d));
 		}
-		drawingLayer.batchDraw();
+		// draw(), not batchDraw(): batching defers the hit graph to the
+		// next animation frame, and every re-render destroys and rebuilds
+		// these shapes — so an eraser click landing in that gap would
+		// hit-test against shapes that no longer exist and find nothing.
+		drawingLayer.draw();
+	}
+
+	// A GM can erase anything on the map; everyone else only what they
+	// drew themselves. A drawing with no recorded author belongs to
+	// nobody, so it isn't a Player's to erase. The server enforces this
+	// too — checking here just means clicking someone else's work does
+	// nothing, instead of coming back as an error toast.
+	function canErase(d: Drawing): boolean {
+		if (!room.you) return false;
+		if (room.you.role === 'gm') return true;
+		return d.createdByParticipantId === room.you.participantId;
 	}
 
 	function shapeForDrawing(d: Drawing): Konva.Shape {
-		const strokeProps = { stroke: d.color, strokeWidth: 3, listening: false };
+		const strokeProps = {
+			stroke: d.color,
+			strokeWidth: 3,
+			hitStrokeWidth: ERASER_HIT_WIDTH,
+			drawingId: d.id
+		};
 		switch (d.kind) {
 			case 'freehand':
 				return new Konva.Line({

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"errors"
 	"testing"
 	"time"
 )
@@ -178,6 +179,88 @@ func TestListDrawingsForScene_OrderedByCreation(t *testing.T) {
 	}
 	if len(drawings) != 2 || drawings[0].ID != first.ID || drawings[1].ID != second.ID {
 		t.Fatalf("drawings = %+v, want [%q, %q] in order", drawings, first.ID, second.ID)
+	}
+}
+
+func TestGetDrawing(t *testing.T) {
+	s := newTestStore(t)
+
+	room, _, err := s.CreateRoom("Room", "GM", "password")
+	if err != nil {
+		t.Fatalf("CreateRoom: %v", err)
+	}
+	player, err := s.JoinRoom(room.ID, "Bob")
+	if err != nil {
+		t.Fatalf("JoinRoom: %v", err)
+	}
+	scene, err := s.CreateScene(room.ID, "Scene", nil, 70, 10, 10)
+	if err != nil {
+		t.Fatalf("CreateScene: %v", err)
+	}
+	points := []Point{{X: 1, Y: 2}, {X: 3, Y: 4}}
+	created, err := s.CreateDrawing(scene.ID, DrawingKindLine, points, "#cc0000", &player.ID)
+	if err != nil {
+		t.Fatalf("CreateDrawing: %v", err)
+	}
+
+	got, err := s.GetDrawing(created.ID)
+	if err != nil {
+		t.Fatalf("GetDrawing: %v", err)
+	}
+	if got.SceneID != scene.ID {
+		t.Fatalf("SceneID = %q, want %q", got.SceneID, scene.ID)
+	}
+	if got.Kind != DrawingKindLine {
+		t.Fatalf("Kind = %q, want line", got.Kind)
+	}
+	if len(got.Points) != 2 || got.Points[0] != points[0] {
+		t.Fatalf("Points = %+v, want %+v", got.Points, points)
+	}
+	if got.CreatedByParticipantID == nil || *got.CreatedByParticipantID != player.ID {
+		t.Fatalf("CreatedByParticipantID = %v, want %q", got.CreatedByParticipantID, player.ID)
+	}
+
+	if _, err := s.GetDrawing("nope"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("GetDrawing(unknown) error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestDeleteDrawing(t *testing.T) {
+	s := newTestStore(t)
+
+	room, _, err := s.CreateRoom("Room", "GM", "password")
+	if err != nil {
+		t.Fatalf("CreateRoom: %v", err)
+	}
+	scene, err := s.CreateScene(room.ID, "Scene", nil, 70, 10, 10)
+	if err != nil {
+		t.Fatalf("CreateScene: %v", err)
+	}
+	keep, err := s.CreateDrawing(scene.ID, DrawingKindLine, []Point{{X: 0, Y: 0}, {X: 1, Y: 1}}, "#cc0000", nil)
+	if err != nil {
+		t.Fatalf("CreateDrawing: %v", err)
+	}
+	erase, err := s.CreateDrawing(scene.ID, DrawingKindRect, []Point{{X: 0, Y: 0}, {X: 2, Y: 2}}, "#008000", nil)
+	if err != nil {
+		t.Fatalf("CreateDrawing: %v", err)
+	}
+
+	if err := s.DeleteDrawing(erase.ID); err != nil {
+		t.Fatalf("DeleteDrawing: %v", err)
+	}
+
+	drawings, err := s.ListDrawingsForScene(scene.ID)
+	if err != nil {
+		t.Fatalf("ListDrawingsForScene: %v", err)
+	}
+	if len(drawings) != 1 || drawings[0].ID != keep.ID {
+		t.Fatalf("remaining drawings = %+v, want just %q", drawings, keep.ID)
+	}
+
+	// Two people can erase the same stroke at once; the loser of that
+	// race must not see a failure.
+	if err := s.DeleteDrawing(erase.ID); err != nil {
+		t.Fatalf("DeleteDrawing (already deleted): %v", err)
 	}
 }
 

@@ -208,6 +208,8 @@ func (h *Hub) handleMessage(ctx context.Context, c *client, data []byte) {
 		h.handleChatSend(ctx, c, env.Payload)
 	case "draw.create":
 		h.handleDrawCreate(ctx, c, env.Payload)
+	case "draw.delete":
+		h.handleDrawDelete(ctx, c, env.Payload)
 	case "ping":
 		h.handlePing(ctx, c, env.Payload)
 	default:
@@ -472,6 +474,53 @@ func (h *Hub) handleDrawCreate(ctx context.Context, c *client, raw json.RawMessa
 	}
 
 	h.broadcast(ctx, c.roomID, "drawing.created", drawingPayload(drawing))
+}
+
+type drawDeleteRequest struct {
+	DrawingID string `json:"drawingId"`
+}
+
+// handleDrawDelete erases a drawing for everyone. A GM can erase
+// anything on the map, including Players' work, since they're the one
+// moderating the shared canvas; a Player can only erase what they drew
+// themselves. A drawing with no recorded author (drawn before
+// authorship was tracked, or by someone since removed from the room)
+// belongs to nobody, so only a GM can clear it.
+func (h *Hub) handleDrawDelete(ctx context.Context, c *client, raw json.RawMessage) {
+	var req drawDeleteRequest
+	if err := decodePayload(raw, &req); err != nil || req.DrawingID == "" {
+		h.sendError(ctx, c, "invalid draw.delete payload")
+		return
+	}
+
+	drawing, err := h.store.GetDrawing(req.DrawingID)
+	if err != nil {
+		if !errors.Is(err, store.ErrNotFound) {
+			slog.Error("ws: lookup drawing failed", "error", err)
+		}
+		h.sendError(ctx, c, "drawing not found")
+		return
+	}
+	// Scoped through the drawing's own scene rather than the requested
+	// one, so a client can't reach into another room by ID.
+	if !h.requireSceneInRoom(ctx, c, drawing.SceneID) {
+		return
+	}
+
+	if c.participant.Role != store.RoleGM {
+		if drawing.CreatedByParticipantID == nil || *drawing.CreatedByParticipantID != c.participant.ID {
+			h.sendError(ctx, c, "you can only erase drawings you created")
+			return
+		}
+	}
+
+	if err := h.store.DeleteDrawing(drawing.ID); err != nil {
+		slog.Error("ws: delete drawing failed", "error", err)
+		h.sendError(ctx, c, "failed to erase drawing")
+		return
+	}
+
+	h.broadcast(ctx, c.roomID, "drawing.deleted", map[string]any{"drawingId": drawing.ID})
 }
 
 type pingRequest struct {

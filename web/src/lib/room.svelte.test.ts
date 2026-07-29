@@ -247,6 +247,52 @@ describe('RoomClient', () => {
 		expect(client.drawings.map((d) => d.createdByParticipantId)).toEqual(['p2', null, 'p1']);
 	});
 
+	it('removes a drawing on drawing.deleted', () => {
+		const { client, socket } = connectedClient();
+		socket.emit({
+			type: 'state.sync',
+			payload: {
+				room: { slug: 'abc123', name: 'Room' },
+				you: { participantId: 'p1', displayName: 'A', role: 'gm' },
+				drawings: [
+					{
+						id: 'd1',
+						sceneId: 's1',
+						kind: 'line',
+						points: [],
+						color: '#cc0000',
+						createdByParticipantId: 'p1'
+					},
+					{
+						id: 'd2',
+						sceneId: 's1',
+						kind: 'rect',
+						points: [],
+						color: '#0033cc',
+						createdByParticipantId: 'p2'
+					}
+				]
+			}
+		});
+
+		socket.emit({ type: 'drawing.deleted', payload: { drawingId: 'd1' } });
+		expect(client.drawings.map((d) => d.id)).toEqual(['d2']);
+
+		// An id that isn't on screen (already erased, or from a scene the
+		// client isn't showing) leaves the list alone.
+		socket.emit({ type: 'drawing.deleted', payload: { drawingId: 'd1' } });
+		expect(client.drawings.map((d) => d.id)).toEqual(['d2']);
+	});
+
+	it('sends draw.delete with the drawing id', () => {
+		const { client, socket } = connectedClient();
+		client.deleteDrawing('d1');
+		expect(JSON.parse(socket.sent[0])).toEqual({
+			type: 'draw.delete',
+			payload: { drawingId: 'd1' }
+		});
+	});
+
 	it('resets drawings on scene.activated', () => {
 		const { client, socket } = connectedClient();
 		socket.emit({

@@ -355,6 +355,194 @@ func TestStateSync_IncludesDrawings(t *testing.T) {
 	}
 }
 
+// drawTestRoom sets up a room with a GM, a Player, and a scene — the
+// shared fixture for the erase-permission tests below.
+type drawTestRoom struct {
+	ts     *testServer
+	room   store.Room
+	gm     store.Participant
+	player store.Participant
+	scene  store.Scene
+}
+
+func newDrawTestRoom(t *testing.T) drawTestRoom {
+	t.Helper()
+
+	ts := newTestServer(t)
+	room, gm, err := ts.store.CreateRoom("Room", "GM", "password")
+	if err != nil {
+		t.Fatalf("CreateRoom: %v", err)
+	}
+	player, err := ts.store.JoinRoom(room.ID, "Bob")
+	if err != nil {
+		t.Fatalf("JoinRoom: %v", err)
+	}
+	scene, err := ts.store.CreateScene(room.ID, "Scene", nil, 70, 10, 10)
+	if err != nil {
+		t.Fatalf("CreateScene: %v", err)
+	}
+	return drawTestRoom{ts: ts, room: room, gm: gm, player: player, scene: scene}
+}
+
+func (r drawTestRoom) drawing(t *testing.T, author *string) store.Drawing {
+	t.Helper()
+
+	d, err := r.ts.store.CreateDrawing(r.scene.ID, store.DrawingKindLine,
+		[]store.Point{{X: 0, Y: 0}, {X: 1, Y: 1}}, "#cc0000", author)
+	if err != nil {
+		t.Fatalf("CreateDrawing: %v", err)
+	}
+	return d
+}
+
+func (r drawTestRoom) drawingCount(t *testing.T) int {
+	t.Helper()
+
+	drawings, err := r.ts.store.ListDrawingsForScene(r.scene.ID)
+	if err != nil {
+		t.Fatalf("ListDrawingsForScene: %v", err)
+	}
+	return len(drawings)
+}
+
+func TestDrawDelete_GMErasesAnyonesDrawing(t *testing.T) {
+	r := newDrawTestRoom(t)
+	drawing := r.drawing(t, &r.player.ID)
+
+	gmClient := r.ts.connect(t, r.room.Slug, r.gm.SessionToken)
+	gmClient.readEnvelope(t) // state.sync
+	playerClient := r.ts.connect(t, r.room.Slug, r.player.SessionToken)
+	playerClient.readEnvelope(t) // state.sync
+
+	gmClient.send(t, "draw.delete", map[string]any{"drawingId": drawing.ID})
+
+	env := gmClient.readEnvelope(t)
+	if env.Type != "drawing.deleted" {
+		t.Fatalf("type = %q, want drawing.deleted", env.Type)
+	}
+	var payload struct {
+		DrawingID string `json:"drawingId"`
+	}
+	if err := json.Unmarshal(env.Payload, &payload); err != nil {
+		t.Fatalf("unmarshal drawing.deleted payload: %v", err)
+	}
+	if payload.DrawingID != drawing.ID {
+		t.Fatalf("drawingId = %q, want %q", payload.DrawingID, drawing.ID)
+	}
+
+	// Everyone in the room sees it go, and it stays gone server-side.
+	if env := playerClient.readEnvelope(t); env.Type != "drawing.deleted" {
+		t.Fatalf("player did not receive drawing.deleted, got type = %q", env.Type)
+	}
+	if n := r.drawingCount(t); n != 0 {
+		t.Fatalf("len(drawings) = %d, want 0", n)
+	}
+}
+
+func TestDrawDelete_PlayerErasesOwnDrawing(t *testing.T) {
+	r := newDrawTestRoom(t)
+	drawing := r.drawing(t, &r.player.ID)
+
+	client := r.ts.connect(t, r.room.Slug, r.player.SessionToken)
+	client.readEnvelope(t) // state.sync
+
+	client.send(t, "draw.delete", map[string]any{"drawingId": drawing.ID})
+
+	if env := client.readEnvelope(t); env.Type != "drawing.deleted" {
+		t.Fatalf("type = %q, want drawing.deleted", env.Type)
+	}
+	if n := r.drawingCount(t); n != 0 {
+		t.Fatalf("len(drawings) = %d, want 0", n)
+	}
+}
+
+func TestDrawDelete_PlayerCannotEraseSomeoneElsesDrawing(t *testing.T) {
+	r := newDrawTestRoom(t)
+	gmParticipant, err := r.ts.store.GetParticipantByToken(r.room.ID, r.gm.SessionToken)
+	if err != nil {
+		t.Fatalf("GetParticipantByToken: %v", err)
+	}
+	drawing := r.drawing(t, &gmParticipant.ID)
+
+	client := r.ts.connect(t, r.room.Slug, r.player.SessionToken)
+	client.readEnvelope(t) // state.sync
+
+	client.send(t, "draw.delete", map[string]any{"drawingId": drawing.ID})
+
+	if env := client.readEnvelope(t); env.Type != "error" {
+		t.Fatalf("type = %q, want error", env.Type)
+	}
+	if n := r.drawingCount(t); n != 1 {
+		t.Fatalf("len(drawings) = %d, want 1 (the GM's drawing must survive)", n)
+	}
+}
+
+// A drawing with no recorded author belongs to nobody, so a Player
+// can't claim it — only a GM can clear it.
+func TestDrawDelete_PlayerCannotEraseUnattributedDrawing(t *testing.T) {
+	r := newDrawTestRoom(t)
+	drawing := r.drawing(t, nil)
+
+	client := r.ts.connect(t, r.room.Slug, r.player.SessionToken)
+	client.readEnvelope(t) // state.sync
+
+	client.send(t, "draw.delete", map[string]any{"drawingId": drawing.ID})
+
+	if env := client.readEnvelope(t); env.Type != "error" {
+		t.Fatalf("type = %q, want error", env.Type)
+	}
+	if n := r.drawingCount(t); n != 1 {
+		t.Fatalf("len(drawings) = %d, want 1", n)
+	}
+
+	gmClient := r.ts.connect(t, r.room.Slug, r.gm.SessionToken)
+	gmClient.readEnvelope(t) // state.sync
+	gmClient.send(t, "draw.delete", map[string]any{"drawingId": drawing.ID})
+
+	if env := gmClient.readEnvelope(t); env.Type != "drawing.deleted" {
+		t.Fatalf("GM erase of an unattributed drawing: type = %q, want drawing.deleted", env.Type)
+	}
+	if n := r.drawingCount(t); n != 0 {
+		t.Fatalf("len(drawings) = %d, want 0", n)
+	}
+}
+
+func TestDrawDelete_RejectsDrawingFromAnotherRoom(t *testing.T) {
+	r := newDrawTestRoom(t)
+	drawing := r.drawing(t, nil)
+
+	// A GM of a different room can't reach this one's drawings by ID.
+	otherRoom, otherGM, err := r.ts.store.CreateRoom("Room B", "GM", "password")
+	if err != nil {
+		t.Fatalf("CreateRoom: %v", err)
+	}
+
+	client := r.ts.connect(t, otherRoom.Slug, otherGM.SessionToken)
+	client.readEnvelope(t) // state.sync
+
+	client.send(t, "draw.delete", map[string]any{"drawingId": drawing.ID})
+
+	if env := client.readEnvelope(t); env.Type != "error" {
+		t.Fatalf("type = %q, want error", env.Type)
+	}
+	if n := r.drawingCount(t); n != 1 {
+		t.Fatalf("len(drawings) = %d, want 1", n)
+	}
+}
+
+func TestDrawDelete_RejectsUnknownDrawing(t *testing.T) {
+	r := newDrawTestRoom(t)
+
+	client := r.ts.connect(t, r.room.Slug, r.gm.SessionToken)
+	client.readEnvelope(t) // state.sync
+
+	client.send(t, "draw.delete", map[string]any{"drawingId": "nope"})
+
+	if env := client.readEnvelope(t); env.Type != "error" {
+		t.Fatalf("type = %q, want error", env.Type)
+	}
+}
+
 func TestPing_BroadcastsWithoutPersisting(t *testing.T) {
 	ts := newTestServer(t)
 	room, gm, err := ts.store.CreateRoom("Room", "GM", "password")

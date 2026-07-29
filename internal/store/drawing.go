@@ -1,7 +1,9 @@
 package store
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -69,6 +71,37 @@ func (s *Store) CreateDrawing(sceneID string, kind DrawingKind, points []Point, 
 		return Drawing{}, err
 	}
 	return d, nil
+}
+
+// GetDrawing loads a single drawing by ID — the WS hub needs its scene
+// and author before it can decide whether the caller is allowed to
+// erase it.
+func (s *Store) GetDrawing(id string) (Drawing, error) {
+	var d Drawing
+	var kind, pointsJSON string
+	err := s.db.QueryRow(
+		`SELECT id, scene_id, kind, points, color, created_by_participant_id, created_at
+		 FROM drawing WHERE id = ?`, id,
+	).Scan(&d.ID, &d.SceneID, &kind, &pointsJSON, &d.Color, &d.CreatedByParticipantID, &d.CreatedAt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Drawing{}, ErrNotFound
+		}
+		return Drawing{}, err
+	}
+	d.Kind = DrawingKind(kind)
+	if err := json.Unmarshal([]byte(pointsJSON), &d.Points); err != nil {
+		return Drawing{}, err
+	}
+	return d, nil
+}
+
+// DeleteDrawing removes a drawing permanently. Deleting one that's
+// already gone is not an error — two people can erase the same stroke
+// at the same time, and the second one shouldn't fail.
+func (s *Store) DeleteDrawing(id string) error {
+	_, err := s.db.Exec(`DELETE FROM drawing WHERE id = ?`, id)
+	return err
 }
 
 // ListDrawingsForScene returns a scene's drawings in creation order, so

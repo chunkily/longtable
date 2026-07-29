@@ -115,6 +115,10 @@ interface SceneActivatedPayload {
 	drawings?: Drawing[];
 }
 
+interface DrawingDeletedPayload {
+	drawingId: string;
+}
+
 interface PingPayload {
 	sceneId: string;
 	x: number;
@@ -221,6 +225,13 @@ export class RoomClient {
 		this.send('draw.create', { sceneId, kind, points, color });
 	}
 
+	// The server decides whether this is allowed (a GM erases anything,
+	// a Player only their own) and answers with drawing.deleted, so the
+	// drawing stays on screen until it's actually gone server-side.
+	deleteDrawing(drawingId: string) {
+		this.send('draw.delete', { drawingId });
+	}
+
 	sendPing(sceneId: string, x: number, y: number) {
 		this.send('ping', { sceneId, x, y });
 	}
@@ -276,6 +287,12 @@ export class RoomClient {
 			case 'drawing.created':
 				this.drawings = [...this.drawings, env.payload as Drawing];
 				break;
+
+			case 'drawing.deleted': {
+				const payload = env.payload as DrawingDeletedPayload;
+				this.drawings = this.drawings.filter((d) => d.id !== payload.drawingId);
+				break;
+			}
 
 			case 'ping': {
 				const payload = env.payload as PingPayload;

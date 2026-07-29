@@ -31,9 +31,11 @@
 	let chatText = $state('');
 
 	// The map toolbar: 'none' is plain pan/token-drag mode. Fog stays
-	// GM-only (gated in the template below); drawing and pinging are
-	// open to everyone, since they're meant as a shared pointer/annotation
-	// tool rather than GM-only map control.
+	// GM-only (gated in the template below); drawing, pinging, and
+	// erasing are open to everyone, since they're meant as a shared
+	// pointer/annotation tool rather than GM-only map control. The
+	// eraser is offered to everyone but reaches different drawings per
+	// role: a GM can erase anyone's, a Player only their own.
 	let activeTool = $state<Tool>('none');
 	const STROKE_COLORS = [
 		{ label: 'Black', value: '#000000' },
@@ -255,6 +257,16 @@
 								onclick={() => selectTool('ping')}
 							>
 								Ping
+							</Button>
+							<Button
+								variant={activeTool === 'eraser' ? 'default' : 'outline'}
+								size="sm"
+								title={isGM
+									? 'Click a drawing to erase it'
+									: 'Click one of your own drawings to erase it'}
+								onclick={() => selectTool('eraser')}
+							>
+								Erase
 							</Button>
 							<div class="flex items-center gap-1 px-1">
 								{#each STROKE_COLORS as opt (opt.value)}
