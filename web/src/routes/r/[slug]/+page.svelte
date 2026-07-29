@@ -14,6 +14,15 @@
 	import GameCanvas, { type Tool } from '$lib/components/game-canvas.svelte';
 	import CreateSceneDialog from '$lib/components/create-scene-dialog.svelte';
 	import CreateTokenDialog from '$lib/components/create-token-dialog.svelte';
+	import Pen from '@lucide/svelte/icons/pen';
+	import Slash from '@lucide/svelte/icons/slash';
+	import RectangleHorizontal from '@lucide/svelte/icons/rectangle-horizontal';
+	import Circle from '@lucide/svelte/icons/circle';
+	import MapPin from '@lucide/svelte/icons/map-pin';
+	import Eraser from '@lucide/svelte/icons/eraser';
+	import Undo from '@lucide/svelte/icons/undo';
+	import Redo from '@lucide/svelte/icons/redo';
+	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 
 	const slug = $derived(page.params.slug ?? '');
 
@@ -254,36 +263,41 @@
 								variant={activeTool === 'freehand' ? 'default' : 'outline'}
 								size="sm"
 								onclick={() => selectTool('freehand')}
+								title="Freehand drawing"
 							>
-								Freehand
+								<Pen class="h-4 w-4" />
 							</Button>
 							<Button
 								variant={activeTool === 'line' ? 'default' : 'outline'}
 								size="sm"
 								onclick={() => selectTool('line')}
+								title="Straight line drawing"
 							>
-								Line
+								<Slash class="h-4 w-4" />
 							</Button>
 							<Button
 								variant={activeTool === 'rect' ? 'default' : 'outline'}
 								size="sm"
 								onclick={() => selectTool('rect')}
+								title="Rectangle drawing"
 							>
-								Rectangle
+								<RectangleHorizontal class="h-4 w-4" />
 							</Button>
 							<Button
 								variant={activeTool === 'ellipse' ? 'default' : 'outline'}
 								size="sm"
 								onclick={() => selectTool('ellipse')}
+								title="Ellipse drawing"
 							>
-								Ellipse
+								<Circle class="h-4 w-4" />
 							</Button>
 							<Button
 								variant={activeTool === 'ping' ? 'default' : 'outline'}
 								size="sm"
 								onclick={() => selectTool('ping')}
+								title="Ping the map"
 							>
-								Ping
+								<MapPin class="h-4 w-4" />
 							</Button>
 							<Button
 								variant={activeTool === 'eraser' ? 'default' : 'outline'}
@@ -293,7 +307,7 @@
 									: 'Click one of your own drawings to erase it'}
 								onclick={() => selectTool('eraser')}
 							>
-								Erase
+								<Eraser class="h-4 w-4" />
 							</Button>
 							<div class="flex items-center gap-1 px-1">
 								{#each STROKE_COLORS as opt (opt.value)}
@@ -319,7 +333,7 @@
 								title="Undo your last drawing or erase (Ctrl+Z)"
 								onclick={() => client?.undo()}
 							>
-								Undo
+								<Undo class="h-4 w-4" />
 							</Button>
 							<Button
 								variant="outline"
@@ -328,10 +342,15 @@
 								title="Redo (Ctrl+Shift+Z)"
 								onclick={() => client?.redo()}
 							>
-								Redo
+								<Redo class="h-4 w-4" />
 							</Button>
-							<Button variant="outline" size="sm" onclick={() => canvasRef?.resetView()}>
-								Reset view
+							<Button
+								variant="outline"
+								size="sm"
+								onclick={() => canvasRef?.resetView()}
+								title="Reset view"
+							>
+								<RefreshCw class="h-4 w-4" />
 							</Button>
 						</div>
 					</div>
