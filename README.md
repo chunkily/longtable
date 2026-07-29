@@ -1,10 +1,11 @@
 # Longtable
 
-Open source virtual tabletop (VTT) for Dungeons and Dragons.
+A simple virtual tabletop (VTT) for playing Dungeons and Dragons online — for hobbyist groups
+who want a way to run their game digitally without paying for a subscription or software
+licenses using hardware they already own.
 
-Self-hosted: the GM runs a single Go binary (with the frontend and an
-embedded SQLite database baked in) and players connect over the browser.
-No external services, no separate database to install.
+Longtable runs as a single program that one person in the group (usually the GM) downloads and
+starts up on their own computer; everyone else just opens it in their web browser to join.
 
 ## Architecture
 
