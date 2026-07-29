@@ -16,6 +16,7 @@ import (
 	"sync"
 
 	"github.com/coder/websocket"
+	"github.com/google/uuid"
 
 	"longtable/internal/dice"
 	"longtable/internal/store"
@@ -178,6 +179,18 @@ func (h *Hub) sendError(ctx context.Context, c *client, message string) {
 	h.send(ctx, c, "error", map[string]string{"message": message})
 }
 
+// sendDrawingError is sendError for a failure the client can attribute
+// to one drawing it has already rendered optimistically, so it knows
+// exactly which stroke to take back. drawingID may be empty, for a
+// client that let the server assign the id and so has nothing pending.
+func (h *Hub) sendDrawingError(ctx context.Context, c *client, drawingID, message string) {
+	if drawingID == "" {
+		h.sendError(ctx, c, message)
+		return
+	}
+	h.send(ctx, c, "error", map[string]string{"message": message, "drawingId": drawingID})
+}
+
 func marshalEnvelope(eventType string, payload any) ([]byte, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -225,18 +238,26 @@ func (h *Hub) requireGM(ctx context.Context, c *client) bool {
 	return true
 }
 
-// requireSceneInRoom confirms sceneID belongs to c's room before a
-// command is allowed to touch it.
-func (h *Hub) requireSceneInRoom(ctx context.Context, c *client, sceneID string) bool {
+// sceneInRoom reports whether sceneID belongs to c's room — the check
+// standing between a command and someone else's room. A scene that
+// doesn't exist is not in the room either, so both answer false and
+// callers report them identically rather than confirming which of the
+// two it was.
+func (h *Hub) sceneInRoom(c *client, sceneID string) bool {
 	roomID, err := h.store.SceneRoomID(sceneID)
 	if err != nil {
 		if !errors.Is(err, store.ErrNotFound) {
 			slog.Error("ws: lookup scene room failed", "error", err)
 		}
-		h.sendError(ctx, c, "scene not found")
 		return false
 	}
-	if roomID != c.roomID {
+	return roomID == c.roomID
+}
+
+// requireSceneInRoom is sceneInRoom plus the error reply, for commands
+// with nothing of their own to name in the failure.
+func (h *Hub) requireSceneInRoom(ctx context.Context, c *client, sceneID string) bool {
+	if !h.sceneInRoom(c, sceneID) {
 		h.sendError(ctx, c, "scene not found")
 		return false
 	}
@@ -423,10 +444,14 @@ var drawingKinds = map[string]store.DrawingKind{
 const defaultDrawingColor = "#cc0000"
 
 type drawCreateRequest struct {
-	SceneID string        `json:"sceneId"`
-	Kind    string        `json:"kind"`
-	Points  []store.Point `json:"points"`
-	Color   string        `json:"color"`
+	// DrawingID is chosen by the client, which has already drawn the
+	// stroke under it rather than waiting for this round trip. Optional:
+	// a client that doesn't care gets a server-generated one.
+	DrawingID string        `json:"drawingId"`
+	SceneID   string        `json:"sceneId"`
+	Kind      string        `json:"kind"`
+	Points    []store.Point `json:"points"`
+	Color     string        `json:"color"`
 }
 
 // handleDrawCreate persists a map annotation. Unlike token/scene
@@ -438,13 +463,21 @@ func (h *Hub) handleDrawCreate(ctx context.Context, c *client, raw json.RawMessa
 		h.sendError(ctx, c, "invalid draw.create payload")
 		return
 	}
-	if !h.requireSceneInRoom(ctx, c, req.SceneID) {
+	// From here on the client knows which stroke it asked for, so every
+	// rejection names it — that's what lets an optimistic client take
+	// the failed one back off the map again.
+	if req.DrawingID != "" && !isCanonicalUUID(req.DrawingID) {
+		h.sendDrawingError(ctx, c, req.DrawingID, "drawingId must be a canonical UUID")
+		return
+	}
+	if !h.sceneInRoom(c, req.SceneID) {
+		h.sendDrawingError(ctx, c, req.DrawingID, "scene not found")
 		return
 	}
 
 	kind, ok := drawingKinds[req.Kind]
 	if !ok {
-		h.sendError(ctx, c, fmt.Sprintf("unknown drawing kind %q", req.Kind))
+		h.sendDrawingError(ctx, c, req.DrawingID, fmt.Sprintf("unknown drawing kind %q", req.Kind))
 		return
 	}
 	// Freehand strokes can have any number of points; every other kind
@@ -453,7 +486,7 @@ func (h *Hub) handleDrawCreate(ctx context.Context, c *client, raw json.RawMessa
 	wantPoints := 2
 	if (kind == store.DrawingKindFreehand && len(req.Points) < wantPoints) ||
 		(kind != store.DrawingKindFreehand && len(req.Points) != wantPoints) {
-		h.sendError(ctx, c, "invalid number of points for drawing kind")
+		h.sendDrawingError(ctx, c, req.DrawingID, "invalid number of points for drawing kind")
 		return
 	}
 
@@ -466,14 +499,30 @@ func (h *Hub) handleDrawCreate(ctx context.Context, c *client, raw json.RawMessa
 	// the payload — a client can't claim to have drawn something as
 	// someone else.
 	participantID := c.participant.ID
-	drawing, err := h.store.CreateDrawing(req.SceneID, kind, req.Points, color, &participantID)
+	drawing, err := h.store.CreateDrawing(store.Drawing{
+		ID:                     req.DrawingID,
+		SceneID:                req.SceneID,
+		Kind:                   kind,
+		Points:                 req.Points,
+		Color:                  color,
+		CreatedByParticipantID: &participantID,
+	})
 	if err != nil {
 		slog.Error("ws: create drawing failed", "error", err)
-		h.sendError(ctx, c, "failed to create drawing")
+		h.sendDrawingError(ctx, c, req.DrawingID, "failed to create drawing")
 		return
 	}
 
 	h.broadcast(ctx, c.roomID, "drawing.created", drawingPayload(drawing))
+}
+
+// isCanonicalUUID accepts only the lowercase hyphenated form, so the id
+// echoed back to the client is byte-identical to the one it sent and
+// matches the stroke it already has on screen. uuid.Parse alone is too
+// lenient for that — it also takes braced and URN spellings.
+func isCanonicalUUID(s string) bool {
+	parsed, err := uuid.Parse(s)
+	return err == nil && parsed.String() == s
 }
 
 type drawDeleteRequest struct {
@@ -493,30 +542,33 @@ func (h *Hub) handleDrawDelete(ctx context.Context, c *client, raw json.RawMessa
 		return
 	}
 
+	// As with draw.create, a rejection names the drawing so a client that
+	// has already taken the stroke off its own map can put it back.
 	drawing, err := h.store.GetDrawing(req.DrawingID)
 	if err != nil {
 		if !errors.Is(err, store.ErrNotFound) {
 			slog.Error("ws: lookup drawing failed", "error", err)
 		}
-		h.sendError(ctx, c, "drawing not found")
+		h.sendDrawingError(ctx, c, req.DrawingID, "drawing not found")
 		return
 	}
 	// Scoped through the drawing's own scene rather than the requested
 	// one, so a client can't reach into another room by ID.
-	if !h.requireSceneInRoom(ctx, c, drawing.SceneID) {
+	if !h.sceneInRoom(c, drawing.SceneID) {
+		h.sendDrawingError(ctx, c, req.DrawingID, "drawing not found")
 		return
 	}
 
 	if c.participant.Role != store.RoleGM {
 		if drawing.CreatedByParticipantID == nil || *drawing.CreatedByParticipantID != c.participant.ID {
-			h.sendError(ctx, c, "you can only erase drawings you created")
+			h.sendDrawingError(ctx, c, req.DrawingID, "you can only erase drawings you created")
 			return
 		}
 	}
 
 	if err := h.store.DeleteDrawing(drawing.ID); err != nil {
 		slog.Error("ws: delete drawing failed", "error", err)
-		h.sendError(ctx, c, "failed to erase drawing")
+		h.sendDrawingError(ctx, c, req.DrawingID, "failed to erase drawing")
 		return
 	}
 

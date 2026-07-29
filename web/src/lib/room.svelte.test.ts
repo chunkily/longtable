@@ -286,11 +286,25 @@ describe('RoomClient', () => {
 
 	it('sends draw.delete with the drawing id', () => {
 		const { client, socket } = connectedClient();
+		socket.emit({
+			type: 'state.sync',
+			payload: {
+				room: { slug: 'abc123', name: 'Room' },
+				you: { participantId: 'p1', displayName: 'A', role: 'gm' },
+				drawings: [{ id: 'd1', sceneId: 's1', kind: 'line', points: [], color: '#cc0000' }]
+			}
+		});
+
 		client.deleteDrawing('d1');
 		expect(JSON.parse(socket.sent[0])).toEqual({
 			type: 'draw.delete',
 			payload: { drawingId: 'd1' }
 		});
+
+		// Nothing to erase, nothing to send: without a local copy there
+		// would be nothing to put back if the server refused.
+		client.deleteDrawing('unknown');
+		expect(socket.sent).toHaveLength(1);
 	});
 
 	it('resets drawings on scene.activated', () => {
@@ -314,17 +328,156 @@ describe('RoomClient', () => {
 		expect(client.drawings.map((d) => d.id)).toEqual(['d3']);
 	});
 
-	it('sends draw.create with sceneId, kind, points, and color', () => {
+	it('sends draw.create with a generated id, sceneId, kind, points, and color', () => {
 		const { client, socket } = connectedClient();
 		const points = [
 			{ x: 1, y: 2 },
 			{ x: 3, y: 4 }
 		];
 		client.createDrawing('scene1', 'line', points, '#cc0000');
-		expect(JSON.parse(socket.sent[0])).toEqual({
-			type: 'draw.create',
-			payload: { sceneId: 'scene1', kind: 'line', points, color: '#cc0000' }
+
+		const sent = JSON.parse(socket.sent[0]);
+		expect(sent.type).toBe('draw.create');
+		expect(sent.payload).toMatchObject({
+			sceneId: 'scene1',
+			kind: 'line',
+			points,
+			color: '#cc0000'
 		});
+		expect(sent.payload.drawingId).toMatch(
+			/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+		);
+	});
+
+	it('renders a new drawing immediately, then reconciles the echo by id', () => {
+		const { client, socket } = connectedClient();
+		socket.emit({
+			type: 'state.sync',
+			payload: {
+				room: { slug: 'abc123', name: 'Room' },
+				you: { participantId: 'p1', displayName: 'A', role: 'gm' }
+			}
+		});
+
+		client.createDrawing('s1', 'line', [{ x: 0, y: 0 }], '#cc0000');
+		expect(client.drawings).toHaveLength(1);
+		// Claimed locally, so the eraser treats it as yours before the
+		// server has said anything.
+		expect(client.drawings[0].createdByParticipantId).toBe('p1');
+
+		const { drawingId } = JSON.parse(socket.sent[0]).payload;
+		socket.emit({
+			type: 'drawing.created',
+			payload: {
+				id: drawingId,
+				sceneId: 's1',
+				kind: 'line',
+				points: [{ x: 0, y: 0 }],
+				color: '#cc0000',
+				createdByParticipantId: 'p1'
+			}
+		});
+
+		// The echo replaces the local copy rather than doubling it up.
+		expect(client.drawings.map((d) => d.id)).toEqual([drawingId]);
+	});
+
+	it('takes back an optimistic drawing the server rejects', () => {
+		const { client, socket } = connectedClient();
+		client.createDrawing('s1', 'line', [{ x: 0, y: 0 }], '#cc0000');
+		const { drawingId } = JSON.parse(socket.sent[0]).payload;
+		expect(client.drawings).toHaveLength(1);
+
+		socket.emit({
+			type: 'error',
+			payload: { message: 'unknown drawing kind', drawingId }
+		});
+
+		expect(client.drawings).toHaveLength(0);
+		expect(client.error).toBe('unknown drawing kind');
+	});
+
+	it('does not render a drawing it could not send', () => {
+		const { client, socket } = connectedClient();
+		socket.readyState = 0; // still connecting
+
+		client.createDrawing('s1', 'line', [{ x: 0, y: 0 }], '#cc0000');
+
+		// Nothing went out, so nothing may be shown — no echo is coming to
+		// confirm or reject it.
+		expect(socket.sent).toHaveLength(0);
+		expect(client.drawings).toHaveLength(0);
+	});
+
+	it('erases immediately and puts the drawing back if the server refuses', () => {
+		const { client, socket } = connectedClient();
+		const drawings = [
+			{ id: 'd1', sceneId: 's1', kind: 'line', points: [], color: '#cc0000' },
+			{ id: 'd2', sceneId: 's1', kind: 'rect', points: [], color: '#0033cc' },
+			{ id: 'd3', sceneId: 's1', kind: 'line', points: [], color: '#008000' }
+		];
+		socket.emit({
+			type: 'state.sync',
+			payload: {
+				room: { slug: 'abc123', name: 'Room' },
+				you: { participantId: 'p1', displayName: 'A', role: 'player' },
+				drawings
+			}
+		});
+
+		client.deleteDrawing('d2');
+		expect(client.drawings.map((d) => d.id)).toEqual(['d1', 'd3']);
+
+		socket.emit({
+			type: 'error',
+			payload: { message: 'you can only erase drawings you created', drawingId: 'd2' }
+		});
+
+		// Back in its old position, so it doesn't jump on top of d3.
+		expect(client.drawings.map((d) => d.id)).toEqual(['d1', 'd2', 'd3']);
+	});
+
+	it('keeps an erase that the server confirms', () => {
+		const { client, socket } = connectedClient();
+		socket.emit({
+			type: 'state.sync',
+			payload: {
+				room: { slug: 'abc123', name: 'Room' },
+				you: { participantId: 'p1', displayName: 'A', role: 'gm' },
+				drawings: [{ id: 'd1', sceneId: 's1', kind: 'line', points: [], color: '#cc0000' }]
+			}
+		});
+
+		client.deleteDrawing('d1');
+		socket.emit({ type: 'drawing.deleted', payload: { drawingId: 'd1' } });
+		expect(client.drawings).toHaveLength(0);
+
+		// A later unrelated error must not resurrect it.
+		socket.emit({ type: 'error', payload: { message: 'something else', drawingId: 'd1' } });
+		expect(client.drawings).toHaveLength(0);
+	});
+
+	it('forgets in-flight erases when the server sends a full scene', () => {
+		const { client, socket } = connectedClient();
+		socket.emit({
+			type: 'state.sync',
+			payload: {
+				room: { slug: 'abc123', name: 'Room' },
+				you: { participantId: 'p1', displayName: 'A', role: 'gm' },
+				drawings: [{ id: 'd1', sceneId: 's1', kind: 'line', points: [], color: '#cc0000' }]
+			}
+		});
+
+		client.deleteDrawing('d1');
+		socket.emit({
+			type: 'scene.activated',
+			payload: { scene: { id: 's2' }, drawings: [] }
+		});
+
+		// The scene the erase belonged to is gone; a late refusal must not
+		// drop a stale stroke into the new one.
+		socket.emit({ type: 'error', payload: { message: 'drawing not found', drawingId: 'd1' } });
+		expect(client.drawings).toHaveLength(0);
 	});
 
 	it('adds a ping with a generated id and removes it after it expires', () => {

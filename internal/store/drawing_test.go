@@ -19,7 +19,7 @@ func TestCreateDrawing_ListForScene(t *testing.T) {
 	}
 
 	points := []Point{{X: 1.5, Y: 2.5}, {X: 3, Y: 4}, {X: 5, Y: 6}}
-	d, err := s.CreateDrawing(scene.ID, DrawingKindFreehand, points, "#ef4444", nil)
+	d, err := s.CreateDrawing(Drawing{SceneID: scene.ID, Kind: DrawingKindFreehand, Points: points, Color: "#ef4444"})
 	if err != nil {
 		t.Fatalf("CreateDrawing: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestCreateDrawing_RecordsCreator(t *testing.T) {
 		t.Fatalf("CreateScene: %v", err)
 	}
 
-	d, err := s.CreateDrawing(scene.ID, DrawingKindLine, []Point{{X: 0, Y: 0}, {X: 1, Y: 1}}, "#cc0000", &player.ID)
+	d, err := s.CreateDrawing(Drawing{SceneID: scene.ID, Kind: DrawingKindLine, Points: []Point{{X: 0, Y: 0}, {X: 1, Y: 1}}, Color: "#cc0000", CreatedByParticipantID: &player.ID})
 	if err != nil {
 		t.Fatalf("CreateDrawing: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestCreateDrawing_RejectsUnknownCreator(t *testing.T) {
 	}
 
 	ghost := "not-a-participant"
-	if _, err := s.CreateDrawing(scene.ID, DrawingKindLine, []Point{{X: 0, Y: 0}, {X: 1, Y: 1}}, "#cc0000", &ghost); err == nil {
+	if _, err := s.CreateDrawing(Drawing{SceneID: scene.ID, Kind: DrawingKindLine, Points: []Point{{X: 0, Y: 0}, {X: 1, Y: 1}}, Color: "#cc0000", CreatedByParticipantID: &ghost}); err == nil {
 		t.Fatal("expected a foreign key error for a creator that isn't a participant")
 	}
 }
@@ -126,7 +126,7 @@ func TestListDrawingsForScene_CreatorClearedWhenParticipantRemoved(t *testing.T)
 	if err != nil {
 		t.Fatalf("CreateScene: %v", err)
 	}
-	if _, err := s.CreateDrawing(scene.ID, DrawingKindRect, []Point{{X: 0, Y: 0}, {X: 2, Y: 2}}, "#cc0000", &player.ID); err != nil {
+	if _, err := s.CreateDrawing(Drawing{SceneID: scene.ID, Kind: DrawingKindRect, Points: []Point{{X: 0, Y: 0}, {X: 2, Y: 2}}, Color: "#cc0000", CreatedByParticipantID: &player.ID}); err != nil {
 		t.Fatalf("CreateDrawing: %v", err)
 	}
 
@@ -158,7 +158,7 @@ func TestListDrawingsForScene_OrderedByCreation(t *testing.T) {
 		t.Fatalf("CreateScene: %v", err)
 	}
 
-	first, err := s.CreateDrawing(scene.ID, DrawingKindLine, []Point{{X: 0, Y: 0}, {X: 1, Y: 1}}, "#000000", nil)
+	first, err := s.CreateDrawing(Drawing{SceneID: scene.ID, Kind: DrawingKindLine, Points: []Point{{X: 0, Y: 0}, {X: 1, Y: 1}}, Color: "#000000"})
 	if err != nil {
 		t.Fatalf("CreateDrawing: %v", err)
 	}
@@ -168,7 +168,7 @@ func TestListDrawingsForScene_OrderedByCreation(t *testing.T) {
 	// the two rows sort deterministically by creation time below.
 	time.Sleep(2 * time.Millisecond)
 
-	second, err := s.CreateDrawing(scene.ID, DrawingKindRect, []Point{{X: 0, Y: 0}, {X: 2, Y: 2}}, "#ffffff", nil)
+	second, err := s.CreateDrawing(Drawing{SceneID: scene.ID, Kind: DrawingKindRect, Points: []Point{{X: 0, Y: 0}, {X: 2, Y: 2}}, Color: "#ffffff"})
 	if err != nil {
 		t.Fatalf("CreateDrawing: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestGetDrawing(t *testing.T) {
 		t.Fatalf("CreateScene: %v", err)
 	}
 	points := []Point{{X: 1, Y: 2}, {X: 3, Y: 4}}
-	created, err := s.CreateDrawing(scene.ID, DrawingKindLine, points, "#cc0000", &player.ID)
+	created, err := s.CreateDrawing(Drawing{SceneID: scene.ID, Kind: DrawingKindLine, Points: points, Color: "#cc0000", CreatedByParticipantID: &player.ID})
 	if err != nil {
 		t.Fatalf("CreateDrawing: %v", err)
 	}
@@ -236,11 +236,11 @@ func TestDeleteDrawing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateScene: %v", err)
 	}
-	keep, err := s.CreateDrawing(scene.ID, DrawingKindLine, []Point{{X: 0, Y: 0}, {X: 1, Y: 1}}, "#cc0000", nil)
+	keep, err := s.CreateDrawing(Drawing{SceneID: scene.ID, Kind: DrawingKindLine, Points: []Point{{X: 0, Y: 0}, {X: 1, Y: 1}}, Color: "#cc0000"})
 	if err != nil {
 		t.Fatalf("CreateDrawing: %v", err)
 	}
-	erase, err := s.CreateDrawing(scene.ID, DrawingKindRect, []Point{{X: 0, Y: 0}, {X: 2, Y: 2}}, "#008000", nil)
+	erase, err := s.CreateDrawing(Drawing{SceneID: scene.ID, Kind: DrawingKindRect, Points: []Point{{X: 0, Y: 0}, {X: 2, Y: 2}}, Color: "#008000"})
 	if err != nil {
 		t.Fatalf("CreateDrawing: %v", err)
 	}

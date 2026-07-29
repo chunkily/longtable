@@ -138,7 +138,7 @@ func TestStateSync_DrawingsIncludeAuthor(t *testing.T) {
 	if err := ts.store.SetActiveScene(room.ID, scene.ID); err != nil {
 		t.Fatalf("SetActiveScene: %v", err)
 	}
-	if _, err := ts.store.CreateDrawing(scene.ID, store.DrawingKindLine, []store.Point{{X: 0, Y: 0}, {X: 1, Y: 1}}, "#cc0000", &player.ID); err != nil {
+	if _, err := ts.store.CreateDrawing(store.Drawing{SceneID: scene.ID, Kind: store.DrawingKindLine, Points: []store.Point{{X: 0, Y: 0}, {X: 1, Y: 1}}, Color: "#cc0000", CreatedByParticipantID: &player.ID}); err != nil {
 		t.Fatalf("CreateDrawing: %v", err)
 	}
 
@@ -159,6 +159,182 @@ func TestStateSync_DrawingsIncludeAuthor(t *testing.T) {
 	if got := payload.Drawings[0].CreatedByParticipantID; got == nil || *got != player.ID {
 		t.Fatalf("createdByParticipantId = %v, want %q", got, player.ID)
 	}
+}
+
+// A client that has already drawn the stroke locally sends the id it
+// used, and gets that exact id back — otherwise it can't tell its own
+// echo from someone else's new drawing.
+func TestDrawCreate_UsesClientSuppliedID(t *testing.T) {
+	r := newDrawTestRoom(t)
+
+	client := r.ts.connect(t, r.room.Slug, r.player.SessionToken)
+	client.readEnvelope(t) // state.sync
+
+	const id = "6f1e3b8a-2c4d-4f1e-9a7b-0d5c8e2f4a13"
+	client.send(t, "draw.create", map[string]any{
+		"drawingId": id,
+		"sceneId":   r.scene.ID,
+		"kind":      "line",
+		"points":    []map[string]float64{{"x": 0, "y": 0}, {"x": 1, "y": 1}},
+	})
+
+	env := client.readEnvelope(t)
+	if env.Type != "drawing.created" {
+		t.Fatalf("type = %q, want drawing.created", env.Type)
+	}
+	var payload struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(env.Payload, &payload); err != nil {
+		t.Fatalf("unmarshal drawing.created payload: %v", err)
+	}
+	if payload.ID != id {
+		t.Fatalf("id = %q, want the client's %q", payload.ID, id)
+	}
+
+	stored, err := r.ts.store.GetDrawing(id)
+	if err != nil {
+		t.Fatalf("GetDrawing(client id): %v", err)
+	}
+	if stored.SceneID != r.scene.ID {
+		t.Fatalf("stored under the wrong scene: %+v", stored)
+	}
+}
+
+func TestDrawCreate_RejectsMalformedAndDuplicateIDs(t *testing.T) {
+	r := newDrawTestRoom(t)
+
+	client := r.ts.connect(t, r.room.Slug, r.gm.SessionToken)
+	client.readEnvelope(t) // state.sync
+
+	// Only the canonical spelling is accepted, so the id echoed in any
+	// failure is byte-identical to the one the client is holding.
+	for _, id := range []string{
+		"not-a-uuid",
+		"{6f1e3b8a-2c4d-4f1e-9a7b-0d5c8e2f4a13}",
+		"6F1E3B8A-2C4D-4F1E-9A7B-0D5C8E2F4A13",
+	} {
+		client.send(t, "draw.create", map[string]any{
+			"drawingId": id,
+			"sceneId":   r.scene.ID,
+			"kind":      "line",
+			"points":    []map[string]float64{{"x": 0, "y": 0}, {"x": 1, "y": 1}},
+		})
+		env := client.readEnvelope(t)
+		if env.Type != "error" {
+			t.Fatalf("drawingId %q: type = %q, want error", id, env.Type)
+		}
+		if got := errorDrawingID(t, env); got != id {
+			t.Fatalf("error drawingId = %q, want %q", got, id)
+		}
+	}
+
+	const valid = "6f1e3b8a-2c4d-4f1e-9a7b-0d5c8e2f4a13"
+	create := map[string]any{
+		"drawingId": valid,
+		"sceneId":   r.scene.ID,
+		"kind":      "line",
+		"points":    []map[string]float64{{"x": 0, "y": 0}, {"x": 1, "y": 1}},
+	}
+	client.send(t, "draw.create", create)
+	if env := client.readEnvelope(t); env.Type != "drawing.created" {
+		t.Fatalf("type = %q, want drawing.created", env.Type)
+	}
+
+	// Reusing an id is the primary key's problem to catch.
+	client.send(t, "draw.create", create)
+	env := client.readEnvelope(t)
+	if env.Type != "error" {
+		t.Fatalf("duplicate id: type = %q, want error", env.Type)
+	}
+	if got := errorDrawingID(t, env); got != valid {
+		t.Fatalf("error drawingId = %q, want %q", got, valid)
+	}
+	if n := r.drawingCount(t); n != 1 {
+		t.Fatalf("len(drawings) = %d, want 1", n)
+	}
+}
+
+// Every rejection a client could have rendered optimistically names the
+// drawing, so exactly that stroke can be taken back off the map.
+func TestDrawCreate_RejectionsNameTheDrawing(t *testing.T) {
+	r := newDrawTestRoom(t)
+	otherRoom, _, err := r.ts.store.CreateRoom("Room B", "GM", "password")
+	if err != nil {
+		t.Fatalf("CreateRoom: %v", err)
+	}
+	otherScene, err := r.ts.store.CreateScene(otherRoom.ID, "Scene", nil, 70, 10, 10)
+	if err != nil {
+		t.Fatalf("CreateScene: %v", err)
+	}
+
+	client := r.ts.connect(t, r.room.Slug, r.gm.SessionToken)
+	client.readEnvelope(t) // state.sync
+
+	const id = "1b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bed"
+	line := []map[string]float64{{"x": 0, "y": 0}, {"x": 1, "y": 1}}
+	rejections := map[string]map[string]any{
+		"unknown kind":    {"drawingId": id, "sceneId": r.scene.ID, "kind": "trapezoid", "points": line},
+		"wrong points":    {"drawingId": id, "sceneId": r.scene.ID, "kind": "rect", "points": []map[string]float64{{"x": 0, "y": 0}}},
+		"scene elsewhere": {"drawingId": id, "sceneId": otherScene.ID, "kind": "line", "points": line},
+	}
+	for name, payload := range rejections {
+		client.send(t, "draw.create", payload)
+		env := client.readEnvelope(t)
+		if env.Type != "error" {
+			t.Fatalf("%s: type = %q, want error", name, env.Type)
+		}
+		if got := errorDrawingID(t, env); got != id {
+			t.Fatalf("%s: error drawingId = %q, want %q", name, got, id)
+		}
+	}
+	if n := r.drawingCount(t); n != 0 {
+		t.Fatalf("len(drawings) = %d, want 0", n)
+	}
+}
+
+func TestDrawDelete_RejectionsNameTheDrawing(t *testing.T) {
+	r := newDrawTestRoom(t)
+	gmDrawing := r.drawing(t, nil)
+
+	client := r.ts.connect(t, r.room.Slug, r.player.SessionToken)
+	client.readEnvelope(t) // state.sync
+
+	// A player erasing what isn't theirs, and anyone erasing what isn't
+	// there: both have to come back named, so an optimistic client can
+	// put the stroke back.
+	for name, id := range map[string]string{
+		"not yours":   gmDrawing.ID,
+		"not a thing": "0f9c1a2b-3d4e-4f50-8a6b-7c8d9e0f1a2b",
+	} {
+		client.send(t, "draw.delete", map[string]any{"drawingId": id})
+		env := client.readEnvelope(t)
+		if env.Type != "error" {
+			t.Fatalf("%s: type = %q, want error", name, env.Type)
+		}
+		if got := errorDrawingID(t, env); got != id {
+			t.Fatalf("%s: error drawingId = %q, want %q", name, got, id)
+		}
+	}
+	if n := r.drawingCount(t); n != 1 {
+		t.Fatalf("len(drawings) = %d, want 1", n)
+	}
+}
+
+func errorDrawingID(t *testing.T, env envelope) string {
+	t.Helper()
+
+	var payload struct {
+		Message   string `json:"message"`
+		DrawingID string `json:"drawingId"`
+	}
+	if err := json.Unmarshal(env.Payload, &payload); err != nil {
+		t.Fatalf("unmarshal error payload: %v", err)
+	}
+	if payload.Message == "" {
+		t.Fatal("error payload has no message")
+	}
+	return payload.DrawingID
 }
 
 func TestDrawCreate_BroadcastsToOtherClients(t *testing.T) {
@@ -334,7 +510,7 @@ func TestStateSync_IncludesDrawings(t *testing.T) {
 	if err := ts.store.SetActiveScene(room.ID, scene.ID); err != nil {
 		t.Fatalf("SetActiveScene: %v", err)
 	}
-	if _, err := ts.store.CreateDrawing(scene.ID, store.DrawingKindLine, []store.Point{{X: 0, Y: 0}, {X: 1, Y: 1}}, "#cc0000", nil); err != nil {
+	if _, err := ts.store.CreateDrawing(store.Drawing{SceneID: scene.ID, Kind: store.DrawingKindLine, Points: []store.Point{{X: 0, Y: 0}, {X: 1, Y: 1}}, Color: "#cc0000"}); err != nil {
 		t.Fatalf("CreateDrawing: %v", err)
 	}
 
@@ -387,8 +563,7 @@ func newDrawTestRoom(t *testing.T) drawTestRoom {
 func (r drawTestRoom) drawing(t *testing.T, author *string) store.Drawing {
 	t.Helper()
 
-	d, err := r.ts.store.CreateDrawing(r.scene.ID, store.DrawingKindLine,
-		[]store.Point{{X: 0, Y: 0}, {X: 1, Y: 1}}, "#cc0000", author)
+	d, err := r.ts.store.CreateDrawing(store.Drawing{SceneID: r.scene.ID, Kind: store.DrawingKindLine, Points: []store.Point{{X: 0, Y: 0}, {X: 1, Y: 1}}, Color: "#cc0000", CreatedByParticipantID: author})
 	if err != nil {
 		t.Fatalf("CreateDrawing: %v", err)
 	}

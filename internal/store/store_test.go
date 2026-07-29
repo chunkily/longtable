@@ -79,7 +79,7 @@ func TestMigrate_ConvertsCircleDrawingsToEllipses(t *testing.T) {
 	}
 	// A line that must survive the rebuild untouched, alongside the
 	// circles being converted.
-	line, err := s.CreateDrawing(scene.ID, DrawingKindLine, []Point{{X: 0, Y: 0}, {X: 1, Y: 1}}, "#000000", nil)
+	line, err := s.CreateDrawing(Drawing{SceneID: scene.ID, Kind: DrawingKindLine, Points: []Point{{X: 0, Y: 0}, {X: 1, Y: 1}}, Color: "#000000"})
 	if err != nil {
 		t.Fatalf("CreateDrawing: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestMigrate_ConvertsCircleDrawingsToEllipses(t *testing.T) {
 	); err == nil {
 		t.Fatal("expected the rebuilt table to reject kind 'circle'")
 	}
-	if _, err := s.CreateDrawing(scene.ID, DrawingKindEllipse, []Point{{X: 0, Y: 0}, {X: 4, Y: 2}}, "#000000", nil); err != nil {
+	if _, err := s.CreateDrawing(Drawing{SceneID: scene.ID, Kind: DrawingKindEllipse, Points: []Point{{X: 0, Y: 0}, {X: 4, Y: 2}}, Color: "#000000"}); err != nil {
 		t.Fatalf("CreateDrawing(ellipse) after migration: %v", err)
 	}
 

@@ -48,21 +48,23 @@ type Drawing struct {
 	CreatedAt              string
 }
 
-func (s *Store) CreateDrawing(sceneID string, kind DrawingKind, points []Point, color string, createdByParticipantID *string) (Drawing, error) {
-	pointsJSON, err := json.Marshal(points)
+// CreateDrawing persists d, filling in its CreatedAt. An empty ID gets
+// one generated; a caller that supplies one is the client drawing
+// optimistically, having already rendered the stroke under that id and
+// needing to recognise it when the broadcast comes back. Uniqueness is
+// the primary key's job either way, so a duplicate is an error here
+// rather than something to paper over.
+func (s *Store) CreateDrawing(d Drawing) (Drawing, error) {
+	pointsJSON, err := json.Marshal(d.Points)
 	if err != nil {
 		return Drawing{}, err
 	}
 
-	d := Drawing{
-		ID:                     uuid.NewString(),
-		SceneID:                sceneID,
-		Kind:                   kind,
-		Points:                 points,
-		Color:                  color,
-		CreatedByParticipantID: createdByParticipantID,
-		CreatedAt:              time.Now().UTC().Format(time.RFC3339Nano),
+	if d.ID == "" {
+		d.ID = uuid.NewString()
 	}
+	d.CreatedAt = time.Now().UTC().Format(time.RFC3339Nano)
+
 	_, err = s.db.Exec(
 		`INSERT INTO drawing (id, scene_id, kind, points, color, created_by_participant_id, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
