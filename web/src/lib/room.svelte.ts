@@ -500,7 +500,13 @@ export class RoomClient {
 			case 'drawing.deleted': {
 				const payload = env.payload as DrawingDeletedPayload;
 				this.pendingErases.delete(payload.drawingId);
-				this.drawings = this.drawings.filter((d) => d.id !== payload.drawingId);
+				// Usually this is the server confirming an erase already
+				// applied optimistically, so the drawing has been gone since
+				// the click. Reassigning anyway would be a second identical
+				// list, and a second re-render of the canvas for nothing.
+				if (this.drawings.some((d) => d.id === payload.drawingId)) {
+					this.drawings = this.drawings.filter((d) => d.id !== payload.drawingId);
+				}
 				break;
 			}
 
