@@ -28,11 +28,21 @@ What makes it worse than a dead connection normally would be:
 - [ ] Surface the attempt in the UI. `ConnectionStatus` already has `'connecting'`, so a retry can
       reuse it; decide what to show when retries are exhausted (a banner with a manual "reconnect"
       is probably better than retrying forever).
-- [ ] Decide when *not* to retry. `Hub.ServeHTTP` rejects an unknown room with 404 and an invalid
-      session with 401, but a failed WebSocket handshake reaches the browser as a bare `onclose`
-      with no status, so "the server is restarting, keep trying" and "this session is no longer
-      valid, stop and send them back to the join form" are hard to tell apart from the socket
-      alone. Probing a REST endpoint before each retry is one option.
+- [ ] Stop retrying when a REST probe says the session is the problem rather than the server.
+      `Hub.ServeHTTP` rejects an unknown room with 404 and an invalid session with 401, but a
+      failed WebSocket handshake reaches the browser as a bare `onclose` with no status, so the
+      socket alone can't separate "the server is restarting, keep trying" from "this session is
+      gone, send them back to the join form". Probing over REST between retries is the agreed
+      escape hatch.
+
+      Which endpoint is still open. `GET /api/healthz` (`internal/api/routes.go:27`) only reports
+      that the process is up — nothing in the REST surface validates a session token today, so
+      healthz alone can only support a heuristic ("server answers but the socket won't open, so
+      assume the session died"), which would bounce someone to the join form for a transient
+      failure during startup. A small authenticated endpoint — a `GET` that runs the same
+      `GetParticipantByToken` lookup the hub does and answers 200/401/404 — makes the distinction
+      exact and is worth the few lines. Otherwise, pair healthz with a retry count so the bounce
+      only happens after several attempts.
 
 The reducer side needs no work: `state.sync` already replaces room, scene, tokens, fog, drawings,
 and messages wholesale, and calls `resetPending()` (line 314) to drop anything that was in flight,
