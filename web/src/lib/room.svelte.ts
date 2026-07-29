@@ -131,6 +131,21 @@ interface PingPayload {
 	participantName: string;
 }
 
+// One reversible thing this session did to the map. Both directions
+// carry the whole drawing, because undoing an erase has to put it back
+// exactly as it was, and redoing a drawing has to recreate it under the
+// same id.
+//
+// A caveat that comes with restoring: the server takes a drawing's
+// author from the connection that sent it and ignores anything claimed
+// in the payload, so a GM who erases a Player's stroke and then undoes
+// gets the stroke back under their own name. It looks identical, but
+// the Player can no longer erase it themselves.
+interface DrawingAction {
+	kind: 'create' | 'erase';
+	drawing: Drawing;
+}
+
 interface ErrorPayload {
 	message: string;
 	// Present when the failure is attributable to one drawing, which is
@@ -162,6 +177,11 @@ export class RoomClient {
 	private pendingErases = new Map<string, { drawing: Drawing; index: number }>();
 
 	private lastPingSentAt = 0;
+
+	// This session's own drawing actions, oldest first. Reactive so the
+	// toolbar can tell whether there is anything left to undo or redo.
+	private undoable = $state<DrawingAction[]>([]);
+	private redoable = $state<DrawingAction[]>([]);
 
 	connect(slug: string, sessionToken: string) {
 		this.disconnect();
@@ -246,44 +266,148 @@ export class RoomClient {
 	// id is minted here so the echo can be recognised as this same
 	// stroke — and so it can be erased in the meantime, since the server
 	// handles one connection's commands in the order they were sent.
-	createDrawing(sceneId: string, kind: DrawingKind, points: DrawingPoint[], color: string) {
-		const drawingId = crypto.randomUUID();
-		if (!this.send('draw.create', { drawingId, sceneId, kind, points, color })) return;
+	private sendCreate(drawing: Drawing): boolean {
+		if (this.drawings.some((d) => d.id === drawing.id)) return false;
+		if (
+			!this.send('draw.create', {
+				drawingId: drawing.id,
+				sceneId: drawing.sceneId,
+				kind: drawing.kind,
+				points: drawing.points,
+				color: drawing.color
+			})
+		) {
+			return false;
+		}
 
-		this.drawings = [
-			...this.drawings,
-			{
-				id: drawingId,
-				sceneId,
-				kind,
-				points,
-				color,
-				// Claimed locally so the eraser treats it as yours right
-				// away; the server sets the real author on the echo, from
-				// the connection rather than from anything sent here.
-				createdByParticipantId: this.you?.participantId ?? null
-			}
-		];
+		this.drawings = [...this.drawings, drawing];
+		return true;
 	}
 
 	// Also optimistic: the eraser highlights what a click will remove,
 	// so leaving the stroke sitting there until the server agrees reads
 	// as a missed click. A refusal (erasing what isn't yours, or what
 	// someone else just erased) comes back naming the drawing, and puts
-	// it back where it was.
-	deleteDrawing(drawingId: string) {
+	// it back where it was. Returns what was taken off the map, so an
+	// undoable action can hold on to it.
+	private sendErase(drawingId: string): Drawing | null {
 		const index = this.drawings.findIndex((d) => d.id === drawingId);
-		if (index === -1) return;
-		if (!this.send('draw.delete', { drawingId })) return;
+		if (index === -1) return null;
 
-		this.pendingErases.set(drawingId, { drawing: this.drawings[index], index });
+		const drawing = this.drawings[index];
+		if (!this.send('draw.delete', { drawingId })) return null;
+
+		this.pendingErases.set(drawingId, { drawing, index });
 		this.drawings = this.drawings.filter((d) => d.id !== drawingId);
+		return drawing;
 	}
 
-	// Anything still in flight is moot once the server hands over a full
-	// picture of the scene.
-	private resetPending() {
+	createDrawing(sceneId: string, kind: DrawingKind, points: DrawingPoint[], color: string) {
+		const drawing: Drawing = {
+			id: crypto.randomUUID(),
+			sceneId,
+			kind,
+			points,
+			color,
+			// Claimed locally so the eraser treats it as yours right
+			// away; the server sets the real author on the echo, from
+			// the connection rather than from anything sent here.
+			createdByParticipantId: this.you?.participantId ?? null
+		};
+		if (this.sendCreate(drawing)) this.record({ kind: 'create', drawing });
+	}
+
+	deleteDrawing(drawingId: string) {
+		const drawing = this.sendErase(drawingId);
+		if (drawing) this.record({ kind: 'erase', drawing });
+	}
+
+	// --- undo/redo ---
+	//
+	// The history is this session's own actions and nothing else, which
+	// is what makes undo safe on a shared map: it can only ever reach
+	// strokes you drew or erased yourself, never someone else's work
+	// that happens to be more recent. It needs no server support either
+	// — undoing a drawing is an erase and undoing an erase is a drawing,
+	// both of which already exist, already check permission, and already
+	// render optimistically.
+
+	get canUndo(): boolean {
+		return this.undoable.length > 0;
+	}
+
+	get canRedo(): boolean {
+		return this.redoable.length > 0;
+	}
+
+	undo() {
+		this.step(
+			() => this.undoable,
+			(next) => (this.undoable = next),
+			(action) => (this.redoable = [...this.redoable, action]),
+			(action) => this.reverse(action)
+		);
+	}
+
+	redo() {
+		this.step(
+			() => this.redoable,
+			(next) => (this.redoable = next),
+			(action) => (this.undoable = [...this.undoable, action]),
+			(action) => this.apply(action)
+		);
+	}
+
+	// Walks back through the stack until something actually applies.
+	// An entry can be unusable by the time it's reached — a GM may have
+	// erased the stroke you were about to undo, or the scene may no
+	// longer hold it — and the useful behaviour there is to skip it and
+	// undo the next thing you did, not to fail on the whole gesture.
+	private step(
+		read: () => DrawingAction[],
+		write: (next: DrawingAction[]) => void,
+		push: (action: DrawingAction) => void,
+		attempt: (action: DrawingAction) => boolean
+	) {
+		while (read().length > 0) {
+			const stack = read();
+			const action = stack[stack.length - 1];
+			write(stack.slice(0, -1));
+
+			if (attempt(action)) {
+				push(action);
+				return;
+			}
+		}
+	}
+
+	private reverse(action: DrawingAction): boolean {
+		return action.kind === 'create'
+			? this.sendErase(action.drawing.id) !== null
+			: this.sendCreate(action.drawing);
+	}
+
+	private apply(action: DrawingAction): boolean {
+		return action.kind === 'create'
+			? this.sendCreate(action.drawing)
+			: this.sendErase(action.drawing.id) !== null;
+	}
+
+	// Doing something new abandons the branch you had undone your way
+	// out of, so there is nothing left to redo.
+	private record(action: DrawingAction) {
+		this.undoable = [...this.undoable, action];
+		this.redoable = [];
+	}
+
+	// Anything in flight or on the history is moot once the server hands
+	// over a full picture: the actions refer to drawings in a scene that
+	// may not even be the one now on screen, and re-creating one there
+	// would drop a stroke into a map it never belonged to.
+	private resetAfterSync() {
 		this.pendingErases.clear();
+		this.undoable = [];
+		this.redoable = [];
 	}
 
 	private restoreErased(drawingId: string) {
@@ -321,7 +445,7 @@ export class RoomClient {
 				this.tokens = payload.tokens ?? [];
 				this.fogCells = payload.fogCells ?? [];
 				this.drawings = payload.drawings ?? [];
-				this.resetPending();
+				this.resetAfterSync();
 				break;
 			}
 
@@ -355,7 +479,7 @@ export class RoomClient {
 				this.tokens = payload.tokens ?? [];
 				this.fogCells = payload.fogCells ?? [];
 				this.drawings = payload.drawings ?? [];
-				this.resetPending();
+				this.resetAfterSync();
 				break;
 			}
 

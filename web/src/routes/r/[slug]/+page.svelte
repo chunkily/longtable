@@ -98,6 +98,31 @@
 		chatText = '';
 	}
 
+	// Undo/redo shortcuts. Bound to the window rather than the canvas,
+	// which never holds focus — but that means catching keystrokes meant
+	// for whatever the user is actually typing in, so anything with a
+	// text cursor keeps its own undo behaviour.
+	function handleKeydown(event: KeyboardEvent) {
+		if (!client || !(event.ctrlKey || event.metaKey)) return;
+
+		const target = event.target as HTMLElement | null;
+		if (
+			target?.isContentEditable ||
+			['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName ?? '')
+		) {
+			return;
+		}
+
+		const key = event.key.toLowerCase();
+		if (key === 'z' && !event.shiftKey) {
+			event.preventDefault();
+			client.undo();
+		} else if ((key === 'z' && event.shiftKey) || key === 'y') {
+			event.preventDefault();
+			client.redo();
+		}
+	}
+
 	const statusVariant = $derived(
 		client?.status === 'open'
 			? 'secondary'
@@ -107,6 +132,8 @@
 	);
 	const isGM = $derived(client?.you?.role === 'gm');
 </script>
+
+<svelte:window onkeydown={handleKeydown} />
 
 {#if !session || !client}
 	<div class="mx-auto max-w-md p-6">
@@ -284,9 +311,29 @@
 								{/each}
 							</div>
 						</div>
-						<Button variant="outline" size="sm" onclick={() => canvasRef?.resetView()}>
-							Reset view
-						</Button>
+						<div class="flex flex-wrap gap-2">
+							<Button
+								variant="outline"
+								size="sm"
+								disabled={!client.canUndo}
+								title="Undo your last drawing or erase (Ctrl+Z)"
+								onclick={() => client?.undo()}
+							>
+								Undo
+							</Button>
+							<Button
+								variant="outline"
+								size="sm"
+								disabled={!client.canRedo}
+								title="Redo (Ctrl+Shift+Z)"
+								onclick={() => client?.redo()}
+							>
+								Redo
+							</Button>
+							<Button variant="outline" size="sm" onclick={() => canvasRef?.resetView()}>
+								Reset view
+							</Button>
+						</div>
 					</div>
 					<GameCanvas room={client} {activeTool} {strokeColor} bind:this={canvasRef} />
 				{:else}

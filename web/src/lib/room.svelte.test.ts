@@ -481,6 +481,155 @@ describe('RoomClient', () => {
 		expect(client.drawings).toHaveLength(0);
 	});
 
+	// --- undo/redo ---
+
+	function roomWithDrawings(drawings: unknown[] = []) {
+		const { client, socket } = connectedClient();
+		socket.emit({
+			type: 'state.sync',
+			payload: {
+				room: { slug: 'abc123', name: 'Room' },
+				you: { participantId: 'p1', displayName: 'A', role: 'gm' },
+				drawings
+			}
+		});
+		return { client, socket };
+	}
+
+	function sentTypes(socket: { sent: string[] }) {
+		return socket.sent.map((s) => JSON.parse(s).type);
+	}
+
+	it('has nothing to undo or redo until something happens', () => {
+		const { client } = roomWithDrawings();
+		expect(client.canUndo).toBe(false);
+		expect(client.canRedo).toBe(false);
+
+		client.undo();
+		client.redo();
+		expect(client.drawings).toHaveLength(0);
+	});
+
+	it('undoes drawings one at a time, newest first', () => {
+		const { client } = roomWithDrawings();
+		client.createDrawing('s1', 'line', [{ x: 0, y: 0 }], '#cc0000');
+		client.createDrawing('s1', 'rect', [{ x: 1, y: 1 }], '#0033cc');
+		const [first, second] = client.drawings.map((d) => d.id);
+
+		client.undo();
+		expect(client.drawings.map((d) => d.id)).toEqual([first]);
+
+		client.undo();
+		expect(client.drawings).toHaveLength(0);
+		expect(client.canUndo).toBe(false);
+
+		// And back again, oldest first, under the same ids.
+		client.redo();
+		expect(client.drawings.map((d) => d.id)).toEqual([first]);
+		client.redo();
+		expect(client.drawings.map((d) => d.id)).toEqual([first, second]);
+		expect(client.canRedo).toBe(false);
+	});
+
+	it('undoes an erase by putting the drawing back', () => {
+		const { client, socket } = roomWithDrawings([
+			{
+				id: 'd1',
+				sceneId: 's1',
+				kind: 'line',
+				points: [{ x: 0, y: 0 }],
+				color: '#cc0000',
+				createdByParticipantId: 'p1'
+			}
+		]);
+
+		client.deleteDrawing('d1');
+		expect(client.drawings).toHaveLength(0);
+
+		client.undo();
+		expect(client.drawings.map((d) => d.id)).toEqual(['d1']);
+		expect(sentTypes(socket)).toEqual(['draw.delete', 'draw.create']);
+
+		client.redo();
+		expect(client.drawings).toHaveLength(0);
+	});
+
+	it('never reaches a drawing this session did not touch', () => {
+		const { client } = roomWithDrawings([
+			{
+				id: 'theirs',
+				sceneId: 's1',
+				kind: 'line',
+				points: [],
+				color: '#cc0000',
+				createdByParticipantId: 'p2'
+			}
+		]);
+
+		// Nothing of our own has happened, so there is nothing to undo —
+		// someone else's stroke being the most recent thing on the map
+		// doesn't put it within reach.
+		expect(client.canUndo).toBe(false);
+		client.undo();
+		expect(client.drawings.map((d) => d.id)).toEqual(['theirs']);
+	});
+
+	it('drops history entries whose drawing is already gone and undoes the next one', () => {
+		const { client, socket } = roomWithDrawings();
+		client.createDrawing('s1', 'line', [{ x: 0, y: 0 }], '#cc0000');
+		client.createDrawing('s1', 'rect', [{ x: 1, y: 1 }], '#0033cc');
+		const [first, second] = client.drawings.map((d) => d.id);
+
+		// Someone else erases the newest one out from under us.
+		socket.emit({ type: 'drawing.deleted', payload: { drawingId: second } });
+
+		// Undo skips the entry it can no longer act on rather than
+		// failing, and takes back the previous drawing instead.
+		client.undo();
+		expect(client.drawings).toHaveLength(0);
+		expect(client.canUndo).toBe(false);
+
+		client.redo();
+		expect(client.drawings.map((d) => d.id)).toEqual([first]);
+	});
+
+	it('abandons the redo branch once something new is drawn', () => {
+		const { client } = roomWithDrawings();
+		client.createDrawing('s1', 'line', [{ x: 0, y: 0 }], '#cc0000');
+		client.undo();
+		expect(client.canRedo).toBe(true);
+
+		client.createDrawing('s1', 'rect', [{ x: 1, y: 1 }], '#0033cc');
+		expect(client.canRedo).toBe(false);
+
+		client.redo();
+		expect(client.drawings).toHaveLength(1);
+	});
+
+	it('forgets history when the server sends a full scene', () => {
+		const { client, socket } = roomWithDrawings();
+		client.createDrawing('s1', 'line', [{ x: 0, y: 0 }], '#cc0000');
+		expect(client.canUndo).toBe(true);
+
+		socket.emit({
+			type: 'scene.activated',
+			payload: { scene: { id: 's2' }, drawings: [] }
+		});
+
+		// The stroke belonged to a scene that isn't on screen any more;
+		// undoing into this one would drop it somewhere it never was.
+		expect(client.canUndo).toBe(false);
+		expect(client.canRedo).toBe(false);
+	});
+
+	it('records nothing for a drawing that could not be sent', () => {
+		const { client, socket } = roomWithDrawings();
+		socket.readyState = 0; // connecting
+
+		client.createDrawing('s1', 'line', [{ x: 0, y: 0 }], '#cc0000');
+		expect(client.canUndo).toBe(false);
+	});
+
 	it('adds a ping with a generated id and removes it after it expires', () => {
 		vi.useFakeTimers();
 		try {
