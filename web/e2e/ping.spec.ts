@@ -39,7 +39,7 @@ test('a ping keeps pulsing after a single flash would have finished', async ({ p
 	await page.getByRole('button', { name: 'Create scene' }).click();
 	await expect(page.locator('canvas').first()).toBeVisible();
 
-	const pingButton = page.getByRole('button', { name: 'Ping' });
+	const pingButton = page.getByRole('button', { name: 'Ping', exact: true });
 	await pingButton.click();
 	await expect(pingButton).toHaveClass(/bg-primary/);
 

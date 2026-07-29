@@ -37,7 +37,7 @@ async function canvasOrigin(page: Page) {
 }
 
 async function selectTool(page: Page, name: string) {
-	const button = page.getByRole('button', { name });
+	const button = page.getByRole('button', { name, exact: true });
 	const alreadyActive = await button.evaluate((el) => el.className.includes('bg-primary'));
 	if (!alreadyActive) await button.click();
 	await expect(button).toHaveClass(/bg-primary/);

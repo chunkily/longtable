@@ -59,7 +59,7 @@ async function canvasOrigin(page: Page): Promise<{ x: number; y: number }> {
 // selected turns it off; this leaves the requested tool selected either
 // way rather than depending on what was selected before.
 async function selectTool(page: Page, name: string) {
-	const button = page.getByRole('button', { name });
+	const button = page.getByRole('button', { name, exact: true });
 	const alreadyActive = await button.evaluate((el) => el.className.includes('bg-primary'));
 	if (!alreadyActive) await button.click();
 	await expect(button).toHaveClass(/bg-primary/);

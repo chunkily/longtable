@@ -262,6 +262,7 @@
 							<Button
 								variant={activeTool === 'freehand' ? 'default' : 'outline'}
 								size="sm"
+								aria-label="Freehand"
 								onclick={() => selectTool('freehand')}
 								title="Freehand drawing"
 							>
@@ -270,6 +271,7 @@
 							<Button
 								variant={activeTool === 'line' ? 'default' : 'outline'}
 								size="sm"
+								aria-label="Line"
 								onclick={() => selectTool('line')}
 								title="Straight line drawing"
 							>
@@ -278,6 +280,7 @@
 							<Button
 								variant={activeTool === 'rect' ? 'default' : 'outline'}
 								size="sm"
+								aria-label="Rectangle"
 								onclick={() => selectTool('rect')}
 								title="Rectangle drawing"
 							>
@@ -286,6 +289,7 @@
 							<Button
 								variant={activeTool === 'ellipse' ? 'default' : 'outline'}
 								size="sm"
+								aria-label="Ellipse"
 								onclick={() => selectTool('ellipse')}
 								title="Ellipse drawing"
 							>
@@ -294,6 +298,7 @@
 							<Button
 								variant={activeTool === 'ping' ? 'default' : 'outline'}
 								size="sm"
+								aria-label="Ping"
 								onclick={() => selectTool('ping')}
 								title="Ping the map"
 							>
@@ -305,28 +310,30 @@
 								title={isGM
 									? 'Click a drawing to erase it'
 									: 'Click one of your own drawings to erase it'}
+								aria-label="Erase"
 								onclick={() => selectTool('eraser')}
 							>
 								<Eraser class="h-4 w-4" />
 							</Button>
-							<div class="flex items-center gap-1 px-1">
+							<!-- The selected swatch is ringed rather than bordered: an
+							     outline is drawn outside the element, so it never covers
+							     the colour it is marking and can't sit between the swatch
+							     and the pointer. Light blue reads against every colour in
+							     the palette, black included, and against the toolbar. -->
+							<div class="flex items-center gap-2 px-2">
 								{#each STROKE_COLORS as opt (opt.value)}
-									<div class="relative h-6 w-6" title={opt.label}>
-										<button
-											type="button"
-											aria-label={opt.label}
-											class="h-6 w-6 rounded-full"
-											style="background-color: {opt.value}"
-											onclick={() => (strokeColor = opt.value)}
-										></button>
-
-										{#if strokeColor === opt.value}
-											<div class="absolute inset-0 rounded-full border-[3px] border-white"></div>
-											<div
-												class="absolute inset-0 rounded-full border-[5px] border-neutral-900/60"
-											></div>
-										{/if}
-									</div>
+									<button
+										type="button"
+										aria-label={opt.label}
+										aria-pressed={strokeColor === opt.value}
+										title={opt.label}
+										class={[
+											'h-6 w-6 rounded-full',
+											strokeColor === opt.value && 'outline-2 outline-offset-2 outline-sky-400'
+										]}
+										style="background-color: {opt.value}"
+										onclick={() => (strokeColor = opt.value)}
+									></button>
 								{/each}
 							</div>
 						</div>
@@ -336,6 +343,7 @@
 								size="sm"
 								disabled={!client.canUndo}
 								title="Undo your last drawing or erase (Ctrl+Z)"
+								aria-label="Undo"
 								onclick={() => client?.undo()}
 							>
 								<Undo class="h-4 w-4" />
@@ -345,6 +353,7 @@
 								size="sm"
 								disabled={!client.canRedo}
 								title="Redo (Ctrl+Shift+Z)"
+								aria-label="Redo"
 								onclick={() => client?.redo()}
 							>
 								<Redo class="h-4 w-4" />
@@ -352,6 +361,7 @@
 							<Button
 								variant="outline"
 								size="sm"
+								aria-label="Reset view"
 								onclick={() => canvasRef?.resetView()}
 								title="Reset view"
 							>

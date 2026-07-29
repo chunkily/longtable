@@ -36,7 +36,7 @@ async function canvasOrigin(page: Page) {
 }
 
 async function selectTool(page: Page, name: string) {
-	const button = page.getByRole('button', { name });
+	const button = page.getByRole('button', { name, exact: true });
 	const alreadyActive = await button.evaluate((el) => el.className.includes('bg-primary'));
 	if (!alreadyActive) await button.click();
 	await expect(button).toHaveClass(/bg-primary/);
@@ -86,7 +86,7 @@ test('undo and redo step back and forth through your own drawings', async ({ pag
 
 	// Nothing left to undo: the button says so, and pressing again is
 	// harmless.
-	await expect(page.getByRole('button', { name: 'Undo' })).toBeDisabled();
+	await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled();
 	await page.keyboard.press('Control+z');
 	expect(await inkAt(page, FIRST)).toBe(0);
 
@@ -94,9 +94,9 @@ test('undo and redo step back and forth through your own drawings', async ({ pag
 	await page.keyboard.press('Control+Shift+z');
 	await expect.poll(() => inkAt(page, FIRST)).toBeGreaterThan(0);
 
-	await page.getByRole('button', { name: 'Redo' }).click();
+	await page.getByRole('button', { name: 'Redo', exact: true }).click();
 	await expect.poll(() => inkAt(page, SECOND)).toBeGreaterThan(0);
-	await expect(page.getByRole('button', { name: 'Redo' })).toBeDisabled();
+	await expect(page.getByRole('button', { name: 'Redo', exact: true })).toBeDisabled();
 });
 
 test('undo puts back a stroke you erased', async ({ page }) => {
