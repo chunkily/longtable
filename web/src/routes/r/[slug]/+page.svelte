@@ -311,17 +311,22 @@
 							</Button>
 							<div class="flex items-center gap-1 px-1">
 								{#each STROKE_COLORS as opt (opt.value)}
-									<button
-										type="button"
-										aria-label={opt.label}
-										title={opt.label}
-										class={[
-											'h-6 w-6 rounded-full border-2',
-											strokeColor === opt.value ? 'border-foreground' : 'border-transparent'
-										]}
-										style="background-color: {opt.value}"
-										onclick={() => (strokeColor = opt.value)}
-									></button>
+									<div class="relative h-6 w-6" title={opt.label}>
+										<button
+											type="button"
+											aria-label={opt.label}
+											class="h-6 w-6 rounded-full"
+											style="background-color: {opt.value}"
+											onclick={() => (strokeColor = opt.value)}
+										></button>
+
+										{#if strokeColor === opt.value}
+											<div class="absolute inset-0 rounded-full border-[3px] border-white"></div>
+											<div
+												class="absolute inset-0 rounded-full border-[5px] border-neutral-900/60"
+											></div>
+										{/if}
+									</div>
 								{/each}
 							</div>
 						</div>
