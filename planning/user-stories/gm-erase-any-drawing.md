@@ -9,6 +9,6 @@ So that I can clean up or moderate the shared canvas, including Players' drawing
 
 ## Acceptance criteria
 
-- [ ] A GM can erase any drawing (freehand, line, rect, or circle), including drawings made by other GMs or by Players
+- [ ] A GM can erase any drawing (freehand, line, rect, or ellipse), including drawings made by other GMs or by Players
 - [ ] Erasing removes the drawing for everyone in the room in real time
 - [ ] Erased drawings are deleted server-side, not just hidden locally, so they stay gone after a reload/reconnect

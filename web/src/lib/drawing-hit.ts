@@ -80,6 +80,61 @@ export function isInsideRect(a: DrawingPoint, b: DrawingPoint, p: DrawingPoint):
 	return p.x >= left && p.x <= right && p.y >= top && p.y <= bottom;
 }
 
+// An ellipse, like a rect, is stored as two opposite corners of the box
+// it's inscribed in.
+function ellipseBounds(a: DrawingPoint, b: DrawingPoint) {
+	return {
+		centreX: (a.x + b.x) / 2,
+		centreY: (a.y + b.y) / 2,
+		radiusX: Math.abs(b.x - a.x) / 2,
+		radiusY: Math.abs(b.y - a.y) / 2
+	};
+}
+
+// Exact point-to-ellipse distance means solving a quartic, and the usual
+// shortcut — scaling the ellipse to a circle and measuring there —
+// distorts distance along the major axis, which would make the eraser's
+// reach vary around the perimeter. Walking a polyline around it instead
+// reuses the segment distance used everywhere else here, and is accurate
+// to within ELLIPSE_TOLERANCE of the true curve.
+export const ELLIPSE_TOLERANCE = 0.1;
+const MIN_ELLIPSE_SEGMENTS = 32;
+const MAX_ELLIPSE_SEGMENTS = 512;
+
+// Each chord sits about r·(π/n)²/2 inside the arc it spans, so holding
+// that gap under a fixed tolerance means growing the segment count with
+// the square root of the radius — a small ellipse needs far fewer
+// segments than a battlefield-sized one to look the same to a click.
+function ellipseSegments(radiusX: number, radiusY: number): number {
+	const radius = Math.max(radiusX, radiusY);
+	const needed = Math.ceil(Math.PI * Math.sqrt(radius / (2 * ELLIPSE_TOLERANCE)));
+	return Math.min(MAX_ELLIPSE_SEGMENTS, Math.max(MIN_ELLIPSE_SEGMENTS, needed));
+}
+
+export function ellipseOutlineDistance(a: DrawingPoint, b: DrawingPoint, p: DrawingPoint): number {
+	const { centreX, centreY, radiusX, radiusY } = ellipseBounds(a, b);
+	const segments = ellipseSegments(radiusX, radiusY);
+
+	const perimeter: DrawingPoint[] = [];
+	for (let i = 0; i <= segments; i++) {
+		const angle = (i / segments) * 2 * Math.PI;
+		perimeter.push({
+			x: centreX + radiusX * Math.cos(angle),
+			y: centreY + radiusY * Math.sin(angle)
+		});
+	}
+	return polylineDistance(perimeter, p);
+}
+
+export function isInsideEllipse(a: DrawingPoint, b: DrawingPoint, p: DrawingPoint): boolean {
+	const { centreX, centreY, radiusX, radiusY } = ellipseBounds(a, b);
+	if (radiusX === 0 || radiusY === 0) return false;
+
+	const dx = (p.x - centreX) / radiusX;
+	const dy = (p.y - centreY) / radiusY;
+	return dx * dx + dy * dy <= 1;
+}
+
 /**
  * Distance from p to the drawing's centreline, in world units.
  *
@@ -103,13 +158,9 @@ export function distanceToDrawing(drawing: Drawing, p: DrawingPoint): number {
 		case 'rect':
 			if (isFilled(drawing) && isInsideRect(a, b, p)) return 0;
 			return rectOutlineDistance(a, b, p);
-		case 'circle': {
-			// a is the centre, b a point on the edge.
-			const radius = Math.hypot(b.x - a.x, b.y - a.y);
-			const fromCentre = Math.hypot(p.x - a.x, p.y - a.y);
-			if (isFilled(drawing) && fromCentre <= radius) return 0;
-			return Math.abs(fromCentre - radius);
-		}
+		case 'ellipse':
+			if (isFilled(drawing) && isInsideEllipse(a, b, p)) return 0;
+			return ellipseOutlineDistance(a, b, p);
 	}
 }
 

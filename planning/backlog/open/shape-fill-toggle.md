@@ -5,4 +5,4 @@ tags: [drawing, tools]
 story: room-member-shape-fill-toggle
 ---
 
-Add a toggle to allow setting a fill on rectangle and circle shapes.
+Add a toggle to allow setting a fill on rectangle and ellipse shapes.

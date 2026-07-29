@@ -305,7 +305,7 @@ func TestDrawCreate_UsesGivenColorWhenProvided(t *testing.T) {
 
 	client.send(t, "draw.create", map[string]any{
 		"sceneId": scene.ID,
-		"kind":    "circle",
+		"kind":    "ellipse",
 		"points":  []map[string]float64{{"x": 0, "y": 0}, {"x": 5, "y": 0}},
 		"color":   "#00ff00",
 	})

@@ -308,7 +308,7 @@ describe('RoomClient', () => {
 			type: 'scene.activated',
 			payload: {
 				scene: { id: 's2' },
-				drawings: [{ id: 'd3', sceneId: 's2', kind: 'circle', points: [], color: '#008000' }]
+				drawings: [{ id: 'd3', sceneId: 's2', kind: 'ellipse', points: [], color: '#008000' }]
 			}
 		});
 		expect(client.drawings.map((d) => d.id)).toEqual(['d3']);

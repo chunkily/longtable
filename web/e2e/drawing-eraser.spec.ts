@@ -54,22 +54,35 @@ async function canvasOrigin(page: Page): Promise<{ x: number; y: number }> {
 // millisecond as the button press can land before the new tool is
 // listening. Waiting for the button's own active styling is the
 // observable signal that the state change has been applied.
+//
+// The toolbar buttons toggle, so clicking the tool that is already
+// selected turns it off; this leaves the requested tool selected either
+// way rather than depending on what was selected before.
 async function selectTool(page: Page, name: string) {
 	const button = page.getByRole('button', { name });
-	await button.click();
+	const alreadyActive = await button.evaluate((el) => el.className.includes('bg-primary'));
+	if (!alreadyActive) await button.click();
 	await expect(button).toHaveClass(/bg-primary/);
+}
+
+async function dragWithTool(
+	page: Page,
+	tool: string,
+	shape: { from: { x: number; y: number }; to: { x: number; y: number } }
+) {
+	await selectTool(page, tool);
+	const origin = await canvasOrigin(page);
+	await page.mouse.move(origin.x + shape.from.x, origin.y + shape.from.y);
+	await page.mouse.down();
+	await page.mouse.move(origin.x + shape.to.x, origin.y + shape.to.y, { steps: 8 });
+	await page.mouse.up();
 }
 
 async function drawLine(
 	page: Page,
 	line: { from: { x: number; y: number }; to: { x: number; y: number } }
 ) {
-	await selectTool(page, 'Line');
-	const origin = await canvasOrigin(page);
-	await page.mouse.move(origin.x + line.from.x, origin.y + line.from.y);
-	await page.mouse.down();
-	await page.mouse.move(origin.x + line.to.x, origin.y + line.to.y, { steps: 8 });
-	await page.mouse.up();
+	await dragWithTool(page, 'Line', line);
 }
 
 async function eraseAt(page: Page, point: { x: number; y: number }) {
@@ -139,6 +152,48 @@ test('a GM erases anyone drawing, a player only their own', async ({ browser }) 
 
 	await gmContext.close();
 	await playerContext.close();
+});
+
+// The ellipse is inscribed in the box you drag, the way Paint does it —
+// not grown from the press point outwards. Dragging (100,100)→(300,200)
+// therefore puts its edge at the midpoints of that box's sides and
+// leaves the middle empty. Under the old centre-and-radius behaviour the
+// same drag produced a circle of radius ~223 around (100,100), which
+// passes through none of the points asserted here.
+test('the ellipse tool fills the box it is dragged out in', async ({ page }) => {
+	await page.goto('/');
+	await page.getByLabel('Room name').fill('Ellipse');
+	await page.getByLabel('Your name (GM)').fill('Alice');
+	await page.getByLabel('GM password').fill('hunter2');
+	await page.getByRole('button', { name: 'Create room' }).click();
+
+	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
+	await page.getByRole('button', { name: 'New scene' }).click();
+	await page.getByLabel('Name').fill('Map');
+	await page.getByRole('button', { name: 'Create scene' }).click();
+	await expect(page.locator('canvas').first()).toBeVisible();
+
+	await dragWithTool(page, 'Ellipse', { from: { x: 100, y: 100 }, to: { x: 300, y: 200 } });
+
+	const top = { x: 200, y: 100 };
+	const left = { x: 100, y: 150 };
+	const centre = { x: 200, y: 150 };
+	await expect.poll(() => inkAt(page, top)).toBeGreaterThan(0);
+	await expect.poll(() => inkAt(page, left)).toBeGreaterThan(0);
+	// Unfilled, so the middle is empty — and the eraser agrees, ignoring
+	// a click there rather than treating the interior as part of it.
+	expect(await inkAt(page, centre)).toBe(0);
+
+	await selectTool(page, 'Erase');
+	const origin = await canvasOrigin(page);
+	await page.mouse.click(origin.x + centre.x, origin.y + centre.y);
+	await page.waitForTimeout(500);
+	expect(await inkAt(page, top)).toBeGreaterThan(0);
+
+	// Clicking the curve itself does erase it.
+	await page.mouse.click(origin.x + top.x, origin.y + top.y);
+	await expect.poll(() => inkAt(page, top)).toBe(0);
+	await expect.poll(() => inkAt(page, left)).toBe(0);
 });
 
 test('the eraser grabs a stroke from beside it, not only dead-on', async ({ page }) => {

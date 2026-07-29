@@ -10,6 +10,6 @@ So that the toolbar isn't cluttered with options that don't apply to my current 
 ## Acceptance criteria
 
 - [ ] The color picker only shows while a drawing tool is active
-- [ ] The fill toggle only shows while the rectangle or circle tool is selected
+- [ ] The fill toggle only shows while the rectangle or ellipse tool is selected
 - [ ] The stroke size control only shows while a drawing tool is active
 - [ ] All of the above disappear when switching to a non-drawing tool (e.g. pointer/ping)

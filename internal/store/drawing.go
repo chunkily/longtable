@@ -15,7 +15,7 @@ const (
 	DrawingKindFreehand DrawingKind = "freehand"
 	DrawingKindLine     DrawingKind = "line"
 	DrawingKindRect     DrawingKind = "rect"
-	DrawingKindCircle   DrawingKind = "circle"
+	DrawingKindEllipse  DrawingKind = "ellipse"
 )
 
 // Point is a single (x, y) in a scene's world pixel space — unlike
@@ -28,8 +28,9 @@ type Point struct {
 
 // Drawing is a persistent map annotation. Points holds however many
 // coordinates the Kind needs: many for freehand strokes, exactly two
-// (start/end, or two opposite corners, or center+edge) for the other
-// kinds — interpreting that shape is up to the renderer.
+// for the other kinds — a line's start and end, or two opposite corners
+// of the box a rect or ellipse is drawn in. Interpreting that shape is
+// up to the renderer.
 //
 // CreatedByParticipantID records who drew it, which is what lets an
 // eraser distinguish "my own drawing" from someone else's. It's a

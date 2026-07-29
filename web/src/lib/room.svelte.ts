@@ -44,7 +44,7 @@ export interface FogCell {
 	y: number;
 }
 
-export type DrawingKind = 'freehand' | 'line' | 'rect' | 'circle';
+export type DrawingKind = 'freehand' | 'line' | 'rect' | 'ellipse';
 
 export interface DrawingPoint {
 	x: number;
@@ -55,6 +55,9 @@ export interface Drawing {
 	id: string;
 	sceneId: string;
 	kind: DrawingKind;
+	// One point per vertex for freehand; for the other kinds exactly
+	// two — a line's start and end, or two opposite corners of the box a
+	// rect or ellipse is drawn in.
 	points: DrawingPoint[];
 	color: string;
 	// Who drew it — null for drawings made before authorship was

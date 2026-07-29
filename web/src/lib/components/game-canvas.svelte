@@ -227,8 +227,16 @@
 		};
 	}
 
-	function circleGeometry(a: DrawingPoint, b: DrawingPoint) {
-		return { x: a.x, y: a.y, radius: Math.hypot(b.x - a.x, b.y - a.y) };
+	// Ellipses are dragged out corner to corner, inscribed in the box the
+	// drag defines — the same gesture as a rect, and the same two stored
+	// points. Konva wants that as a centre plus two radii.
+	function ellipseGeometry(a: DrawingPoint, b: DrawingPoint) {
+		return {
+			x: (a.x + b.x) / 2,
+			y: (a.y + b.y) / 2,
+			radiusX: Math.abs(b.x - a.x) / 2,
+			radiusY: Math.abs(b.y - a.y) / 2
+		};
 	}
 
 	// --- pointer-driven tools: fog paint, freehand/line/rect/circle
@@ -448,7 +456,7 @@
 			return;
 		}
 
-		// line, rect, circle: rubber-band from a fixed start point to
+		// line, rect, ellipse: rubber-band from a fixed start point to
 		// wherever the pointer currently is.
 		const kind = activeTool;
 		stage.on('mousedown.tool touchstart.tool', () => {
@@ -477,7 +485,7 @@
 	}
 
 	function buildPreviewShape(
-		kind: 'line' | 'rect' | 'circle',
+		kind: 'line' | 'rect' | 'ellipse',
 		a: DrawingPoint,
 		b: DrawingPoint
 	): Konva.Shape {
@@ -487,14 +495,14 @@
 				return new Konva.Line({ ...lineGeometry(a, b), ...strokeProps });
 			case 'rect':
 				return new Konva.Rect({ ...rectGeometry(a, b), ...strokeProps });
-			case 'circle':
-				return new Konva.Circle({ ...circleGeometry(a, b), ...strokeProps });
+			case 'ellipse':
+				return new Konva.Ellipse({ ...ellipseGeometry(a, b), ...strokeProps });
 		}
 	}
 
 	function updatePreviewShape(
 		shape: Konva.Shape,
-		kind: 'line' | 'rect' | 'circle',
+		kind: 'line' | 'rect' | 'ellipse',
 		a: DrawingPoint,
 		b: DrawingPoint
 	) {
@@ -505,8 +513,8 @@
 			case 'rect':
 				shape.setAttrs(rectGeometry(a, b));
 				break;
-			case 'circle':
-				shape.setAttrs(circleGeometry(a, b));
+			case 'ellipse':
+				shape.setAttrs(ellipseGeometry(a, b));
 				break;
 		}
 	}
@@ -732,8 +740,8 @@
 				return new Konva.Line({ ...lineGeometry(d.points[0], d.points[1]), ...strokeProps });
 			case 'rect':
 				return new Konva.Rect({ ...rectGeometry(d.points[0], d.points[1]), ...strokeProps });
-			case 'circle':
-				return new Konva.Circle({ ...circleGeometry(d.points[0], d.points[1]), ...strokeProps });
+			case 'ellipse':
+				return new Konva.Ellipse({ ...ellipseGeometry(d.points[0], d.points[1]), ...strokeProps });
 		}
 	}
 

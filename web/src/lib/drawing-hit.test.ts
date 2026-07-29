@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
 	DRAWING_STROKE_WIDTH,
+	ELLIPSE_TOLERANCE,
 	distanceToDrawing,
+	ellipseOutlineDistance,
+	isInsideEllipse,
 	isInsideRect,
 	pickDrawing,
 	pointSegmentDistance,
@@ -11,6 +14,13 @@ import type { Drawing, DrawingKind, DrawingPoint } from './room.svelte';
 
 function drawing(kind: DrawingKind, points: DrawingPoint[], id: string = kind): Drawing {
 	return { id, sceneId: 's1', kind, points, color: '#000000', createdByParticipantId: 'p1' };
+}
+
+// Ellipse distance is a polyline approximation of the true curve, so
+// these assert the tolerance the module promises rather than an exact
+// value. Anything looser would stop catching a genuinely wrong answer.
+function expectNearCurve(actual: number, expected: number) {
+	expect(Math.abs(actual - expected)).toBeLessThanOrEqual(ELLIPSE_TOLERANCE);
 }
 
 describe('pointSegmentDistance', () => {
@@ -60,15 +70,54 @@ describe('distanceToDrawing', () => {
 		expect(distanceToDrawing(d, { x: 50, y: 50 })).toBe(50);
 	});
 
-	it('measures a circle from its ring, not its centre', () => {
-		const d = drawing('circle', [
+	// An ellipse is inscribed in the box the drag defines, so these
+	// corners describe a circle of radius 50 centred at (50, 50).
+	it('measures an ellipse from its perimeter, not its centre', () => {
+		const d = drawing('ellipse', [
 			{ x: 0, y: 0 },
-			{ x: 10, y: 0 }
+			{ x: 100, y: 100 }
 		]);
-		expect(distanceToDrawing(d, { x: 10, y: 0 })).toBe(0);
-		expect(distanceToDrawing(d, { x: 14, y: 0 })).toBe(4);
-		expect(distanceToDrawing(d, { x: 6, y: 0 })).toBe(4);
-		expect(distanceToDrawing(d, { x: 0, y: 0 })).toBe(10);
+		expectNearCurve(distanceToDrawing(d, { x: 100, y: 50 }), 0);
+		expectNearCurve(distanceToDrawing(d, { x: 104, y: 50 }), 4);
+		expectNearCurve(distanceToDrawing(d, { x: 96, y: 50 }), 4);
+		expectNearCurve(distanceToDrawing(d, { x: 50, y: 50 }), 50);
+	});
+
+	it('measures a squashed ellipse correctly on both axes', () => {
+		// centred at (0, 0), 200 wide and 40 tall
+		const d = drawing('ellipse', [
+			{ x: -100, y: -20 },
+			{ x: 100, y: 20 }
+		]);
+		expectNearCurve(distanceToDrawing(d, { x: 105, y: 0 }), 5);
+		expectNearCurve(distanceToDrawing(d, { x: 0, y: 25 }), 5);
+		// Inside the bounding box but well clear of the curve, up near a
+		// corner the old centre-and-radius circle would have covered.
+		expect(distanceToDrawing(d, { x: 95, y: 18 })).toBeGreaterThan(5);
+	});
+
+	// A big ellipse must not be sloppier than a small one: the segment
+	// count grows with the radius to hold the same tolerance.
+	it('holds its tolerance at battlefield scale', () => {
+		const d = drawing('ellipse', [
+			{ x: 0, y: 0 },
+			{ x: 4000, y: 4000 }
+		]);
+		expectNearCurve(distanceToDrawing(d, { x: 2000, y: 2000 }), 2000);
+		expectNearCurve(distanceToDrawing(d, { x: 4010, y: 2000 }), 10);
+	});
+
+	it('is corner-order agnostic for ellipses', () => {
+		const p = { x: 30, y: 5 };
+		const forwards = drawing('ellipse', [
+			{ x: 0, y: 0 },
+			{ x: 60, y: 40 }
+		]);
+		const backwards = drawing('ellipse', [
+			{ x: 60, y: 40 },
+			{ x: 0, y: 0 }
+		]);
+		expect(distanceToDrawing(forwards, p)).toBeCloseTo(distanceToDrawing(backwards, p), 6);
 	});
 
 	it('is corner-order agnostic for rects', () => {
@@ -91,22 +140,39 @@ describe('distanceToDrawing', () => {
 });
 
 // Filled shapes aren't drawn yet, but when they are, clicking anywhere
-// inside one should erase the whole shape — so the interior test the
-// geometry needs is here and correct ahead of that.
-describe('isInsideRect / rectOutlineDistance', () => {
+// inside one should erase the whole shape — so the interior tests the
+// geometry needs are here and correct ahead of that.
+describe('interior tests for filled shapes', () => {
 	const a = { x: 0, y: 0 };
 	const b = { x: 100, y: 50 };
 
-	it('recognises interior, border, and exterior points', () => {
+	it('recognises a rect interior, border, and exterior', () => {
 		expect(isInsideRect(a, b, { x: 50, y: 25 })).toBe(true);
 		expect(isInsideRect(a, b, { x: 0, y: 25 })).toBe(true);
 		expect(isInsideRect(a, b, { x: -1, y: 25 })).toBe(false);
 		expect(isInsideRect(a, b, { x: 50, y: 51 })).toBe(false);
 	});
 
-	it('measures outline distance independently of being inside', () => {
+	it('measures rect outline distance independently of being inside', () => {
 		expect(rectOutlineDistance(a, b, { x: 50, y: 25 })).toBe(25);
 		expect(rectOutlineDistance(a, b, { x: 50, y: 55 })).toBe(5);
+	});
+
+	it('recognises an ellipse interior, and excludes the box corners', () => {
+		expect(isInsideEllipse(a, b, { x: 50, y: 25 })).toBe(true);
+		expect(isInsideEllipse(a, b, { x: 100, y: 25 })).toBe(true);
+		// inside the bounding box, outside the curve
+		expect(isInsideEllipse(a, b, { x: 0, y: 0 })).toBe(false);
+		expect(isInsideEllipse(a, b, { x: 100, y: 50 })).toBe(false);
+	});
+
+	it('treats a flat ellipse as having no interior', () => {
+		expect(isInsideEllipse({ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 50, y: 0 })).toBe(false);
+	});
+
+	it('measures ellipse outline distance independently of being inside', () => {
+		expectNearCurve(ellipseOutlineDistance(a, b, { x: 50, y: 25 }), 25);
+		expectNearCurve(ellipseOutlineDistance(a, b, { x: 50, y: 55 }), 5);
 	});
 });
 

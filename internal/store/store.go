@@ -4,7 +4,10 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"math"
+	"strings"
 )
 
 type Store struct {
@@ -27,8 +30,11 @@ func (s *Store) migrate() error {
 	// Columns added to a table after its first release need an explicit
 	// ALTER TABLE — the CREATE TABLE statements above only take effect
 	// on a database file that doesn't exist yet.
-	return s.addColumnIfMissing("drawing", "created_by_participant_id",
-		`TEXT REFERENCES participant(id) ON DELETE SET NULL`)
+	if err := s.addColumnIfMissing("drawing", "created_by_participant_id",
+		`TEXT REFERENCES participant(id) ON DELETE SET NULL`); err != nil {
+		return err
+	}
+	return s.migrateCircleDrawingsToEllipse()
 }
 
 func (s *Store) createTables() error {
@@ -99,7 +105,7 @@ func (s *Store) createTables() error {
 		CREATE TABLE IF NOT EXISTS drawing (
 			id                        TEXT PRIMARY KEY,
 			scene_id                  TEXT NOT NULL REFERENCES scene(id) ON DELETE CASCADE,
-			kind                      TEXT NOT NULL CHECK (kind IN ('freehand', 'line', 'rect', 'circle')),
+			kind                      TEXT NOT NULL CHECK (kind IN ('freehand', 'line', 'rect', 'ellipse')),
 			points                    TEXT NOT NULL,
 			color                     TEXT NOT NULL,
 			created_by_participant_id TEXT REFERENCES participant(id) ON DELETE SET NULL,
@@ -122,6 +128,119 @@ func (s *Store) createTables() error {
 		CREATE INDEX IF NOT EXISTS idx_message_room ON message(room_id);
 	`)
 	return err
+}
+
+// migrateCircleDrawingsToEllipse replaces the old 'circle' drawing kind
+// with 'ellipse'.
+//
+// The two differ in more than name: a circle was stored as its centre
+// plus a point on its edge, while an ellipse — like a rect — is stored
+// as two opposite corners of the box it's drawn in. Existing rows are
+// converted so an old circle comes back as an ellipse of the same size
+// in the same place, rather than as a degenerate sliver.
+//
+// SQLite can't ALTER a CHECK constraint, so changing the set of allowed
+// kinds means rebuilding the table. Whether that's already happened is
+// read from the table's own definition, which keeps this a no-op on a
+// database that has been through it (and on a fresh one, created with
+// the new constraint already in place).
+func (s *Store) migrateCircleDrawingsToEllipse() error {
+	var ddl string
+	if err := s.db.QueryRow(
+		`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'drawing'`,
+	).Scan(&ddl); err != nil {
+		return fmt.Errorf("read drawing table definition: %w", err)
+	}
+	if !strings.Contains(ddl, "'circle'") {
+		return nil
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin circle-to-ellipse migration: %w", err)
+	}
+	defer tx.Rollback()
+
+	if err := convertCirclePoints(tx); err != nil {
+		return err
+	}
+
+	// Rebuilding the table is the only way to restate its CHECK: copy
+	// into a table with the new constraint, then take over the name.
+	if _, err := tx.Exec(`
+		CREATE TABLE drawing_migrated (
+			id                        TEXT PRIMARY KEY,
+			scene_id                  TEXT NOT NULL REFERENCES scene(id) ON DELETE CASCADE,
+			kind                      TEXT NOT NULL CHECK (kind IN ('freehand', 'line', 'rect', 'ellipse')),
+			points                    TEXT NOT NULL,
+			color                     TEXT NOT NULL,
+			created_by_participant_id TEXT REFERENCES participant(id) ON DELETE SET NULL,
+			created_at                TEXT NOT NULL
+		);
+
+		INSERT INTO drawing_migrated (id, scene_id, kind, points, color, created_by_participant_id, created_at)
+			SELECT id, scene_id, CASE kind WHEN 'circle' THEN 'ellipse' ELSE kind END,
+			       points, color, created_by_participant_id, created_at
+			FROM drawing;
+
+		DROP TABLE drawing;
+		ALTER TABLE drawing_migrated RENAME TO drawing;
+		CREATE INDEX IF NOT EXISTS idx_drawing_scene ON drawing(scene_id);
+	`); err != nil {
+		return fmt.Errorf("rebuild drawing table: %w", err)
+	}
+
+	return tx.Commit()
+}
+
+// convertCirclePoints rewrites every circle's [centre, edge] geometry as
+// the [top-left, bottom-right] corner pair an ellipse is stored as.
+func convertCirclePoints(tx *sql.Tx) error {
+	rows, err := tx.Query(`SELECT id, points FROM drawing WHERE kind = 'circle'`)
+	if err != nil {
+		return fmt.Errorf("list circle drawings: %w", err)
+	}
+
+	converted := make(map[string]string)
+	for rows.Next() {
+		var id, pointsJSON string
+		if err := rows.Scan(&id, &pointsJSON); err != nil {
+			rows.Close()
+			return err
+		}
+
+		var points []Point
+		if err := json.Unmarshal([]byte(pointsJSON), &points); err != nil || len(points) != 2 {
+			// Not geometry this migration knows how to reinterpret; the
+			// renderer already has to tolerate a malformed shape, so leave
+			// it exactly as it is rather than guessing.
+			continue
+		}
+
+		centre, edge := points[0], points[1]
+		radius := math.Hypot(edge.X-centre.X, edge.Y-centre.Y)
+		corners, err := json.Marshal([]Point{
+			{X: centre.X - radius, Y: centre.Y - radius},
+			{X: centre.X + radius, Y: centre.Y + radius},
+		})
+		if err != nil {
+			rows.Close()
+			return err
+		}
+		converted[id] = string(corners)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+
+	for id, points := range converted {
+		if _, err := tx.Exec(`UPDATE drawing SET points = ? WHERE id = ?`, points, id); err != nil {
+			return fmt.Errorf("convert circle geometry: %w", err)
+		}
+	}
+	return nil
 }
 
 // addColumnIfMissing is SQLite's missing "ALTER TABLE ... ADD COLUMN IF

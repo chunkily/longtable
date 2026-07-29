@@ -245,11 +245,11 @@
 								Rectangle
 							</Button>
 							<Button
-								variant={activeTool === 'circle' ? 'default' : 'outline'}
+								variant={activeTool === 'ellipse' ? 'default' : 'outline'}
 								size="sm"
-								onclick={() => selectTool('circle')}
+								onclick={() => selectTool('ellipse')}
 							>
-								Circle
+								Ellipse
 							</Button>
 							<Button
 								variant={activeTool === 'ping' ? 'default' : 'outline'}

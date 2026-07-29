@@ -415,7 +415,7 @@ var drawingKinds = map[string]store.DrawingKind{
 	"freehand": store.DrawingKindFreehand,
 	"line":     store.DrawingKindLine,
 	"rect":     store.DrawingKindRect,
-	"circle":   store.DrawingKindCircle,
+	"ellipse":  store.DrawingKindEllipse,
 }
 
 // defaultDrawingColor matches the frontend's color palette (see
@@ -448,8 +448,8 @@ func (h *Hub) handleDrawCreate(ctx context.Context, c *client, raw json.RawMessa
 		return
 	}
 	// Freehand strokes can have any number of points; every other kind
-	// is defined by exactly two (start/end, opposite corners, or
-	// center+edge).
+	// is defined by exactly two — a line's start and end, or two
+	// opposite corners of a rect's or ellipse's box.
 	wantPoints := 2
 	if (kind == store.DrawingKindFreehand && len(req.Points) < wantPoints) ||
 		(kind != store.DrawingKindFreehand && len(req.Points) != wantPoints) {
