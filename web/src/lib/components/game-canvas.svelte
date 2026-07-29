@@ -2,6 +2,7 @@
 	import { onDestroy, onMount } from 'svelte';
 	import Konva from 'konva';
 	import { assetUrl } from '$lib/api';
+	import { DRAWING_STROKE_WIDTH, pickDrawing, strokeWidthOf } from '$lib/drawing-hit';
 	import type { Drawing, DrawingKind, DrawingPoint, RoomClient, Token } from '$lib/room.svelte';
 
 	// 'none' is plain pan/token-drag mode. Every other tool takes over
@@ -27,11 +28,16 @@
 	// while the pointer is held down.
 	const MIN_FREEHAND_SPACING = 3;
 	const PING_TWEEN_SECONDS = 1.4;
-	// Clickable width of a drawing's stroke while erasing, in world
-	// pixels. Strokes render 3px wide, which is a needle to hit with a
-	// mouse — let alone a fingertip — so the eraser's hit area is
-	// deliberately much fatter than the line it erases.
-	const ERASER_HIT_WIDTH = 16;
+	// How far from a stroke the eraser still grabs it, in *screen*
+	// pixels — converted to world units at the current zoom, so the
+	// eraser has the same reach whether you're zoomed right in or out,
+	// and a thin stroke is no harder to hit than a thick one. This is
+	// the radius drawn around the cursor.
+	const ERASER_PICK_RADIUS = 12;
+	// Halo drawn around the stroke the eraser is about to remove, in
+	// screen pixels either side of it.
+	const ERASE_HIGHLIGHT_PADDING = 6;
+	const ERASE_HIGHLIGHT_COLOR = '#f59e0b';
 
 	let container: HTMLDivElement;
 	let stage: Konva.Stage | undefined;
@@ -85,9 +91,7 @@
 		mapLayer = new Konva.Layer();
 		gridLayer = new Konva.Layer({ listening: false });
 		fogLayer = new Konva.Layer();
-		// Listening, unlike the other decorative layers: the eraser hit-tests
-		// against this layer's shapes to find what was clicked.
-		drawingLayer = new Konva.Layer();
+		drawingLayer = new Konva.Layer({ listening: false });
 		tokenLayer = new Konva.Layer();
 		pingLayer = new Konva.Layer({ listening: false });
 		previewLayer = new Konva.Layer({ listening: false });
@@ -139,6 +143,7 @@
 		});
 		stage.batchDraw();
 		renderGrid();
+		refreshCursorOverlay();
 	}
 
 	// Resets the camera to its identity transform (pan at the origin,
@@ -197,6 +202,15 @@
 		renderPings();
 	});
 
+	// The eraser's halo points at a specific drawing, so it has to be
+	// re-resolved whenever the set of drawings changes — otherwise it
+	// hangs over the empty space where a stroke used to be (including
+	// one someone else just erased) until the pointer next moves.
+	$effect(() => {
+		track(room.drawings, room.you, activeTool);
+		refreshCursorOverlay();
+	});
+
 	// --- shape geometry shared between committed drawings and the live
 	// rubber-band preview while a shape is being drawn ---
 
@@ -238,14 +252,108 @@
 		previewLayer?.batchDraw();
 	}
 
+	// --- cursor overlay: a ring showing the tool's reach, plus (for the
+	// eraser) a halo on the stroke a click would remove. Both live on
+	// previewLayer, which doesn't listen for events and is above
+	// everything else. ---
+
+	let cursorRing: Konva.Circle | null = null;
+	let eraseHighlight: Konva.Shape | null = null;
+	let highlightedDrawingId: string | null = null;
+
+	function clearCursorOverlay() {
+		cursorRing?.destroy();
+		cursorRing = null;
+		eraseHighlight?.destroy();
+		eraseHighlight = null;
+		highlightedDrawingId = null;
+		previewLayer?.batchDraw();
+	}
+
+	// World-space distance covered by n screen pixels at the current
+	// zoom — how the eraser keeps a constant on-screen reach, and how
+	// overlay outlines keep a constant on-screen thickness.
+	function screenToWorld(pixels: number): number {
+		return pixels / (stage?.scaleX() ?? 1);
+	}
+
+	// radius is in world units, so the ring shows the tool's actual
+	// footprint on the map rather than a fixed blob on the screen.
+	function updateCursorRing(radius: number) {
+		const pos = stage?.getRelativePointerPosition();
+		if (!pos) return;
+
+		if (!cursorRing) {
+			cursorRing = new Konva.Circle({
+				fill: 'rgba(120, 120, 120, 0.18)',
+				stroke: '#52525b',
+				listening: false
+			});
+			previewLayer.add(cursorRing);
+		}
+		cursorRing.position(pos);
+		cursorRing.radius(radius);
+		cursorRing.strokeWidth(screenToWorld(1));
+	}
+
+	// The drawing an eraser click would remove right now: the nearest
+	// one within reach, considering only drawings this participant is
+	// allowed to erase — so someone else's stroke lying closer doesn't
+	// mask your own, and clicking it does nothing rather than erroring.
+	function eraserTargetAtPointer(): Drawing | null {
+		const pos = stage?.getRelativePointerPosition();
+		if (!pos) return null;
+		return pickDrawing(room.drawings.filter(canErase), pos, screenToWorld(ERASER_PICK_RADIUS));
+	}
+
+	function updateEraserCursor() {
+		updateCursorRing(screenToWorld(ERASER_PICK_RADIUS));
+
+		const target = eraserTargetAtPointer();
+		if (target?.id !== highlightedDrawingId) {
+			eraseHighlight?.destroy();
+			eraseHighlight = null;
+			highlightedDrawingId = target?.id ?? null;
+
+			if (target) {
+				eraseHighlight = shapeForDrawing(target);
+				eraseHighlight.stroke(ERASE_HIGHLIGHT_COLOR);
+				eraseHighlight.opacity(0.55);
+				previewLayer.add(eraseHighlight);
+			}
+		}
+		// Set every time, not just on a new target: the halo is sized in
+		// screen pixels, so it has to be recomputed when the zoom changes
+		// under a stationary pointer.
+		if (target && eraseHighlight) {
+			eraseHighlight.strokeWidth(
+				strokeWidthOf(target) + screenToWorld(ERASE_HIGHLIGHT_PADDING * 2)
+			);
+		}
+		previewLayer.batchDraw();
+	}
+
+	// Zooming changes what a screen-pixel reach means in world units, so
+	// the overlay has to be recomputed even though the pointer hasn't
+	// moved.
+	function refreshCursorOverlay() {
+		if (activeTool === 'eraser') {
+			updateEraserCursor();
+		} else if (activeTool === 'freehand') {
+			updateCursorRing(DRAWING_STROKE_WIDTH / 2);
+			previewLayer.batchDraw();
+		}
+	}
+
 	function attachToolHandlers() {
 		if (!stage) return;
 		stage.off(
-			'mousedown.tool touchstart.tool mousemove.tool touchmove.tool mouseup.tool touchend.tool'
+			'mousedown.tool touchstart.tool mousemove.tool touchmove.tool mouseup.tool touchend.tool mouseleave.tool'
 		);
 		painting = false;
 		pendingCells.clear();
 		clearPreview();
+		clearCursorOverlay();
 
 		const scene = room.scene;
 		const isActive = activeTool !== 'none' && !!scene;
@@ -279,12 +387,14 @@
 
 		if (activeTool === 'eraser') {
 			stage.on('mousedown.tool touchstart.tool', () => {
-				const pointer = stage!.getPointerPosition();
-				if (!pointer) return;
-				const drawingId = drawingLayer.getIntersection(pointer)?.getAttr('drawingId');
-				const drawing = room.drawings.find((d) => d.id === drawingId);
-				if (drawing && canErase(drawing)) room.deleteDrawing(drawing.id);
+				const target = eraserTargetAtPointer();
+				if (target) room.deleteDrawing(target.id);
+				// Whatever was highlighted is either gone or no longer
+				// under the pointer, so re-resolve from where we are now.
+				updateEraserCursor();
 			});
+			stage.on('mousemove.tool touchmove.tool', () => updateEraserCursor());
+			stage.on('mouseleave.tool touchend.tool', () => clearCursorOverlay());
 			return;
 		}
 
@@ -305,7 +415,7 @@
 				previewShape = new Konva.Line({
 					points: [pos.x, pos.y],
 					stroke: strokeColor,
-					strokeWidth: 3,
+					strokeWidth: DRAWING_STROKE_WIDTH,
 					lineCap: 'round',
 					lineJoin: 'round',
 					dash: [6, 4],
@@ -314,6 +424,11 @@
 				previewLayer.add(previewShape);
 			});
 			stage.on('mousemove.tool touchmove.tool', () => {
+				// The ring tracks the pointer whether or not a stroke is in
+				// progress: it's showing how wide the line will be.
+				updateCursorRing(DRAWING_STROKE_WIDTH / 2);
+				previewLayer.batchDraw();
+
 				if (!previewShape) return;
 				const pos = stage!.getRelativePointerPosition();
 				if (!pos) return;
@@ -329,6 +444,7 @@
 				}
 				clearPreview();
 			});
+			stage.on('mouseleave.tool touchend.tool', () => clearCursorOverlay());
 			return;
 		}
 
@@ -576,23 +692,15 @@
 
 	// Drawings are visible to everyone regardless of role — they're a
 	// shared communication tool, not game-hidden state — so they render
-	// above fog rather than being subject to it.
-	//
-	// Their shapes stay in the hit graph at all times, rather than only
-	// while the eraser is selected: whether a click can find a stroke
-	// then doesn't depend on a re-render having already run for the
-	// current tool. Tokens sit on a layer above this one and keep
-	// winning their own clicks regardless.
+	// above fog rather than being subject to it. The layer is inert:
+	// the eraser finds its target geometrically (see $lib/drawing-hit),
+	// not by asking Konva what was clicked.
 	function renderDrawings() {
 		drawingLayer.destroyChildren();
 		for (const d of room.drawings) {
 			drawingLayer.add(shapeForDrawing(d));
 		}
-		// draw(), not batchDraw(): batching defers the hit graph to the
-		// next animation frame, and every re-render destroys and rebuilds
-		// these shapes — so an eraser click landing in that gap would
-		// hit-test against shapes that no longer exist and find nothing.
-		drawingLayer.draw();
+		drawingLayer.batchDraw();
 	}
 
 	// A GM can erase anything on the map; everyone else only what they
@@ -609,9 +717,8 @@
 	function shapeForDrawing(d: Drawing): Konva.Shape {
 		const strokeProps = {
 			stroke: d.color,
-			strokeWidth: 3,
-			hitStrokeWidth: ERASER_HIT_WIDTH,
-			drawingId: d.id
+			strokeWidth: strokeWidthOf(d),
+			listening: false
 		};
 		switch (d.kind) {
 			case 'freehand':

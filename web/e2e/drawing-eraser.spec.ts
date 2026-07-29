@@ -140,3 +140,29 @@ test('a GM erases anyone drawing, a player only their own', async ({ browser }) 
 	await gmContext.close();
 	await playerContext.close();
 });
+
+test('the eraser grabs a stroke from beside it, not only dead-on', async ({ page }) => {
+	await page.goto('/');
+	await page.getByLabel('Room name').fill('Near Miss');
+	await page.getByLabel('Your name (GM)').fill('Alice');
+	await page.getByLabel('GM password').fill('hunter2');
+	await page.getByRole('button', { name: 'Create room' }).click();
+
+	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
+	await page.getByRole('button', { name: 'New scene' }).click();
+	await page.getByLabel('Name').fill('Map');
+	await page.getByRole('button', { name: 'Create scene' }).click();
+	await expect(page.locator('canvas').first()).toBeVisible();
+
+	await drawLine(page, GM_LINE);
+	await expect.poll(() => inkAt(page, GM_LINE_MIDPOINT)).toBeGreaterThan(0);
+
+	// 9px perpendicular to a stroke that is only 1.5px thick either side
+	// of its centreline: nowhere near a rendered pixel, but inside the
+	// eraser's reach. GM_LINE runs (100,100) → (300,200), so (-4, 8) is
+	// square to it.
+	await selectTool(page, 'Erase');
+	const origin = await canvasOrigin(page);
+	await page.mouse.click(origin.x + GM_LINE_MIDPOINT.x - 4, origin.y + GM_LINE_MIDPOINT.y + 8);
+	await expect.poll(() => inkAt(page, GM_LINE_MIDPOINT)).toBe(0);
+});
