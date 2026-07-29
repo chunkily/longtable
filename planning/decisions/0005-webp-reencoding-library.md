@@ -1,4 +1,4 @@
-# ADR-0001: WebP re-encoding via WASM-embedded libwebp
+# ADR-0005: WebP re-encoding via WASM-embedded libwebp
 
 **Status:** Accepted
 **Date:** 2026-07-29

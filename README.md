@@ -40,6 +40,10 @@ go build -o longtable ./cmd/longtable
 
 Serves on `:8080` by default (`-addr` and `-db` flags to override).
 
+## Documentation
+
+See [`docs/`](docs/) for guides on hosting and configuring a server.
+
 ## Status
 
 Early scaffolding. The server boots, serves the frontend with correct SPA
