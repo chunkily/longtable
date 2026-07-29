@@ -64,6 +64,103 @@ func TestDrawCreate_PlayerCanDrawAndItPersists(t *testing.T) {
 	}
 }
 
+func TestDrawCreate_RecordsAuthorFromSession(t *testing.T) {
+	ts := newTestServer(t)
+	room, gm, err := ts.store.CreateRoom("Room", "GM", "password")
+	if err != nil {
+		t.Fatalf("CreateRoom: %v", err)
+	}
+	player, err := ts.store.JoinRoom(room.ID, "Bob")
+	if err != nil {
+		t.Fatalf("JoinRoom: %v", err)
+	}
+	scene, err := ts.store.CreateScene(room.ID, "Scene", nil, 70, 10, 10)
+	if err != nil {
+		t.Fatalf("CreateScene: %v", err)
+	}
+
+	client := ts.connect(t, room.Slug, player.SessionToken)
+	client.readEnvelope(t) // state.sync
+
+	// The author comes from the authenticated session, so claiming
+	// someone else's ID in the payload must not stick.
+	gmParticipant, err := ts.store.GetParticipantByToken(room.ID, gm.SessionToken)
+	if err != nil {
+		t.Fatalf("GetParticipantByToken: %v", err)
+	}
+	client.send(t, "draw.create", map[string]any{
+		"sceneId":                scene.ID,
+		"kind":                   "line",
+		"points":                 []map[string]float64{{"x": 0, "y": 0}, {"x": 1, "y": 1}},
+		"createdByParticipantId": gmParticipant.ID,
+	})
+
+	env := client.readEnvelope(t)
+	if env.Type != "drawing.created" {
+		t.Fatalf("type = %q, want drawing.created", env.Type)
+	}
+	var payload struct {
+		CreatedByParticipantID *string `json:"createdByParticipantId"`
+	}
+	if err := json.Unmarshal(env.Payload, &payload); err != nil {
+		t.Fatalf("unmarshal drawing.created payload: %v", err)
+	}
+	if payload.CreatedByParticipantID == nil || *payload.CreatedByParticipantID != player.ID {
+		t.Fatalf("broadcast createdByParticipantId = %v, want %q", payload.CreatedByParticipantID, player.ID)
+	}
+
+	drawings, err := ts.store.ListDrawingsForScene(scene.ID)
+	if err != nil {
+		t.Fatalf("ListDrawingsForScene: %v", err)
+	}
+	if len(drawings) != 1 {
+		t.Fatalf("len(drawings) = %d, want 1", len(drawings))
+	}
+	if got := drawings[0].CreatedByParticipantID; got == nil || *got != player.ID {
+		t.Fatalf("persisted CreatedByParticipantID = %v, want %q", got, player.ID)
+	}
+}
+
+func TestStateSync_DrawingsIncludeAuthor(t *testing.T) {
+	ts := newTestServer(t)
+	room, gm, err := ts.store.CreateRoom("Room", "GM", "password")
+	if err != nil {
+		t.Fatalf("CreateRoom: %v", err)
+	}
+	player, err := ts.store.JoinRoom(room.ID, "Bob")
+	if err != nil {
+		t.Fatalf("JoinRoom: %v", err)
+	}
+	scene, err := ts.store.CreateScene(room.ID, "Scene", nil, 70, 10, 10)
+	if err != nil {
+		t.Fatalf("CreateScene: %v", err)
+	}
+	if err := ts.store.SetActiveScene(room.ID, scene.ID); err != nil {
+		t.Fatalf("SetActiveScene: %v", err)
+	}
+	if _, err := ts.store.CreateDrawing(scene.ID, store.DrawingKindLine, []store.Point{{X: 0, Y: 0}, {X: 1, Y: 1}}, "#cc0000", &player.ID); err != nil {
+		t.Fatalf("CreateDrawing: %v", err)
+	}
+
+	client := ts.connect(t, room.Slug, gm.SessionToken)
+	env := client.readEnvelope(t)
+
+	var payload struct {
+		Drawings []struct {
+			CreatedByParticipantID *string `json:"createdByParticipantId"`
+		} `json:"drawings"`
+	}
+	if err := json.Unmarshal(env.Payload, &payload); err != nil {
+		t.Fatalf("unmarshal state.sync payload: %v", err)
+	}
+	if len(payload.Drawings) != 1 {
+		t.Fatalf("len(drawings) = %d, want 1", len(payload.Drawings))
+	}
+	if got := payload.Drawings[0].CreatedByParticipantID; got == nil || *got != player.ID {
+		t.Fatalf("createdByParticipantId = %v, want %q", got, player.ID)
+	}
+}
+
 func TestDrawCreate_BroadcastsToOtherClients(t *testing.T) {
 	ts := newTestServer(t)
 	room, gm, err := ts.store.CreateRoom("Room", "GM", "password")
@@ -237,7 +334,7 @@ func TestStateSync_IncludesDrawings(t *testing.T) {
 	if err := ts.store.SetActiveScene(room.ID, scene.ID); err != nil {
 		t.Fatalf("SetActiveScene: %v", err)
 	}
-	if _, err := ts.store.CreateDrawing(scene.ID, store.DrawingKindLine, []store.Point{{X: 0, Y: 0}, {X: 1, Y: 1}}, "#cc0000"); err != nil {
+	if _, err := ts.store.CreateDrawing(scene.ID, store.DrawingKindLine, []store.Point{{X: 0, Y: 0}, {X: 1, Y: 1}}, "#cc0000", nil); err != nil {
 		t.Fatalf("CreateDrawing: %v", err)
 	}
 

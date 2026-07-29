@@ -132,11 +132,12 @@ func scenePayload(s store.Scene) map[string]any {
 
 func drawingPayload(d store.Drawing) map[string]any {
 	return map[string]any{
-		"id":      d.ID,
-		"sceneId": d.SceneID,
-		"kind":    string(d.Kind),
-		"points":  d.Points,
-		"color":   d.Color,
+		"id":                     d.ID,
+		"sceneId":                d.SceneID,
+		"kind":                   string(d.Kind),
+		"points":                 d.Points,
+		"color":                  d.Color,
+		"createdByParticipantId": d.CreatedByParticipantID,
 	}
 }
 

@@ -28,32 +28,42 @@ type Point struct {
 // coordinates the Kind needs: many for freehand strokes, exactly two
 // (start/end, or two opposite corners, or center+edge) for the other
 // kinds — interpreting that shape is up to the renderer.
+//
+// CreatedByParticipantID records who drew it, which is what lets an
+// eraser distinguish "my own drawing" from someone else's. It's a
+// pointer because it's nil for drawings made before authorship was
+// tracked, and for those whose author has since been removed from the
+// room (the column is ON DELETE SET NULL) — treat nil as "author
+// unknown", not as "everyone's".
 type Drawing struct {
-	ID        string
-	SceneID   string
-	Kind      DrawingKind
-	Points    []Point
-	Color     string
-	CreatedAt string
+	ID                     string
+	SceneID                string
+	Kind                   DrawingKind
+	Points                 []Point
+	Color                  string
+	CreatedByParticipantID *string
+	CreatedAt              string
 }
 
-func (s *Store) CreateDrawing(sceneID string, kind DrawingKind, points []Point, color string) (Drawing, error) {
+func (s *Store) CreateDrawing(sceneID string, kind DrawingKind, points []Point, color string, createdByParticipantID *string) (Drawing, error) {
 	pointsJSON, err := json.Marshal(points)
 	if err != nil {
 		return Drawing{}, err
 	}
 
 	d := Drawing{
-		ID:        uuid.NewString(),
-		SceneID:   sceneID,
-		Kind:      kind,
-		Points:    points,
-		Color:     color,
-		CreatedAt: time.Now().UTC().Format(time.RFC3339Nano),
+		ID:                     uuid.NewString(),
+		SceneID:                sceneID,
+		Kind:                   kind,
+		Points:                 points,
+		Color:                  color,
+		CreatedByParticipantID: createdByParticipantID,
+		CreatedAt:              time.Now().UTC().Format(time.RFC3339Nano),
 	}
 	_, err = s.db.Exec(
-		`INSERT INTO drawing (id, scene_id, kind, points, color, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-		d.ID, d.SceneID, string(d.Kind), string(pointsJSON), d.Color, d.CreatedAt,
+		`INSERT INTO drawing (id, scene_id, kind, points, color, created_by_participant_id, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		d.ID, d.SceneID, string(d.Kind), string(pointsJSON), d.Color, d.CreatedByParticipantID, d.CreatedAt,
 	)
 	if err != nil {
 		return Drawing{}, err
@@ -65,7 +75,8 @@ func (s *Store) CreateDrawing(sceneID string, kind DrawingKind, points []Point, 
 // later strokes render on top of earlier ones.
 func (s *Store) ListDrawingsForScene(sceneID string) ([]Drawing, error) {
 	rows, err := s.db.Query(
-		`SELECT id, scene_id, kind, points, color, created_at FROM drawing WHERE scene_id = ? ORDER BY created_at ASC`,
+		`SELECT id, scene_id, kind, points, color, created_by_participant_id, created_at
+		 FROM drawing WHERE scene_id = ? ORDER BY created_at ASC`,
 		sceneID,
 	)
 	if err != nil {
@@ -77,7 +88,7 @@ func (s *Store) ListDrawingsForScene(sceneID string) ([]Drawing, error) {
 	for rows.Next() {
 		var d Drawing
 		var kind, pointsJSON string
-		if err := rows.Scan(&d.ID, &d.SceneID, &kind, &pointsJSON, &d.Color, &d.CreatedAt); err != nil {
+		if err := rows.Scan(&d.ID, &d.SceneID, &kind, &pointsJSON, &d.Color, &d.CreatedByParticipantID, &d.CreatedAt); err != nil {
 			return nil, err
 		}
 		d.Kind = DrawingKind(kind)

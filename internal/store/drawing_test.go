@@ -18,7 +18,7 @@ func TestCreateDrawing_ListForScene(t *testing.T) {
 	}
 
 	points := []Point{{X: 1.5, Y: 2.5}, {X: 3, Y: 4}, {X: 5, Y: 6}}
-	d, err := s.CreateDrawing(scene.ID, DrawingKindFreehand, points, "#ef4444")
+	d, err := s.CreateDrawing(scene.ID, DrawingKindFreehand, points, "#ef4444", nil)
 	if err != nil {
 		t.Fatalf("CreateDrawing: %v", err)
 	}
@@ -48,6 +48,101 @@ func TestCreateDrawing_ListForScene(t *testing.T) {
 			t.Fatalf("Points[%d] = %+v, want %+v", i, got.Points[i], p)
 		}
 	}
+	if got.CreatedByParticipantID != nil {
+		t.Fatalf("CreatedByParticipantID = %q, want nil for an unattributed drawing", *got.CreatedByParticipantID)
+	}
+}
+
+func TestCreateDrawing_RecordsCreator(t *testing.T) {
+	s := newTestStore(t)
+
+	room, _, err := s.CreateRoom("Room", "GM", "password")
+	if err != nil {
+		t.Fatalf("CreateRoom: %v", err)
+	}
+	player, err := s.JoinRoom(room.ID, "Bob")
+	if err != nil {
+		t.Fatalf("JoinRoom: %v", err)
+	}
+	scene, err := s.CreateScene(room.ID, "Scene", nil, 70, 10, 10)
+	if err != nil {
+		t.Fatalf("CreateScene: %v", err)
+	}
+
+	d, err := s.CreateDrawing(scene.ID, DrawingKindLine, []Point{{X: 0, Y: 0}, {X: 1, Y: 1}}, "#cc0000", &player.ID)
+	if err != nil {
+		t.Fatalf("CreateDrawing: %v", err)
+	}
+	if d.CreatedByParticipantID == nil || *d.CreatedByParticipantID != player.ID {
+		t.Fatalf("returned CreatedByParticipantID = %v, want %q", d.CreatedByParticipantID, player.ID)
+	}
+
+	drawings, err := s.ListDrawingsForScene(scene.ID)
+	if err != nil {
+		t.Fatalf("ListDrawingsForScene: %v", err)
+	}
+	if len(drawings) != 1 {
+		t.Fatalf("len(drawings) = %d, want 1", len(drawings))
+	}
+	if got := drawings[0].CreatedByParticipantID; got == nil || *got != player.ID {
+		t.Fatalf("loaded CreatedByParticipantID = %v, want %q", got, player.ID)
+	}
+}
+
+func TestCreateDrawing_RejectsUnknownCreator(t *testing.T) {
+	s := newTestStore(t)
+
+	room, _, err := s.CreateRoom("Room", "GM", "password")
+	if err != nil {
+		t.Fatalf("CreateRoom: %v", err)
+	}
+	scene, err := s.CreateScene(room.ID, "Scene", nil, 70, 10, 10)
+	if err != nil {
+		t.Fatalf("CreateScene: %v", err)
+	}
+
+	ghost := "not-a-participant"
+	if _, err := s.CreateDrawing(scene.ID, DrawingKindLine, []Point{{X: 0, Y: 0}, {X: 1, Y: 1}}, "#cc0000", &ghost); err == nil {
+		t.Fatal("expected a foreign key error for a creator that isn't a participant")
+	}
+}
+
+// A participant row can go away (e.g. its room is being cleaned up)
+// while its drawings remain; authorship then reads as unknown rather
+// than the drawing disappearing or pointing at a dangling ID.
+func TestListDrawingsForScene_CreatorClearedWhenParticipantRemoved(t *testing.T) {
+	s := newTestStore(t)
+
+	room, _, err := s.CreateRoom("Room", "GM", "password")
+	if err != nil {
+		t.Fatalf("CreateRoom: %v", err)
+	}
+	player, err := s.JoinRoom(room.ID, "Bob")
+	if err != nil {
+		t.Fatalf("JoinRoom: %v", err)
+	}
+	scene, err := s.CreateScene(room.ID, "Scene", nil, 70, 10, 10)
+	if err != nil {
+		t.Fatalf("CreateScene: %v", err)
+	}
+	if _, err := s.CreateDrawing(scene.ID, DrawingKindRect, []Point{{X: 0, Y: 0}, {X: 2, Y: 2}}, "#cc0000", &player.ID); err != nil {
+		t.Fatalf("CreateDrawing: %v", err)
+	}
+
+	if _, err := s.db.Exec(`DELETE FROM participant WHERE id = ?`, player.ID); err != nil {
+		t.Fatalf("delete participant: %v", err)
+	}
+
+	drawings, err := s.ListDrawingsForScene(scene.ID)
+	if err != nil {
+		t.Fatalf("ListDrawingsForScene: %v", err)
+	}
+	if len(drawings) != 1 {
+		t.Fatalf("len(drawings) = %d, want 1 (the drawing must survive its author)", len(drawings))
+	}
+	if got := drawings[0].CreatedByParticipantID; got != nil {
+		t.Fatalf("CreatedByParticipantID = %q, want nil", *got)
+	}
 }
 
 func TestListDrawingsForScene_OrderedByCreation(t *testing.T) {
@@ -62,7 +157,7 @@ func TestListDrawingsForScene_OrderedByCreation(t *testing.T) {
 		t.Fatalf("CreateScene: %v", err)
 	}
 
-	first, err := s.CreateDrawing(scene.ID, DrawingKindLine, []Point{{X: 0, Y: 0}, {X: 1, Y: 1}}, "#000000")
+	first, err := s.CreateDrawing(scene.ID, DrawingKindLine, []Point{{X: 0, Y: 0}, {X: 1, Y: 1}}, "#000000", nil)
 	if err != nil {
 		t.Fatalf("CreateDrawing: %v", err)
 	}
@@ -72,7 +167,7 @@ func TestListDrawingsForScene_OrderedByCreation(t *testing.T) {
 	// the two rows sort deterministically by creation time below.
 	time.Sleep(2 * time.Millisecond)
 
-	second, err := s.CreateDrawing(scene.ID, DrawingKindRect, []Point{{X: 0, Y: 0}, {X: 2, Y: 2}}, "#ffffff")
+	second, err := s.CreateDrawing(scene.ID, DrawingKindRect, []Point{{X: 0, Y: 0}, {X: 2, Y: 2}}, "#ffffff", nil)
 	if err != nil {
 		t.Fatalf("CreateDrawing: %v", err)
 	}

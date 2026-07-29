@@ -57,6 +57,10 @@ export interface Drawing {
 	kind: DrawingKind;
 	points: DrawingPoint[];
 	color: string;
+	// Who drew it — null for drawings made before authorship was
+	// tracked, or whose author has left the room. Compare against
+	// `you.participantId` to tell your own drawings from other people's.
+	createdByParticipantId: string | null;
 }
 
 // A transient pointer-ping. id is generated client-side on arrival

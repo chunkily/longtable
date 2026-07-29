@@ -21,6 +21,17 @@ func New(db *sql.DB) (*Store, error) {
 }
 
 func (s *Store) migrate() error {
+	if err := s.createTables(); err != nil {
+		return err
+	}
+	// Columns added to a table after its first release need an explicit
+	// ALTER TABLE — the CREATE TABLE statements above only take effect
+	// on a database file that doesn't exist yet.
+	return s.addColumnIfMissing("drawing", "created_by_participant_id",
+		`TEXT REFERENCES participant(id) ON DELETE SET NULL`)
+}
+
+func (s *Store) createTables() error {
 	_, err := s.db.Exec(`
 		CREATE TABLE IF NOT EXISTS room (
 			id                TEXT PRIMARY KEY,
@@ -86,12 +97,13 @@ func (s *Store) migrate() error {
 		);
 
 		CREATE TABLE IF NOT EXISTS drawing (
-			id         TEXT PRIMARY KEY,
-			scene_id   TEXT NOT NULL REFERENCES scene(id) ON DELETE CASCADE,
-			kind       TEXT NOT NULL CHECK (kind IN ('freehand', 'line', 'rect', 'circle')),
-			points     TEXT NOT NULL,
-			color      TEXT NOT NULL,
-			created_at TEXT NOT NULL
+			id                        TEXT PRIMARY KEY,
+			scene_id                  TEXT NOT NULL REFERENCES scene(id) ON DELETE CASCADE,
+			kind                      TEXT NOT NULL CHECK (kind IN ('freehand', 'line', 'rect', 'circle')),
+			points                    TEXT NOT NULL,
+			color                     TEXT NOT NULL,
+			created_by_participant_id TEXT REFERENCES participant(id) ON DELETE SET NULL,
+			created_at                TEXT NOT NULL
 		);
 		CREATE INDEX IF NOT EXISTS idx_drawing_scene ON drawing(scene_id);
 
@@ -110,4 +122,30 @@ func (s *Store) migrate() error {
 		CREATE INDEX IF NOT EXISTS idx_message_room ON message(room_id);
 	`)
 	return err
+}
+
+// addColumnIfMissing is SQLite's missing "ALTER TABLE ... ADD COLUMN IF
+// NOT EXISTS": it checks the table's current columns first, so applying
+// the schema to an already-migrated database is a no-op. definition is
+// the column type and constraints — everything the ALTER TABLE
+// statement needs after the column name.
+func (s *Store) addColumnIfMissing(table, column, definition string) error {
+	var exists int
+	err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?`, table, column,
+	).Scan(&exists)
+	if err != nil {
+		return fmt.Errorf("inspect %s columns: %w", table, err)
+	}
+	if exists > 0 {
+		return nil
+	}
+
+	// Table and column names can't be bound as parameters, so they're
+	// interpolated — every caller is a compile-time constant in this
+	// file, never user input.
+	if _, err := s.db.Exec(fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, table, column, definition)); err != nil {
+		return fmt.Errorf("add %s.%s column: %w", table, column, err)
+	}
+	return nil
 }

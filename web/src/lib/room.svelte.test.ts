@@ -174,16 +174,77 @@ describe('RoomClient', () => {
 			payload: {
 				room: { slug: 'abc123', name: 'Room' },
 				you: { participantId: 'p1', displayName: 'A', role: 'gm' },
-				drawings: [{ id: 'd1', sceneId: 's1', kind: 'line', points: [], color: '#cc0000' }]
+				drawings: [
+					{
+						id: 'd1',
+						sceneId: 's1',
+						kind: 'line',
+						points: [],
+						color: '#cc0000',
+						createdByParticipantId: 'p2'
+					}
+				]
 			}
 		});
 		expect(client.drawings.map((d) => d.id)).toEqual(['d1']);
 
 		socket.emit({
 			type: 'drawing.created',
-			payload: { id: 'd2', sceneId: 's1', kind: 'rect', points: [], color: '#0033cc' }
+			payload: {
+				id: 'd2',
+				sceneId: 's1',
+				kind: 'rect',
+				points: [],
+				color: '#0033cc',
+				createdByParticipantId: 'p1'
+			}
 		});
 		expect(client.drawings.map((d) => d.id)).toEqual(['d1', 'd2']);
+	});
+
+	it('keeps the author of each drawing, so your own can be told from other people', () => {
+		const { client, socket } = connectedClient();
+		socket.emit({
+			type: 'state.sync',
+			payload: {
+				room: { slug: 'abc123', name: 'Room' },
+				you: { participantId: 'p1', displayName: 'A', role: 'gm' },
+				drawings: [
+					{
+						id: 'd1',
+						sceneId: 's1',
+						kind: 'line',
+						points: [],
+						color: '#cc0000',
+						createdByParticipantId: 'p2'
+					},
+					// Drawings predating authorship tracking, or whose author
+					// has left the room, arrive with a null author.
+					{
+						id: 'd2',
+						sceneId: 's1',
+						kind: 'line',
+						points: [],
+						color: '#cc0000',
+						createdByParticipantId: null
+					}
+				]
+			}
+		});
+
+		socket.emit({
+			type: 'drawing.created',
+			payload: {
+				id: 'd3',
+				sceneId: 's1',
+				kind: 'rect',
+				points: [],
+				color: '#0033cc',
+				createdByParticipantId: 'p1'
+			}
+		});
+
+		expect(client.drawings.map((d) => d.createdByParticipantId)).toEqual(['p2', null, 'p1']);
 	});
 
 	it('resets drawings on scene.activated', () => {

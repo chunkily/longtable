@@ -460,7 +460,11 @@ func (h *Hub) handleDrawCreate(ctx context.Context, c *client, raw json.RawMessa
 		color = defaultDrawingColor
 	}
 
-	drawing, err := h.store.CreateDrawing(req.SceneID, kind, req.Points, color)
+	// The author is taken from the authenticated connection, never from
+	// the payload — a client can't claim to have drawn something as
+	// someone else.
+	participantID := c.participant.ID
+	drawing, err := h.store.CreateDrawing(req.SceneID, kind, req.Points, color, &participantID)
 	if err != nil {
 		slog.Error("ws: create drawing failed", "error", err)
 		h.sendError(ctx, c, "failed to create drawing")
