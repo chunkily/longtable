@@ -2,6 +2,8 @@
 // command/event protocol (see internal/ws/hub.go) in Svelte 5 runes
 // state so components just read fields and let the UI update itself.
 
+import { PING_COOLDOWN_MS, PING_LIFETIME_MS } from './ping';
+
 export interface ChatMessage {
 	id: string;
 	participantId: string | null;
@@ -136,9 +138,6 @@ interface ErrorPayload {
 	drawingId?: string;
 }
 
-// How long a ping marker stays on screen before RoomClient removes it.
-const PING_LIFETIME_MS = 1500;
-
 export class RoomClient {
 	status = $state<ConnectionStatus>('connecting');
 	error = $state('');
@@ -161,6 +160,8 @@ export class RoomClient {
 	// — nothing reactive reads it, so a plain Map is right here.
 	// eslint-disable-next-line svelte/prefer-svelte-reactivity
 	private pendingErases = new Map<string, { drawing: Drawing; index: number }>();
+
+	private lastPingSentAt = 0;
 
 	connect(slug: string, sessionToken: string) {
 		this.disconnect();
@@ -295,8 +296,17 @@ export class RoomClient {
 		this.drawings = restored;
 	}
 
+	// Rate limited on this side only: a ping now pulses for a few
+	// seconds, so a rapid double-click would drop a second marker over
+	// the spot the first one is trying to draw attention to. Nothing
+	// stops a client that doesn't want to be limited — if that ever
+	// matters, the check belongs in the hub's handlePing instead.
 	sendPing(sceneId: string, x: number, y: number) {
-		this.send('ping', { sceneId, x, y });
+		const now = Date.now();
+		if (now - this.lastPingSentAt < PING_COOLDOWN_MS) return;
+		if (this.send('ping', { sceneId, x, y })) {
+			this.lastPingSentAt = now;
+		}
 	}
 
 	private handleEnvelope(env: Envelope) {

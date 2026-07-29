@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { RoomClient } from './room.svelte';
+import { PING_COOLDOWN_MS, PING_LIFETIME_MS } from './ping';
 
 // A minimal stand-in for the browser WebSocket, driven entirely from
 // the test so we can assert on RoomClient's reaction to specific
@@ -498,7 +499,12 @@ describe('RoomClient', () => {
 			});
 			expect(client.pings[0].id).toBeTruthy();
 
-			vi.advanceTimersByTime(1500);
+			// The marker has to outlast every pulse of the animation, or
+			// it would vanish part-way through the sequence.
+			vi.advanceTimersByTime(PING_LIFETIME_MS - 1);
+			expect(client.pings).toHaveLength(1);
+
+			vi.advanceTimersByTime(1);
 			expect(client.pings).toHaveLength(0);
 		} finally {
 			vi.useRealTimers();
@@ -512,5 +518,48 @@ describe('RoomClient', () => {
 			type: 'ping',
 			payload: { sceneId: 'scene1', x: 5, y: 6 }
 		});
+	});
+
+	// A ping is on screen for a few seconds now, so an impatient second
+	// click would drop a marker over the spot the first is pointing at.
+	it('ignores a second ping inside the cooldown', () => {
+		vi.useFakeTimers();
+		try {
+			const { client, socket } = connectedClient();
+
+			client.sendPing('scene1', 5, 6);
+			client.sendPing('scene1', 7, 8);
+			expect(socket.sent).toHaveLength(1);
+
+			vi.advanceTimersByTime(PING_COOLDOWN_MS - 1);
+			client.sendPing('scene1', 9, 10);
+			expect(socket.sent).toHaveLength(1);
+
+			vi.advanceTimersByTime(1);
+			client.sendPing('scene1', 11, 12);
+			expect(socket.sent).toHaveLength(2);
+			expect(JSON.parse(socket.sent[1]).payload).toMatchObject({ x: 11, y: 12 });
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('does not start the cooldown on a ping that could not be sent', () => {
+		vi.useFakeTimers();
+		try {
+			const { client, socket } = connectedClient();
+			socket.readyState = 0; // connecting
+
+			client.sendPing('scene1', 5, 6);
+			expect(socket.sent).toHaveLength(0);
+
+			// Nothing went out, so the next attempt must not be swallowed
+			// as though one just had.
+			socket.readyState = 1;
+			client.sendPing('scene1', 5, 6);
+			expect(socket.sent).toHaveLength(1);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 });

@@ -3,7 +3,15 @@
 	import Konva from 'konva';
 	import { assetUrl } from '$lib/api';
 	import { DRAWING_STROKE_WIDTH, pickDrawing, strokeWidthOf } from '$lib/drawing-hit';
-	import type { Drawing, DrawingKind, DrawingPoint, RoomClient, Token } from '$lib/room.svelte';
+	import { PING_PULSES, PING_PULSE_INTERVAL_MS, PING_PULSE_SECONDS } from '$lib/ping';
+	import type {
+		Drawing,
+		DrawingKind,
+		DrawingPoint,
+		Ping,
+		RoomClient,
+		Token
+	} from '$lib/room.svelte';
 
 	// 'none' is plain pan/token-drag mode. Every other tool takes over
 	// the stage's pointer handling exclusively — only one can be active
@@ -27,7 +35,6 @@
 	// keeps strokes from accumulating an unbounded number of points
 	// while the pointer is held down.
 	const MIN_FREEHAND_SPACING = 3;
-	const PING_TWEEN_SECONDS = 1.4;
 	// How far from a stroke the eraser still grabs it, in *screen*
 	// pixels — converted to world units at the current zoom, so the
 	// eraser has the same reach whether you're zoomed right in or out,
@@ -113,6 +120,8 @@
 
 	onDestroy(() => {
 		resizeObserver?.disconnect();
+		for (const marker of pingMarkers.values()) destroyPingMarker(marker);
+		pingMarkers.clear();
 		stage?.destroy();
 	});
 
@@ -269,6 +278,16 @@
 	let eraseHighlight: Konva.Shape | null = null;
 	let highlightedDrawingId: string | null = null;
 
+	// Whether the eraser is mid-sweep, and where it last erased — the
+	// start of the next segment to clear.
+	let erasing = false;
+	let lastErasePoint: DrawingPoint | null = null;
+
+	function stopErasing() {
+		erasing = false;
+		lastErasePoint = null;
+	}
+
 	function clearCursorOverlay() {
 		cursorRing?.destroy();
 		cursorRing = null;
@@ -304,14 +323,37 @@
 		cursorRing.strokeWidth(screenToWorld(1));
 	}
 
-	// The drawing an eraser click would remove right now: the nearest
-	// one within reach, considering only drawings this participant is
-	// allowed to erase — so someone else's stroke lying closer doesn't
-	// mask your own, and clicking it does nothing rather than erroring.
+	// The drawing the eraser would take at point: the nearest one within
+	// reach, considering only drawings this participant is allowed to
+	// erase — so someone else's stroke lying closer doesn't mask your
+	// own, and touching it does nothing rather than erroring.
+	function eraserTargetAt(point: DrawingPoint): Drawing | null {
+		return pickDrawing(room.drawings.filter(canErase), point, screenToWorld(ERASER_PICK_RADIUS));
+	}
+
 	function eraserTargetAtPointer(): Drawing | null {
 		const pos = stage?.getRelativePointerPosition();
-		if (!pos) return null;
-		return pickDrawing(room.drawings.filter(canErase), pos, screenToWorld(ERASER_PICK_RADIUS));
+		return pos ? eraserTargetAt(pos) : null;
+	}
+
+	function eraseAt(point: DrawingPoint) {
+		const target = eraserTargetAt(point);
+		if (target) room.deleteDrawing(target.id);
+	}
+
+	// Erasing along the path the pointer travelled, not just where it
+	// landed: pointer events arrive far apart when the mouse is moving
+	// quickly, and testing only the endpoints would sweep straight over
+	// strokes in between. Stepping by no more than the pick radius makes
+	// the tested circles overlap, so nothing within reach can fall
+	// through a gap.
+	function eraseAlong(from: DrawingPoint, to: DrawingPoint) {
+		const step = screenToWorld(ERASER_PICK_RADIUS);
+		const steps = Math.max(1, Math.ceil(Math.hypot(to.x - from.x, to.y - from.y) / step));
+		for (let i = 1; i <= steps; i++) {
+			const t = i / steps;
+			eraseAt({ x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t });
+		}
 	}
 
 	function updateEraserCursor() {
@@ -360,6 +402,7 @@
 		);
 		painting = false;
 		pendingCells.clear();
+		stopErasing();
 		clearPreview();
 		clearCursorOverlay();
 
@@ -394,15 +437,32 @@
 		}
 
 		if (activeTool === 'eraser') {
+			// Held down, the eraser keeps taking whatever it's dragged
+			// across, so clearing a scribbled-over area is one gesture
+			// rather than a click per stroke.
 			stage.on('mousedown.tool touchstart.tool', () => {
-				const target = eraserTargetAtPointer();
-				if (target) room.deleteDrawing(target.id);
+				const pos = stage!.getRelativePointerPosition();
+				if (!pos) return;
+				erasing = true;
+				lastErasePoint = pos;
+				eraseAt(pos);
 				// Whatever was highlighted is either gone or no longer
 				// under the pointer, so re-resolve from where we are now.
 				updateEraserCursor();
 			});
-			stage.on('mousemove.tool touchmove.tool', () => updateEraserCursor());
-			stage.on('mouseleave.tool touchend.tool', () => clearCursorOverlay());
+			stage.on('mousemove.tool touchmove.tool', () => {
+				const pos = stage!.getRelativePointerPosition();
+				if (erasing && pos) {
+					eraseAlong(lastErasePoint ?? pos, pos);
+					lastErasePoint = pos;
+				}
+				updateEraserCursor();
+			});
+			stage.on('mouseup.tool touchend.tool', stopErasing);
+			stage.on('mouseleave.tool', () => {
+				stopErasing();
+				clearCursorOverlay();
+			});
 			return;
 		}
 
@@ -746,46 +806,85 @@
 	}
 
 	// Ping markers are ephemeral: RoomClient removes each ping from
-	// room.pings on its own after a short lifetime, which is what
-	// actually clears its shape here (via the "no longer present"
-	// branch below) — the tween is just the fade-out look, not the
-	// mechanism that ends the ping.
+	// room.pings on its own after PING_LIFETIME_MS, which is what
+	// actually clears its shapes here (via the "no longer present"
+	// branch below) — the tweens are just the look, not the mechanism
+	// that ends the ping. That lifetime is derived from the pulse timing
+	// in $lib/ping so a marker can't be dropped mid-sequence.
+	type PingMarker = { rings: Konva.Circle[]; timers: ReturnType<typeof setTimeout>[] };
+
 	// eslint-disable-next-line svelte/prefer-svelte-reactivity
-	const pingShapes = new Map<string, Konva.Circle>();
+	const pingMarkers = new Map<string, PingMarker>();
 
 	function renderPings() {
 		if (!pingLayer) return;
 
 		const currentIds = new Set(room.pings.map((p) => p.id));
-		for (const [id, shape] of pingShapes) {
+		for (const [id, marker] of pingMarkers) {
 			if (!currentIds.has(id)) {
-				shape.destroy();
-				pingShapes.delete(id);
+				destroyPingMarker(marker);
+				pingMarkers.delete(id);
 			}
 		}
 
 		for (const ping of room.pings) {
-			if (pingShapes.has(ping.id)) continue;
-			const circle = new Konva.Circle({
+			if (pingMarkers.has(ping.id)) continue;
+			pingMarkers.set(ping.id, startPingPulses(ping));
+		}
+
+		pingLayer.batchDraw();
+	}
+
+	// One click pulses a few times rather than once: a single flash is
+	// easy to miss if someone happened to be looking at the chat panel,
+	// and repeating it costs nothing on the wire — the server broadcasts
+	// one ping and every client expands it into the same sequence.
+	function startPingPulses(ping: Ping): PingMarker {
+		const rings: Konva.Circle[] = [];
+		const timers: ReturnType<typeof setTimeout>[] = [];
+
+		for (let i = 0; i < PING_PULSES; i++) {
+			const ring = new Konva.Circle({
 				x: ping.x,
 				y: ping.y,
 				radius: 6,
 				stroke: '#f59e0b',
 				strokeWidth: 3,
+				// Later pulses stay invisible until their turn, rather than
+				// sitting on the map as a static dot in the meantime.
+				opacity: 0,
 				listening: false
 			});
-			pingLayer.add(circle);
-			pingShapes.set(ping.id, circle);
-			new Konva.Tween({
-				node: circle,
-				duration: PING_TWEEN_SECONDS,
-				radius: 40,
-				opacity: 0,
-				easing: Konva.Easings.EaseOut
-			}).play();
+			pingLayer.add(ring);
+			rings.push(ring);
+
+			const pulse = () => {
+				ring.opacity(1);
+				new Konva.Tween({
+					node: ring,
+					duration: PING_PULSE_SECONDS,
+					radius: 40,
+					opacity: 0,
+					easing: Konva.Easings.EaseOut
+				}).play();
+			};
+
+			if (i === 0) {
+				pulse();
+			} else {
+				timers.push(setTimeout(pulse, i * PING_PULSE_INTERVAL_MS));
+			}
 		}
 
-		pingLayer.batchDraw();
+		return { rings, timers };
+	}
+
+	// Pending pulses have to be cancelled along with the shapes they
+	// animate — a timer that fires after its ring is destroyed would be
+	// reaching into a node that no longer exists.
+	function destroyPingMarker(marker: PingMarker) {
+		for (const timer of marker.timers) clearTimeout(timer);
+		for (const ring of marker.rings) ring.destroy();
 	}
 
 	function renderTokens(gridSize: number) {

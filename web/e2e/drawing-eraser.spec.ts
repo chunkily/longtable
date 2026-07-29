@@ -196,6 +196,45 @@ test('the ellipse tool fills the box it is dragged out in', async ({ page }) => 
 	await expect.poll(() => inkAt(page, left)).toBe(0);
 });
 
+// Held down, the eraser takes everything it is dragged across. The
+// sweep below is delivered as a single 140px mouse move, so only the
+// interpolation between pointer events can be clearing the strokes it
+// passes over — testing just where the pointer landed would leave all
+// three standing.
+test('the eraser clears every stroke it is dragged across', async ({ page }) => {
+	await page.goto('/');
+	await page.getByLabel('Room name').fill('Sweep');
+	await page.getByLabel('Your name (GM)').fill('Alice');
+	await page.getByLabel('GM password').fill('hunter2');
+	await page.getByRole('button', { name: 'Create room' }).click();
+
+	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
+	await page.getByRole('button', { name: 'New scene' }).click();
+	await page.getByLabel('Name').fill('Map');
+	await page.getByRole('button', { name: 'Create scene' }).click();
+	await expect(page.locator('canvas').first()).toBeVisible();
+
+	const rows = [100, 150, 200];
+	for (const y of rows) {
+		await dragWithTool(page, 'Line', { from: { x: 100, y }, to: { x: 400, y } });
+	}
+	for (const y of rows) {
+		await expect.poll(() => inkAt(page, { x: 250, y })).toBeGreaterThan(0);
+	}
+
+	await selectTool(page, 'Erase');
+	const origin = await canvasOrigin(page);
+	// Press clear of every line, then cross all three in one move.
+	await page.mouse.move(origin.x + 250, origin.y + 60);
+	await page.mouse.down();
+	await page.mouse.move(origin.x + 250, origin.y + 240);
+	await page.mouse.up();
+
+	for (const y of rows) {
+		await expect.poll(() => inkAt(page, { x: 250, y })).toBe(0);
+	}
+});
+
 test('the eraser grabs a stroke from beside it, not only dead-on', async ({ page }) => {
 	await page.goto('/');
 	await page.getByLabel('Room name').fill('Near Miss');
