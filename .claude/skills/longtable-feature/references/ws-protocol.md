@@ -69,8 +69,10 @@ client reverses them).
 3. Scope: `requireSceneInRoom(ctx, c, sceneID)`, or `sceneInRoom` when the caller wants to word
    the error itself. For tokens, `TokenRoomID`; for a drawing, resolve it first and check
    `sceneInRoom(c, drawing.SceneID)` — its own scene, never a payload-supplied one.
-4. References: `requireAssetExists(ctx, c, assetID)` so a scene or token can't point at a
-   dangling asset id. `nil` (no image) is always allowed.
+4. References: `requireAssetInRoom(ctx, c, assetID)` so a scene or token can't point at a
+   dangling asset id — or at an asset that exists but belongs to another room's library, since
+   asset rows are global and content-addressed (see `internal/store/asset.go`'s `room_asset`
+   table). `nil` (no image) is always allowed.
 5. Per-object permission, e.g. `draw.delete` letting a GM erase anything but a player only what
    they authored. A drawing with no recorded author belongs to nobody and is GM-only to erase.
 6. Apply through the store, `slog.Error` on failure, short message to the client.

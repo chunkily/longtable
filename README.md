@@ -14,7 +14,7 @@ Core tabletop only: map upload, token placement/movement, fog of war, a basic
 dice roller, and real-time sync between the GM and players. No character sheets
 or rules automation yet.
 
-## Running locally
+## Building and running locally
 
 ```bash
 cd web && npm install && npm run build && cd ..

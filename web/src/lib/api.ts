@@ -23,6 +23,14 @@ export interface Asset {
 	filename: string;
 	mimeType: string;
 	byteSize: number;
+	/** Free-text credit or licence for this room's copy, '' when none was given. */
+	attribution: string;
+	/**
+	 * Set when an animated upload was accepted as a still image, so the
+	 * uploader can be told rather than left wondering why their goblin
+	 * stopped moving. Absent on the ordinary case.
+	 */
+	flattened?: boolean;
 }
 
 class ApiError extends Error {}
@@ -67,9 +75,21 @@ export function gmLogin(slug: string, displayName: string, password: string): Pr
 	});
 }
 
-export async function uploadAsset(slug: string, sessionToken: string, file: File): Promise<Asset> {
+/**
+ * Uploads an image and adds it to the room's library. The server decodes
+ * and re-encodes it to WebP, so what comes back is not the file that went
+ * in — `filename` is rewritten to match, and the returned id is shared
+ * with any room that already had these exact pixels.
+ */
+export async function uploadAsset(
+	slug: string,
+	sessionToken: string,
+	file: File,
+	attribution = ''
+): Promise<Asset> {
 	const form = new FormData();
 	form.append('file', file);
+	if (attribution.trim()) form.append('attribution', attribution.trim());
 
 	const res = await fetch(`/api/rooms/${encodeURIComponent(slug)}/assets`, {
 		method: 'POST',
@@ -81,6 +101,13 @@ export async function uploadAsset(slug: string, sessionToken: string, file: File
 		throw new ApiError(body.error ?? `upload failed with status ${res.status}`);
 	}
 	return res.json();
+}
+
+/** The room's asset library, newest first. Requires a session for that room. */
+export function listRoomAssets(slug: string, sessionToken: string): Promise<Asset[]> {
+	return apiFetch(`/api/rooms/${encodeURIComponent(slug)}/assets`, {
+		headers: { Authorization: `Bearer ${sessionToken}` }
+	});
 }
 
 export function assetUrl(assetId: string): string {

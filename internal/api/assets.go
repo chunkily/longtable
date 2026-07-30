@@ -16,11 +16,21 @@ import (
 
 const maxAssetUploadBytes = 25 << 20 // 25 MiB — generous for map/token art
 
+// maxAttributionLength bounds the free-text credit field. Long enough
+// for a name, a licence and a URL; short enough that it can't be used as
+// storage. Truncated rather than rejected, since losing the tail of a
+// credit is a smaller harm than losing the upload it came with.
+const maxAttributionLength = 500
+
 type assetPayloadT struct {
 	ID       string `json:"id"`
 	Filename string `json:"filename"`
 	MimeType string `json:"mimeType"`
 	ByteSize int64  `json:"byteSize"`
+	// Attribution is whatever free text the uploader gave as credit or
+	// licence for this room's copy of the asset. Empty when none was
+	// given, which is the common case.
+	Attribution string `json:"attribution"`
 	// Flattened says an animated upload was accepted as a still image, so
 	// the uploader can be told rather than left wondering why their
 	// goblin stopped moving. Absent for the ordinary case.
@@ -29,6 +39,12 @@ type assetPayloadT struct {
 
 func assetPayload(a store.Asset) assetPayloadT {
 	return assetPayloadT{ID: a.ID, Filename: a.Filename, MimeType: a.MimeType, ByteSize: a.ByteSize}
+}
+
+func libraryAssetPayload(a store.LibraryAsset) assetPayloadT {
+	payload := assetPayload(a.Asset)
+	payload.Attribution = a.Attribution
+	return payload
 }
 
 // uploadAsset accepts a multipart file upload scoped to a room (any
@@ -43,13 +59,7 @@ func (srv *Server) uploadAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token := bearerToken(r)
-	if token == "" {
-		writeError(w, http.StatusUnauthorized, "missing session token")
-		return
-	}
-	if _, err := srv.store.GetParticipantByToken(room.ID, token); err != nil {
-		writeError(w, http.StatusUnauthorized, "invalid session")
+	if !srv.requireParticipant(w, r, room) {
 		return
 	}
 
@@ -91,9 +101,71 @@ func (srv *Server) uploadAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Every upload joins the uploading room's library, whether or not it
+	// turned out to be a file the server already had. That's what makes
+	// "upload new" and "pick from library" the same gesture from the
+	// second time onwards, and it's why dedup can be global without one
+	// room's art showing up in another's picker.
+	attribution := strings.TrimSpace(r.FormValue("attribution"))
+	if len(attribution) > maxAttributionLength {
+		attribution = attribution[:maxAttributionLength]
+	}
+	if err := srv.store.AddAssetToRoom(room.ID, asset.ID, attribution); err != nil {
+		slog.Error("api: add asset to room library failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "stored the image, but failed to add it to the library")
+		return
+	}
+
 	payload := assetPayload(asset)
+	payload.Attribution = attribution
 	payload.Flattened = image.Animated
 	writeJSON(w, http.StatusCreated, payload)
+}
+
+// listRoomAssets returns the room's library. Authenticated, unlike
+// serving an individual asset: a private room's library is a list of
+// everything that room has, and handing that out to anyone with the slug
+// would leak the contents of a room they can't otherwise see. Serving
+// one asset by unguessable ID is a different proposition (see
+// serveAsset).
+func (srv *Server) listRoomAssets(w http.ResponseWriter, r *http.Request) {
+	room, ok := srv.lookupRoom(w, r.PathValue("slug"))
+	if !ok {
+		return
+	}
+	if !srv.requireParticipant(w, r, room) {
+		return
+	}
+
+	assets, err := srv.store.ListRoomAssets(room.ID)
+	if err != nil {
+		slog.Error("api: list room assets failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to list assets")
+		return
+	}
+
+	payload := make([]assetPayloadT, 0, len(assets))
+	for _, a := range assets {
+		payload = append(payload, libraryAssetPayload(a))
+	}
+	writeJSON(w, http.StatusOK, payload)
+}
+
+// requireParticipant checks the bearer session token belongs to this
+// room, which is the whole of "are you allowed to see this room's
+// things" — there are no accounts, so holding a session for the room is
+// membership.
+func (srv *Server) requireParticipant(w http.ResponseWriter, r *http.Request, room store.Room) bool {
+	token := bearerToken(r)
+	if token == "" {
+		writeError(w, http.StatusUnauthorized, "missing session token")
+		return false
+	}
+	if _, err := srv.store.GetParticipantByToken(room.ID, token); err != nil {
+		writeError(w, http.StatusUnauthorized, "invalid session")
+		return false
+	}
+	return true
 }
 
 // storeImage commits a re-encoded image, reusing an existing asset when

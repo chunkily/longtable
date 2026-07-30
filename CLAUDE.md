@@ -13,7 +13,7 @@ architecture and current state live here instead**, and keeping them true is par
 | Path | What lives there |
 | --- | --- |
 | `cmd/longtable/` | entrypoint: `serve` (default) plus a `room list` / `room reset-password` admin CLI |
-| `internal/api/` | HTTP routes: create/join room, GM login, asset upload + serving, health check, `GET /ws` upgrade, SPA fallback for the embedded frontend |
+| `internal/api/` | HTTP routes: create/join room, GM login, asset upload + serving + per-room library listing, health check, `GET /ws` upgrade, SPA fallback for the embedded frontend |
 | `internal/ws/` | the real-time hub and the authority on room state — command/event protocol, permission checks, broadcast |
 | `internal/store/` | SQLite schema and every typed query (rooms, participants, scenes, tokens, fog, drawings, chat). `store.go` holds the `CREATE TABLE`s and migrations |
 | `internal/imageproc/` | decodes and re-encodes every upload to WebP. Read its doc comment before touching it — the studio-swing trap in there is easy to reintroduce |
@@ -36,16 +36,18 @@ authoritative; the client never writes to the database.
 
 ## Where things stand
 
-Working today: rooms with a GM password and player join, scenes built from an uploaded map,
-tokens (GM creates, anyone drags, hidden ones withheld from players), reveal-only fog, drawings
-(freehand/line/rect/ellipse) with an eraser and per-session undo/redo, pings, distance measuring,
-chat with `/roll`. All of it syncs live; everything but pings and measurements persists.
+Working today: rooms with a GM password and player join, scenes built from an uploaded map or a
+picked library asset, tokens (GM creates, anyone drags, hidden ones withheld from players),
+reveal-only fog, drawings (freehand/line/rect/ellipse) with an eraser and per-session undo/redo,
+pings, distance measuring, chat with `/roll`. Every upload is decoded and re-encoded to WebP and
+joins the uploading room's library — content-addressed globally so identical uploads share one
+file, but a room only ever sees what it added itself. All of it syncs live; everything but pings
+and measurements persists.
 
 Known gaps, which is also roughly the queue: no scene-switcher UI (a new scene auto-activates
 because there's nowhere to pick one), no initiative tracker, no token detail panel (so no HP or
-conditions), fog can't be hidden again or reset, no WebSocket reconnect, no prebuilt releases.
-Uploads are decoded and re-encoded to WebP now, so nothing but pixels is stored or served, but
-there's no asset library yet — every scene and token means uploading a file again.
+conditions), fog can't be hidden again or reset, no WebSocket reconnect, no prebuilt releases, no
+way for a Host to remove a moderated asset or cap upload sizes per room.
 
 `planning/backlog/` is the authority on all of this and goes into far more detail: `done/`
 records what shipped and why, `in-progress/` and `open/` are the queue. Items cite paths and line
