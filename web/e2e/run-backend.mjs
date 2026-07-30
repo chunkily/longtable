@@ -24,7 +24,7 @@ const binPath = path.join(
 
 mkdirSync(dataDir, { recursive: true });
 
-const build = spawnSync('go', ['build', '-o', binPath, './cmd/longtable'], {
+const build = spawnSync('go', ['build', '-tags', 'nodynamic', '-o', binPath, './cmd/longtable'], {
 	cwd: repoRoot,
 	stdio: 'inherit'
 });

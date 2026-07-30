@@ -18,7 +18,7 @@ or rules automation yet.
 
 ```bash
 cd web && npm install && npm run build && cd ..
-go build -o longtable ./cmd/longtable
+go build -tags nodynamic -o longtable ./cmd/longtable
 ./longtable
 ```
 
@@ -33,7 +33,7 @@ every push and pull request.
 parser:
 
 ```bash
-go test ./internal/... ./cmd/...
+go test -tags nodynamic ./internal/... ./cmd/...
 ```
 
 Scope it to `./internal/... ./cmd/...` rather than `./...`: the repo root also
@@ -41,6 +41,11 @@ contains `web/node_modules`, which the go tool would otherwise walk looking for
 packages. CI additionally runs with `-race`, which needs cgo and so won't work
 against the CGO-free SQLite driver on a default Windows setup — Linux CI covers
 it.
+
+`-tags nodynamic` keeps the WebP encoder on its pure-Go path rather than picking
+up a system libwebp if one happens to be installed, so a build behaves the same
+on every machine. Leaving it off still compiles and passes, but you'd be testing
+a different encoder from the one a Host's downloaded binary uses.
 
 **Frontend unit tests** — the WebSocket client's state handling, and the pure
 geometry modules (grid distance, drawing hit-testing). Vitest, no browser:

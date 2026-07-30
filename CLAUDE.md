@@ -16,7 +16,8 @@ architecture and current state live here instead**, and keeping them true is par
 | `internal/api/` | HTTP routes: create/join room, GM login, asset upload + serving, health check, `GET /ws` upgrade, SPA fallback for the embedded frontend |
 | `internal/ws/` | the real-time hub and the authority on room state — command/event protocol, permission checks, broadcast |
 | `internal/store/` | SQLite schema and every typed query (rooms, participants, scenes, tokens, fog, drawings, chat). `store.go` holds the `CREATE TABLE`s and migrations |
-| `internal/blobstore/` | uploaded images on disk, addressed by content hash so identical uploads share a file |
+| `internal/imageproc/` | decodes and re-encodes every upload to WebP. Read its doc comment before touching it — the studio-swing trap in there is easy to reintroduce |
+| `internal/blobstore/` | re-encoded images on disk, addressed by content hash so identical uploads share a file |
 | `internal/auth/` | session tokens and bcrypt password hashing. No accounts — identity in a room is a token in `localStorage` |
 | `internal/dice/` | `/roll 2d6+3` expression parser |
 | `internal/db/` | SQLite wiring (`modernc.org/sqlite`, no CGO) |
@@ -43,8 +44,8 @@ chat with `/roll`. All of it syncs live; everything but pings and measurements p
 Known gaps, which is also roughly the queue: no scene-switcher UI (a new scene auto-activates
 because there's nowhere to pick one), no initiative tracker, no token detail panel (so no HP or
 conditions), fog can't be hidden again or reset, no WebSocket reconnect, no prebuilt releases.
-Uploads are stored as received — the re-encode pass in
-[ADR-0005](planning/decisions/0005-webp-reencoding-library.md) is accepted but unbuilt.
+Uploads are decoded and re-encoded to WebP now, so nothing but pixels is stored or served, but
+there's no asset library yet — every scene and token means uploading a file again.
 
 `planning/backlog/` is the authority on all of this and goes into far more detail: `done/`
 records what shipped and why, `in-progress/` and `open/` are the queue. Items cite paths and line
@@ -54,12 +55,12 @@ relying on one.
 ## Commands
 
 ```bash
-cd web && npm install && npm run build && cd .. && go build -o longtable ./cmd/longtable
+cd web && npm install && npm run build && cd .. && go build -tags nodynamic -o longtable ./cmd/longtable
 ```
 
 | Task | Command |
 | --- | --- |
-| Go build/vet/test | `go build ./internal/... ./cmd/...`, `go vet ./internal/... ./cmd/...`, `go test ./internal/... ./cmd/...` |
+| Go build/vet/test | `go build -tags nodynamic ./internal/... ./cmd/...`, same for `go vet` and `go test` |
 | Frontend unit tests | `npm --prefix web run test` (vitest + jsdom) |
 | Types | `npm --prefix web run check` (svelte-check) |
 | Lint + format | `npm --prefix web run lint` (prettier check + eslint), `... run format` to fix |
