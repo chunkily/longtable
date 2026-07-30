@@ -2,10 +2,12 @@
 
 Self-hosted virtual tabletop for D&D. One Go binary with the SvelteKit frontend embedded; the GM
 runs it on their own machine and everyone else joins over LAN in a browser. See
-[README.md](README.md) for the pitch and [planning/](planning/) for what's shipped and what's next.
+[README.md](README.md) for the pitch, the architecture and the test commands.
 
-**The README's "Status" section is stale** — it describes early scaffolding. The real state is
-in `planning/backlog/done/` and `planning/backlog/in-progress/`.
+For what's actually built and what's next, `planning/backlog/` beats the README every time:
+`done/` records what shipped and the reasoning behind it, `in-progress/` and `open/` are the
+queue. Backlog items cite file paths and line numbers, which is often the fastest orientation
+available — but they go stale, so verify before relying on one.
 
 ## Layout
 
