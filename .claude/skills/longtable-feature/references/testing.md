@@ -78,3 +78,46 @@ Assertions that only a browser can make, and that are worth reaching for: state 
 
 Ports: :8080 and :5173, shared with other sessions in this checkout — ask before killing anything
 sitting on them. Runs also write to the shared `web/.e2e-data/longtable.db`.
+
+**Run `npx playwright test` from inside `web/`, not the repo root.** From the root, npm's
+upward `node_modules` search can resolve a different `@playwright/test` than the one `web/`
+depends on, and the failure it produces is misleading: `"Playwright Test did not expect test()
+to be called here"` / `"two different versions of @playwright/test"`, pointing at a `test(...)`
+call in a spec file that is completely fine. If that error shows up, check `pwd` before doing
+anything else — don't start editing the spec.
+
+**Testing a file upload:** use `locator.setInputFiles({ name, mimeType, buffer })`. It works on a
+hidden `<input type="file">` — visibility doesn't matter to Playwright the way it does to a real
+click — so there's no need to reach for a visible-input workaround. Build the buffer from a real
+tiny image (`image/png` encoded in Go and pasted in as a literal, or built inline in the spec);
+`imageproc.Reencode` sniffs content and rejects anything that isn't a genuine image, so an
+arbitrary byte string won't get past the upload handler at all.
+
+**Fixture content has to be unique per test, not just per spec file.** The e2e database is
+persistent across runs (`web/.e2e-data/longtable.db`, gitignored, never reset between
+`playwright test` invocations) and content-addressed — uploading the same pixels a second time,
+weeks later, in an unrelated spec, resolves to the *same* asset row under its *original*
+filename. A test that asserts on a freshly-uploaded filename will flake the moment another spec
+(or a manual check through the Browser pane, which talks to this same database — see
+`.claude/launch.json`'s `backend` config) has ever uploaded identical bytes. Give each fixture a
+genuinely distinct pixel value (a different flat colour is enough) rather than reusing a
+constant across tests.
+
+**Manual verification through the Browser pane is a different environment from a Playwright
+run**, and can fail in ways that look like application bugs but aren't. If `computer{screenshot}`
+reports `"the Browser pane is not displayed, so the page is not compositing frames"`, treat
+everything downstream with suspicion: coordinate-based clicks refuse to run at all without a
+cached screenshot, and even ref-based clicks can silently not land. Backgrounded/non-composited
+tabs are also where Chrome is most likely to throttle CSS animations and `requestAnimationFrame`
+— a dialog that closes (`data-state="closed"` in the DOM, confirmed) but stays fully opaque and
+interactive on screen is that, not a broken exit transition. Before concluding something in the
+app is wrong: reproduce it against a real `npx playwright test` run first, and if you can't check
+the pane state, try reverting the suspect file with `git stash push -- <file>` and reproducing
+against the *unmodified* version — if the symptom is identical, it's the environment, not the
+change.
+
+One more manual-testing trap: checking DOM state synchronously right after a JS `element.click()`
+(e.g. `el.click(); document.querySelector(...)`) can run before Svelte's reactivity has flushed,
+reading stale state and reporting "nothing happened" for something that actually worked a moment
+later. Await a short `setTimeout` (or a subsequent tool round-trip, which has the same effect)
+before checking.
