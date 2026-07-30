@@ -20,6 +20,7 @@
 	import Circle from '@lucide/svelte/icons/circle';
 	import MapPin from '@lucide/svelte/icons/map-pin';
 	import Eraser from '@lucide/svelte/icons/eraser';
+	import Ruler from '@lucide/svelte/icons/ruler';
 	import Undo from '@lucide/svelte/icons/undo';
 	import Redo from '@lucide/svelte/icons/redo';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
@@ -40,8 +41,8 @@
 	let chatText = $state('');
 
 	// The map toolbar: 'none' is plain pan/token-drag mode. Fog stays
-	// GM-only (gated in the template below); drawing, pinging, and
-	// erasing are open to everyone, since they're meant as a shared
+	// GM-only (gated in the template below); drawing, pinging, measuring
+	// and erasing are open to everyone, since they're meant as a shared
 	// pointer/annotation tool rather than GM-only map control. The
 	// eraser is offered to everyone but reaches different drawings per
 	// role: a GM can erase anyone's, a Player only their own.
@@ -303,6 +304,15 @@
 								title="Ping the map"
 							>
 								<MapPin class="h-4 w-4" />
+							</Button>
+							<Button
+								variant={activeTool === 'measure' ? 'default' : 'outline'}
+								size="sm"
+								aria-label="Measure"
+								onclick={() => selectTool('measure')}
+								title="Drag to measure a distance in feet"
+							>
+								<Ruler class="h-4 w-4" />
 							</Button>
 							<Button
 								variant={activeTool === 'eraser' ? 'default' : 'outline'}

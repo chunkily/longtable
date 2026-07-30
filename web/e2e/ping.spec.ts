@@ -8,7 +8,7 @@ import { PING_LIFETIME_MS, PING_PULSE_INTERVAL_MS } from '../src/lib/ping';
 // marker cleans itself up once the sequence ends.
 
 // Layer order in game-canvas.svelte: map, grid, fog, drawings, tokens,
-// pings, preview.
+// pings, measurements, preview.
 const PING_LAYER = 5;
 
 // Every visible pixel on the ping layer. A pulse is an expanding ring,

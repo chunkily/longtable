@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
@@ -89,6 +90,10 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	c := &client{conn: conn, roomID: room.ID, participant: participant}
 	h.register(c)
+	// Declared before the unregister defer so it runs after it (defers
+	// run last-in-first-out): the leaving client shouldn't be among the
+	// recipients of its own cleanup.
+	defer h.endMeasurementOnDisconnect(c)
 	defer h.unregister(c)
 
 	ctx := r.Context()
@@ -225,6 +230,10 @@ func (h *Hub) handleMessage(ctx context.Context, c *client, data []byte) {
 		h.handleDrawDelete(ctx, c, env.Payload)
 	case "ping":
 		h.handlePing(ctx, c, env.Payload)
+	case "measure.update":
+		h.handleMeasureUpdate(ctx, c, env.Payload)
+	case "measure.end":
+		h.handleMeasureEnd(ctx, c)
 	default:
 		h.sendError(ctx, c, fmt.Sprintf("unknown command type %q", env.Type))
 	}
@@ -600,6 +609,69 @@ func (h *Hub) handlePing(ctx context.Context, c *client, raw json.RawMessage) {
 		"y":               req.Y,
 		"participantName": c.participant.DisplayName,
 	})
+}
+
+type measureUpdateRequest struct {
+	SceneID string      `json:"sceneId"`
+	From    store.Point `json:"from"`
+	To      store.Point `json:"to"`
+}
+
+// handleMeasureUpdate relays where a participant is currently dragging a
+// measurement. Like ping it is never persisted — a measurement only
+// means anything while it's being made — but unlike ping it is a
+// continuous gesture, so each participant has at most one in flight and
+// every update replaces the last. Recipients key on participantId; the
+// gesture ends with measure.end.
+//
+// The distance itself is deliberately not computed here: the two
+// endpoints are all anyone needs, and every client already knows the
+// scene's grid size, so sending a number as well would just be a second
+// source of truth to keep in step with the line.
+func (h *Hub) handleMeasureUpdate(ctx context.Context, c *client, raw json.RawMessage) {
+	var req measureUpdateRequest
+	if err := decodePayload(raw, &req); err != nil || req.SceneID == "" {
+		h.sendError(ctx, c, "invalid measure.update payload")
+		return
+	}
+	if !h.requireSceneInRoom(ctx, c, req.SceneID) {
+		return
+	}
+
+	h.broadcast(ctx, c.roomID, "measure.updated", map[string]any{
+		"participantId":   c.participant.ID,
+		"participantName": c.participant.DisplayName,
+		"sceneId":         req.SceneID,
+		"from":            req.From,
+		"to":              req.To,
+	})
+}
+
+// handleMeasureEnd takes a participant's measurement back off everyone's
+// map. It carries no payload: a participant has only one measurement at
+// a time, and the connection says whose it is.
+func (h *Hub) handleMeasureEnd(ctx context.Context, c *client) {
+	h.broadcastMeasureEnded(ctx, c)
+}
+
+func (h *Hub) broadcastMeasureEnded(ctx context.Context, c *client) {
+	h.broadcast(ctx, c.roomID, "measure.ended", map[string]any{"participantId": c.participant.ID})
+}
+
+const measureCleanupTimeout = 5 * time.Second
+
+// endMeasurementOnDisconnect clears a measurement left behind by a
+// client that dropped mid-drag, which would otherwise hang on every
+// other map until the scene changed. Sent unconditionally rather than
+// tracked per client: a measure.ended for someone who wasn't measuring
+// is a no-op for recipients, and that's cheaper than the bookkeeping.
+//
+// The request context is already canceled by the time a connection
+// drops, so this gets a fresh one of its own.
+func (h *Hub) endMeasurementOnDisconnect(c *client) {
+	ctx, cancel := context.WithTimeout(context.Background(), measureCleanupTimeout)
+	defer cancel()
+	h.broadcastMeasureEnded(ctx, c)
 }
 
 type sceneCreateRequest struct {

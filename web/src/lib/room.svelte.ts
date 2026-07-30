@@ -2,6 +2,7 @@
 // command/event protocol (see internal/ws/hub.go) in Svelte 5 runes
 // state so components just read fields and let the UI update itself.
 
+import { MEASURE_SEND_INTERVAL_MS } from './measure';
 import { PING_COOLDOWN_MS, PING_LIFETIME_MS } from './ping';
 
 export interface ChatMessage {
@@ -79,6 +80,19 @@ export interface Ping {
 	participantName: string;
 }
 
+// A measurement someone is dragging out right now — two world-space
+// points, with the distance left to the reader (see $lib/measure). Never
+// persisted and never in state.sync: it exists only for as long as the
+// drag does. Keyed by participantId, since each person has one at a
+// time and every update replaces their last.
+export interface Measurement {
+	participantId: string;
+	participantName: string;
+	sceneId: string;
+	from: DrawingPoint;
+	to: DrawingPoint;
+}
+
 export interface You {
 	participantId: string;
 	displayName: string;
@@ -131,6 +145,10 @@ interface PingPayload {
 	participantName: string;
 }
 
+interface MeasureEndedPayload {
+	participantId: string;
+}
+
 // One reversible thing this session did to the map. Both directions
 // carry the whole drawing, because undoing an erase has to put it back
 // exactly as it was, and redoing a drawing has to recreate it under the
@@ -166,6 +184,7 @@ export class RoomClient {
 	fogCells = $state<FogCell[]>([]);
 	drawings = $state<Drawing[]>([]);
 	pings = $state<Ping[]>([]);
+	measurements = $state<Measurement[]>([]);
 
 	private socket: WebSocket | null = null;
 
@@ -177,6 +196,12 @@ export class RoomClient {
 	private pendingErases = new Map<string, { drawing: Drawing; index: number }>();
 
 	private lastPingSentAt = 0;
+
+	// The latest measurement position not yet put on the wire, and the
+	// timer holding the wire until the interval is up. Both null when no
+	// measurement is in progress.
+	private unsentMeasure: Measurement | null = null;
+	private measureTimer: ReturnType<typeof setTimeout> | null = null;
 
 	// This session's own drawing actions, oldest first. Reactive so the
 	// toolbar can tell whether there is anything left to undo or redo.
@@ -209,6 +234,7 @@ export class RoomClient {
 	}
 
 	disconnect() {
+		this.cancelPendingMeasure();
 		this.socket?.close();
 		this.socket = null;
 	}
@@ -408,6 +434,10 @@ export class RoomClient {
 		this.pendingErases.clear();
 		this.undoable = [];
 		this.redoable = [];
+		// Measurements belong to a scene that may no longer be the one on
+		// screen, and there's no end event coming for them.
+		this.cancelPendingMeasure();
+		this.measurements = [];
 	}
 
 	private restoreErased(drawingId: string) {
@@ -431,6 +461,73 @@ export class RoomClient {
 		if (this.send('ping', { sceneId, x, y })) {
 			this.lastPingSentAt = now;
 		}
+	}
+
+	// --- measuring ---
+	//
+	// The local measurement goes into state immediately and the wire is
+	// paced separately: the person dragging gets a line that tracks their
+	// pointer exactly, and everyone else gets an update at most every
+	// MEASURE_SEND_INTERVAL_MS. Their own echo is ignored on arrival
+	// (see handleEnvelope), so a throttled update can't arrive late and
+	// drag their own line back to where the pointer used to be.
+
+	updateMeasure(sceneId: string, from: DrawingPoint, to: DrawingPoint) {
+		const you = this.you;
+		if (!you) return;
+
+		const measurement: Measurement = {
+			participantId: you.participantId,
+			participantName: you.displayName,
+			sceneId,
+			from,
+			to
+		};
+		this.measurements = upsertMeasurement(this.measurements, measurement);
+
+		this.unsentMeasure = measurement;
+		// No timer running means nothing has gone out recently, so this
+		// one leaves straight away and starts the interval.
+		if (this.measureTimer === null) this.flushMeasure();
+	}
+
+	endMeasure() {
+		const you = this.you;
+		if (!you) return;
+
+		// Anything still waiting to be sent is dropped rather than raced
+		// against the end: it would only put the line back on maps that
+		// are about to lose it anyway.
+		this.cancelPendingMeasure();
+		this.measurements = this.measurements.filter((m) => m.participantId !== you.participantId);
+		this.send('measure.end', {});
+	}
+
+	// Trailing-edge throttle: sends whatever the latest position was, then
+	// holds the wire for the interval. If nothing new arrived by the time
+	// it comes back round, the timer stops rather than idling — so a
+	// stationary pointer costs nothing, and the last position of a drag
+	// always goes out even if it landed mid-interval.
+	private flushMeasure() {
+		const measurement = this.unsentMeasure;
+		if (!measurement) {
+			this.measureTimer = null;
+			return;
+		}
+
+		this.unsentMeasure = null;
+		this.send('measure.update', {
+			sceneId: measurement.sceneId,
+			from: measurement.from,
+			to: measurement.to
+		});
+		this.measureTimer = setTimeout(() => this.flushMeasure(), MEASURE_SEND_INTERVAL_MS);
+	}
+
+	private cancelPendingMeasure() {
+		if (this.measureTimer !== null) clearTimeout(this.measureTimer);
+		this.measureTimer = null;
+		this.unsentMeasure = null;
 	}
 
 	private handleEnvelope(env: Envelope) {
@@ -520,6 +617,25 @@ export class RoomClient {
 				break;
 			}
 
+			case 'measure.updated': {
+				const measurement = env.payload as Measurement;
+				// Own echo: the local copy is already ahead of it.
+				if (measurement.participantId === this.you?.participantId) break;
+				if (this.scene?.id !== measurement.sceneId) break;
+				this.measurements = upsertMeasurement(this.measurements, measurement);
+				break;
+			}
+
+			case 'measure.ended': {
+				const payload = env.payload as MeasureEndedPayload;
+				if (this.measurements.some((m) => m.participantId === payload.participantId)) {
+					this.measurements = this.measurements.filter(
+						(m) => m.participantId !== payload.participantId
+					);
+				}
+				break;
+			}
+
 			case 'error': {
 				const payload = env.payload as ErrorPayload;
 				this.error = payload.message;
@@ -536,6 +652,16 @@ export class RoomClient {
 			}
 		}
 	}
+}
+
+// One measurement per participant: a new position for someone already
+// measuring replaces theirs in place, keeping the list stable rather
+// than growing one entry per pointer move.
+function upsertMeasurement(existing: Measurement[], measurement: Measurement): Measurement[] {
+	if (!existing.some((m) => m.participantId === measurement.participantId)) {
+		return [...existing, measurement];
+	}
+	return existing.map((m) => (m.participantId === measurement.participantId ? measurement : m));
 }
 
 function mergeFogCells(existing: FogCell[], added: FogCell[]): FogCell[] {

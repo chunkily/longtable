@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { RoomClient } from './room.svelte';
+import { MEASURE_SEND_INTERVAL_MS } from './measure';
 import { PING_COOLDOWN_MS, PING_LIFETIME_MS } from './ping';
 
 // A minimal stand-in for the browser WebSocket, driven entirely from
@@ -710,5 +711,175 @@ describe('RoomClient', () => {
 		} finally {
 			vi.useRealTimers();
 		}
+	});
+
+	describe('measuring', () => {
+		function measuringClient() {
+			const { client, socket } = connectedClient();
+			socket.emit({
+				type: 'state.sync',
+				payload: {
+					room: { slug: 'abc123', name: 'Room' },
+					you: { participantId: 'p1', displayName: 'Alice', role: 'player' },
+					scene: { id: 's1', gridSize: 70 }
+				}
+			});
+			socket.sent.length = 0;
+			return { client, socket };
+		}
+
+		function measurePayloads(socket: { sent: string[] }) {
+			return socket.sent
+				.map((s) => JSON.parse(s))
+				.filter((e) => e.type === 'measure.update')
+				.map((e) => e.payload);
+		}
+
+		it('shows your own measurement immediately and names you as its owner', () => {
+			const { client } = measuringClient();
+			client.updateMeasure('s1', { x: 0, y: 0 }, { x: 100, y: 0 });
+
+			expect(client.measurements).toEqual([
+				{
+					participantId: 'p1',
+					participantName: 'Alice',
+					sceneId: 's1',
+					from: { x: 0, y: 0 },
+					to: { x: 100, y: 0 }
+				}
+			]);
+		});
+
+		it('keeps one measurement per participant as the drag moves', () => {
+			const { client, socket } = measuringClient();
+			client.updateMeasure('s1', { x: 0, y: 0 }, { x: 100, y: 0 });
+			client.updateMeasure('s1', { x: 0, y: 0 }, { x: 200, y: 0 });
+			socket.emit({
+				type: 'measure.updated',
+				payload: {
+					participantId: 'p2',
+					participantName: 'Bob',
+					sceneId: 's1',
+					from: { x: 0, y: 0 },
+					to: { x: 70, y: 70 }
+				}
+			});
+
+			expect(client.measurements).toHaveLength(2);
+			expect(client.measurements[0].to).toEqual({ x: 200, y: 0 });
+		});
+
+		it('paces updates on the wire and still sends the position the drag ended on', () => {
+			vi.useFakeTimers();
+			try {
+				const { client, socket } = measuringClient();
+
+				// First move goes out at once; the rest are held.
+				client.updateMeasure('s1', { x: 0, y: 0 }, { x: 10, y: 0 });
+				client.updateMeasure('s1', { x: 0, y: 0 }, { x: 20, y: 0 });
+				client.updateMeasure('s1', { x: 0, y: 0 }, { x: 30, y: 0 });
+				expect(measurePayloads(socket)).toHaveLength(1);
+
+				vi.advanceTimersByTime(MEASURE_SEND_INTERVAL_MS);
+				const sent = measurePayloads(socket);
+				expect(sent).toHaveLength(2);
+				expect(sent[1].to).toEqual({ x: 30, y: 0 });
+
+				// Nothing new arrived, so the throttle stops rather than
+				// resending the same position forever.
+				vi.advanceTimersByTime(MEASURE_SEND_INTERVAL_MS * 5);
+				expect(measurePayloads(socket)).toHaveLength(2);
+			} finally {
+				vi.useRealTimers();
+			}
+		});
+
+		it('drops an unsent position rather than letting it follow the end', () => {
+			vi.useFakeTimers();
+			try {
+				const { client, socket } = measuringClient();
+				client.updateMeasure('s1', { x: 0, y: 0 }, { x: 10, y: 0 });
+				client.updateMeasure('s1', { x: 0, y: 0 }, { x: 20, y: 0 });
+				client.endMeasure();
+
+				vi.advanceTimersByTime(MEASURE_SEND_INTERVAL_MS * 5);
+				expect(sentTypes(socket)).toEqual(['measure.update', 'measure.end']);
+				expect(client.measurements).toEqual([]);
+			} finally {
+				vi.useRealTimers();
+			}
+		});
+
+		it('ignores the echo of your own measurement', () => {
+			const { client, socket } = measuringClient();
+			client.updateMeasure('s1', { x: 0, y: 0 }, { x: 200, y: 0 });
+
+			// A throttled update arriving late must not drag your own line
+			// back to where the pointer used to be.
+			socket.emit({
+				type: 'measure.updated',
+				payload: {
+					participantId: 'p1',
+					participantName: 'Alice',
+					sceneId: 's1',
+					from: { x: 0, y: 0 },
+					to: { x: 10, y: 0 }
+				}
+			});
+
+			expect(client.measurements).toHaveLength(1);
+			expect(client.measurements[0].to).toEqual({ x: 200, y: 0 });
+		});
+
+		it('ignores a measurement made in another scene', () => {
+			const { client, socket } = measuringClient();
+			socket.emit({
+				type: 'measure.updated',
+				payload: {
+					participantId: 'p2',
+					participantName: 'Bob',
+					sceneId: 'other-scene',
+					from: { x: 0, y: 0 },
+					to: { x: 70, y: 70 }
+				}
+			});
+
+			expect(client.measurements).toEqual([]);
+		});
+
+		it('takes a measurement off the map when its owner ends it', () => {
+			const { client, socket } = measuringClient();
+			socket.emit({
+				type: 'measure.updated',
+				payload: {
+					participantId: 'p2',
+					participantName: 'Bob',
+					sceneId: 's1',
+					from: { x: 0, y: 0 },
+					to: { x: 70, y: 70 }
+				}
+			});
+			expect(client.measurements).toHaveLength(1);
+
+			socket.emit({ type: 'measure.ended', payload: { participantId: 'p2' } });
+			expect(client.measurements).toEqual([]);
+		});
+
+		it('clears measurements when the scene changes under them', () => {
+			const { client, socket } = measuringClient();
+			socket.emit({
+				type: 'measure.updated',
+				payload: {
+					participantId: 'p2',
+					participantName: 'Bob',
+					sceneId: 's1',
+					from: { x: 0, y: 0 },
+					to: { x: 70, y: 70 }
+				}
+			});
+
+			socket.emit({ type: 'scene.activated', payload: { scene: { id: 's2' } } });
+			expect(client.measurements).toEqual([]);
+		});
 	});
 });

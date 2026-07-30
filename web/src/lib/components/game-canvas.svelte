@@ -3,11 +3,13 @@
 	import Konva from 'konva';
 	import { assetUrl } from '$lib/api';
 	import { DRAWING_STROKE_WIDTH, pickDrawing, strokeWidthOf } from '$lib/drawing-hit';
+	import { cellAt, cellCentre, measureLabel } from '$lib/measure';
 	import { PING_PULSES, PING_PULSE_INTERVAL_MS, PING_PULSE_SECONDS } from '$lib/ping';
 	import type {
 		Drawing,
 		DrawingKind,
 		DrawingPoint,
+		Measurement,
 		Ping,
 		RoomClient,
 		Token
@@ -16,7 +18,7 @@
 	// 'none' is plain pan/token-drag mode. Every other tool takes over
 	// the stage's pointer handling exclusively — only one can be active
 	// at a time, since they all interpret a left-drag differently.
-	export type Tool = 'none' | 'fog' | DrawingKind | 'ping' | 'eraser';
+	export type Tool = 'none' | 'fog' | DrawingKind | 'ping' | 'eraser' | 'measure';
 
 	let {
 		room,
@@ -45,6 +47,19 @@
 	// screen pixels either side of it.
 	const ERASE_HIGHLIGHT_PADDING = 6;
 	const ERASE_HIGHLIGHT_COLOR = '#f59e0b';
+	// Measurement lines are one colour for everyone rather than per
+	// participant: they're transient, and at most one per person is on
+	// the map at a time with their name on it.
+	const MEASURE_COLOR = '#0ea5e9';
+	// Sized in screen pixels and converted at the current zoom, so a
+	// measurement reads the same whether you're zoomed in or out.
+	const MEASURE_LINE_WIDTH = 2;
+	const MEASURE_END_RADIUS = 4;
+	const MEASURE_FONT_SIZE = 13;
+	const MEASURE_LABEL_PADDING = 4;
+	// How far above the end of the line the label floats, so the pointer
+	// isn't sitting on top of the number it's producing.
+	const MEASURE_LABEL_OFFSET = 18;
 
 	let container: HTMLDivElement;
 	let stage: Konva.Stage | undefined;
@@ -54,6 +69,7 @@
 	let drawingLayer: Konva.Layer;
 	let tokenLayer: Konva.Layer;
 	let pingLayer: Konva.Layer;
+	let measureLayer: Konva.Layer;
 	let previewLayer: Konva.Layer;
 	let resizeObserver: ResizeObserver | undefined;
 
@@ -101,8 +117,18 @@
 		drawingLayer = new Konva.Layer({ listening: false });
 		tokenLayer = new Konva.Layer();
 		pingLayer = new Konva.Layer({ listening: false });
+		measureLayer = new Konva.Layer({ listening: false });
 		previewLayer = new Konva.Layer({ listening: false });
-		stage.add(mapLayer, gridLayer, fogLayer, drawingLayer, tokenLayer, pingLayer, previewLayer);
+		stage.add(
+			mapLayer,
+			gridLayer,
+			fogLayer,
+			drawingLayer,
+			tokenLayer,
+			pingLayer,
+			measureLayer,
+			previewLayer
+		);
 
 		stage.on('wheel', handleWheel);
 		stage.on('dragmove', () => renderGrid());
@@ -152,6 +178,9 @@
 		});
 		stage.batchDraw();
 		renderGrid();
+		// Measurement lines and labels are sized in screen pixels, so a
+		// zoom changes what they should be in world units.
+		renderMeasurements();
 		refreshCursorOverlay();
 	}
 
@@ -222,6 +251,11 @@
 		renderPings();
 	});
 
+	$effect(() => {
+		track(room.measurements, room.scene);
+		renderMeasurements();
+	});
+
 	// The eraser's halo points at a specific drawing, so it has to be
 	// re-resolved whenever the set of drawings changes — otherwise it
 	// hangs over the empty space where a stroke used to be (including
@@ -278,6 +312,18 @@
 		drawStart = null;
 		freehandPoints = [];
 		previewLayer?.batchDraw();
+	}
+
+	// Where the current measurement was dragged from, or null when none
+	// is in progress. The measurement itself lives in RoomClient rather
+	// than here, since it's shared with the rest of the room while the
+	// drag lasts.
+	let measureStart: DrawingPoint | null = null;
+
+	function stopMeasuring() {
+		if (!measureStart) return;
+		measureStart = null;
+		room.endMeasure();
 	}
 
 	// --- cursor overlay: a ring showing the tool's reach, plus (for the
@@ -414,6 +460,9 @@
 		painting = false;
 		pendingCells.clear();
 		stopErasing();
+		// Switching tools mid-drag has to retract the measurement, or it
+		// stays on every other map with no end event ever coming.
+		stopMeasuring();
 		clearPreview();
 		clearCursorOverlay();
 
@@ -474,6 +523,25 @@
 				stopErasing();
 				clearCursorOverlay();
 			});
+			return;
+		}
+
+		if (activeTool === 'measure') {
+			stage.on('mousedown.tool touchstart.tool', () => {
+				const pos = stage!.getRelativePointerPosition();
+				if (!pos) return;
+				measureStart = pos;
+				room.updateMeasure(sceneId, pos, pos);
+			});
+			stage.on('mousemove.tool touchmove.tool', () => {
+				const pos = stage!.getRelativePointerPosition();
+				if (!measureStart || !pos) return;
+				room.updateMeasure(sceneId, measureStart, pos);
+			});
+			// Leaving the canvas ends the measurement rather than leaving it
+			// frozen at the edge on everyone else's map, since no mouseup is
+			// coming once the pointer is released outside.
+			stage.on('mouseup.tool touchend.tool mouseleave.tool', stopMeasuring);
 			return;
 		}
 
@@ -896,6 +964,90 @@
 	function destroyPingMarker(marker: PingMarker) {
 		for (const timer of marker.timers) clearTimeout(timer);
 		for (const ring of marker.rings) ring.destroy();
+	}
+
+	// Measurements are rebuilt wholesale on every change. There is at most
+	// one per participant and each is a handful of shapes, so this stays
+	// far cheaper than diffing — unlike drawings, which accumulate.
+	function renderMeasurements() {
+		if (!measureLayer) return;
+		measureLayer.destroyChildren();
+
+		const gridSize = room.scene?.gridSize;
+		if (gridSize) {
+			for (const measurement of room.measurements) {
+				if (measurement.sceneId !== room.scene?.id) continue;
+				drawMeasurement(measurement, gridSize);
+			}
+		}
+
+		measureLayer.batchDraw();
+	}
+
+	// Drawn cell centre to cell centre rather than pointer to pointer:
+	// the distance is counted in whole squares, so a line that stopped
+	// wherever the pointer happened to be would disagree with its own
+	// label about which square it had reached.
+	function drawMeasurement(measurement: Measurement, gridSize: number) {
+		const from = cellCentre(cellAt(measurement.from, gridSize), gridSize);
+		const to = cellCentre(cellAt(measurement.to, gridSize), gridSize);
+
+		measureLayer.add(
+			new Konva.Line({
+				points: [from.x, from.y, to.x, to.y],
+				stroke: MEASURE_COLOR,
+				strokeWidth: screenToWorld(MEASURE_LINE_WIDTH),
+				dash: [screenToWorld(8), screenToWorld(6)],
+				listening: false
+			})
+		);
+		for (const end of [from, to]) {
+			measureLayer.add(
+				new Konva.Circle({
+					x: end.x,
+					y: end.y,
+					radius: screenToWorld(MEASURE_END_RADIUS),
+					fill: MEASURE_COLOR,
+					listening: false
+				})
+			);
+		}
+
+		// Someone else's measurement says whose it is; your own doesn't
+		// need to.
+		const label =
+			measurement.participantId === room.you?.participantId
+				? measureLabel(measurement.from, measurement.to, gridSize)
+				: `${measurement.participantName}: ${measureLabel(measurement.from, measurement.to, gridSize)}`;
+		addMeasureLabel(label, to);
+	}
+
+	function addMeasureLabel(text: string, at: DrawingPoint) {
+		const group = new Konva.Label({
+			x: at.x,
+			y: at.y - screenToWorld(MEASURE_LABEL_OFFSET),
+			listening: false
+		});
+		group.add(
+			new Konva.Tag({
+				fill: MEASURE_COLOR,
+				cornerRadius: screenToWorld(MEASURE_LABEL_PADDING),
+				// Anchored by its bottom-centre so the label sits above the
+				// end of the line and stays centred on it as it grows.
+				pointerDirection: 'down',
+				pointerWidth: screenToWorld(6),
+				pointerHeight: screenToWorld(4)
+			})
+		);
+		group.add(
+			new Konva.Text({
+				text,
+				fontSize: screenToWorld(MEASURE_FONT_SIZE),
+				padding: screenToWorld(MEASURE_LABEL_PADDING),
+				fill: 'white'
+			})
+		);
+		measureLayer.add(group);
 	}
 
 	function renderTokens(gridSize: number) {
