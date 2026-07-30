@@ -1,0 +1,111 @@
+# The Konva canvas
+
+`web/src/lib/components/game-canvas.svelte`. One Konva `Stage`, one `<canvas>` element per layer,
+world coordinates in pixels with the map's top-left at the origin.
+
+## Layers
+
+Added in this order, so this is also the `document.querySelectorAll('canvas')` index order:
+
+| Index | Layer | Listening | Holds |
+| --- | --- | --- | --- |
+| 0 | map | yes | the map image, or a flat rect when there's no image |
+| 1 | grid | no | grid lines, recomputed for the visible region on every pan/zoom/resize |
+| 2 | fog | yes | the cover, with revealed cells punched out (`destination-out`) |
+| 3 | drawings | no | committed strokes |
+| 4 | tokens | yes | one `Group` per token, draggable only in `'none'` mode |
+| 5 | pings | no | pulse rings |
+| 6 | measurements | no | in-progress measurements from anyone in the room |
+| 7 | preview | no | the current rubber-band shape, cursor ring, eraser halo |
+
+Several Playwright specs read pixels from a layer *by index* (`DRAWING_LAYER = 3`,
+`PING_LAYER = 5`, `MEASURE_LAYER = 6`). Appending a layer is safe; inserting one renumbers
+everything above it. Either way, update the layer-order comments in `web/e2e/*.spec.ts` — they're
+the only documentation of that coupling.
+
+Konva warns above 5 layers ("Recommended maximum number of layers is 3-5"). Expected here and
+harmless; the separation is what keeps a stroke from forcing a token re-render.
+
+## Tools
+
+`Tool` is `'none' | 'fog' | DrawingKind | 'ping' | 'eraser' | 'measure'`. `'none'` is plain
+pan/token-drag; every other tool takes the stage's pointer exclusively, because they all interpret
+a left-drag differently. The toolbar lives in `web/src/routes/r/[slug]/+page.svelte` and toggles —
+clicking the active tool returns to `'none'`.
+
+`attachToolHandlers()` runs in an `$effect` on `activeTool`/`scene`/`you` and is the single place
+pointer handlers are bound. It:
+
+1. Removes every `.tool`-namespaced handler (`mousedown.tool touchstart.tool …`).
+2. Resets all transient gesture state — and *retracts* anything in flight. A measurement or fog
+   sweep abandoned by a tool switch has to be ended here, or it strands on other clients with no
+   end event coming.
+3. Sets `stage.draggable(!isActive)`, since panning and tools both start on a left-drag.
+4. Binds the handlers for the active tool and returns early per tool.
+
+Handlers use `stage.getRelativePointerPosition()`, not the raw event coordinates — that's what
+accounts for the stage's own pan and zoom. `mouseleave.tool` matters for any held gesture: no
+`mouseup` arrives if the button is released outside the canvas.
+
+Adding a tool: extend the `Tool` union, add a branch in `attachToolHandlers`, add a toolbar button
+with a distinct `aria-label` (the e2e helpers select by accessible name, and assert the active
+styling `bg-primary` before dragging — the rebinding happens in an effect, so a click in the same
+tick can land on the old tool).
+
+## Screen pixels vs world units
+
+Anything that should read the same at every zoom level is authored in screen pixels and converted
+with `screenToWorld(px)` — `px / stage.scaleX()`. Grid lines, stroke widths on overlays, the
+eraser's reach, measurement dashes and label text all do this.
+
+The consequence: **a zoom changes what those values mean, so it has to re-render them.**
+`handleWheel` explicitly calls `renderGrid()`, `renderMeasurements()` and
+`refreshCursorOverlay()` for exactly that reason. A new screen-sized overlay needs the same
+treatment or it silently mis-sizes after a scroll.
+
+Cell arithmetic: `cellAt`/`cellCentre` in `web/src/lib/measure.ts` floor a world point onto its
+cell and find a cell's centre. Tokens are stored in cell units and multiplied by `gridSize` at
+render time; drawings are stored in world units. Note `scene.gridOffsetX/Y` are **dead** — stored
+and sent but never applied; grid alignment is being handled at asset upload time instead.
+
+## Effects and re-render cost
+
+`render()` is `async` and awaits the map image, so Svelte's dependency tracking — which only sees
+reads before the first `await` — would miss `room.tokens`, `fogCells` and `you` entirely. The
+`track(...)` helper forces those reads into the synchronous window. Any new async render path
+needs the same.
+
+The effects are split by cost on purpose:
+
+- `render()` tracks scene/tokens/fogCells/you/activeTool — the expensive full rebuild.
+- `renderDrawings()` has its own effect, because drawing and erasing are the most frequent things
+  that happen and rebuilding the map, grid, fog and every token for one stroke was a real
+  performance bug (`planning/backlog/done/erasing-causes-canvas-lag.md`).
+- Pings, measurements and the eraser's halo each get their own.
+
+Follow that pattern: a frequently-changing collection deserves its own effect and its own layer.
+Rebuilding a whole layer wholesale is fine when it holds a handful of shapes; diffing is only
+worth it for collections that accumulate.
+
+## Optimistic rendering
+
+Drawings appear the instant the stroke ends rather than after the round trip: the preview shape is
+destroyed at `mouseup`, so waiting for the server would blink the line off and back on. The id is
+minted client-side so the echo can be recognised. The eraser is optimistic for the same reason —
+it highlights what a click will remove, so leaving the stroke there until the server agrees reads
+as a missed click.
+
+Refusals come back as an `error` naming the `drawingId`, and `RoomClient` either restores the
+erased stroke *at the index it held* or removes the one it drew. Anything new that renders ahead
+of the server needs the same two-way handling.
+
+## Hit-testing
+
+The eraser doesn't ask Konva what was clicked — the drawings layer is inert (`listening: false`)
+and `web/src/lib/drawing-hit.ts` finds the nearest drawing geometrically, within a reach expressed
+in screen pixels. That's why a thin stroke is no harder to hit than a thick one, and why the
+eraser interpolates along the path between pointer events instead of testing only where they
+landed (fast mouse moves arrive far apart and would sweep straight over strokes in between).
+
+Permission is checked client-side too (`canErase`), so clicking someone else's work is a no-op
+rather than an error toast — the server enforces it regardless.
