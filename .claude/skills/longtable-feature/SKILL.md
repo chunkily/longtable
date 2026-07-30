@@ -112,7 +112,34 @@ Land it in the order the layers depend on each other, verifying as you go:
 4. `npm run check`, `npm run format`, `npm run lint`.
 5. A Playwright spec, if the behaviour needs a real browser — anything involving two clients,
    canvas pixels, or a disconnect does.
-6. Move the backlog item and write its "What shipped" note (see the `longtable-backlog` skill).
+6. Update the docs the change invalidated (below), in this same commit.
+7. Move the backlog item and write its "What shipped" note (see the `longtable-backlog` skill).
+
+## Leave the map matching the territory
+
+This skill's references are only worth reading because they're true, and a feature is the thing
+most likely to make them false. The repo is early and moves fast, so treat the doc edit as part
+of the change rather than cleanup for later — a reference corrected next week has already sent
+someone down the wrong path, which is exactly what happened with the eraser's `hitStrokeWidth`
+note in `planning/backlog/done/eraser-tool.md`.
+
+What a feature typically invalidates:
+
+- **A new command or event, or a change to who may send one** → the command table in
+  [references/ws-protocol.md](references/ws-protocol.md). It's the first thing anyone reads to
+  learn what the protocol can do, so a missing row means a future session reinvents your command.
+- **A new Konva layer or tool** → the layer table in [references/canvas.md](references/canvas.md),
+  *and* the layer-order comments in `web/e2e/*.spec.ts`. Those specs index layers by number; a
+  layer inserted anywhere but the end silently renumbers them.
+- **A new test helper, or a change to how a suite runs** → [references/testing.md](references/testing.md),
+  and `README.md` if the command a human types changed.
+- **A shipped feature or a closed gap** → "Where things stand" in `CLAUDE.md`.
+- **A `why` you had to work out the hard way** → a comment next to the code, in the house style.
+  If it took you twenty minutes to understand, it will take the next session twenty minutes too.
+
+Anything you find in these files that the code no longer does, fix as you pass — including in
+`planning/done/` notes, where the correction goes *alongside* the original rather than replacing
+it.
 
 Pure geometry or rules — distance math, hit-testing — goes in its own module under
 `web/src/lib/` with unit tests (`measure.ts`, `drawing-hit.ts`). It's the part that has to be

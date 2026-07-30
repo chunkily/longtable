@@ -8,32 +8,6 @@ Longtable runs as a single program that one person in the group (usually the GM)
 downloads and starts up on their own computer; everyone else just opens it in
 their web browser to join.
 
-## Architecture
-
-- **`web/`** — SvelteKit frontend (TypeScript, Konva for the map/token canvas),
-  built as a static SPA (`npm run build` → `web/build`).
-- **`cmd/longtable/`** — entrypoint for the Go binary: opens the SQLite
-  database, wires up the router, starts the HTTP server. Also a small `room`
-  admin CLI (`room list`, `room reset-password`).
-- **`internal/api/`** — HTTP routes: creating and joining rooms, GM login, asset
-  upload/serving, the health check, the WebSocket upgrade, and the embedded
-  frontend with SPA fallback for client-side routes.
-- **`internal/ws/`** — the real-time sync hub, and the authority on room state.
-  Clients send commands (move this token, erase this drawing); the hub
-  validates and applies them through the store, then broadcasts the resulting
-  event to everyone in the room.
-- **`internal/store/`** — the SQLite schema and every typed query: rooms,
-  participants, scenes, tokens, fog, drawings, chat.
-- **`internal/blobstore/`** — uploaded images on disk, addressed by the hash of
-  their content, so identical uploads share one file.
-- **`internal/auth/`** — session tokens and bcrypt password hashing. There are
-  no accounts: a browser's identity in a room is a token in `localStorage`.
-- **`internal/dice/`** — the `/roll 2d6+3` expression parser.
-- **`internal/db/`** — SQLite wiring (`modernc.org/sqlite`, no CGO).
-- **`assets.go`** (repo root) — `go:embed`s `web/build` into the binary. Go
-  embed directives can't reach outside their own directory, so this has to live
-  at the root, as a sibling of `web/`, rather than under `internal/`.
-
 ## v1 scope
 
 Core tabletop only: map upload, token placement/movement, fog of war, a basic
@@ -108,25 +82,3 @@ npm --prefix web run check && npm --prefix web run lint
 ## Documentation
 
 See [`docs/`](docs/) for guides on hosting and configuring a server.
-
-## Status
-
-Playable, and rough in places. A GM can create a room, start a scene from an
-uploaded map, place tokens and drag them around, and paint fog away cell by
-cell; everyone in the room shares a chat log with dice rolls, can draw on the
-map (freehand, lines, rectangles, ellipses) in a few colours, erase, undo and
-redo their own work, ping a spot, and measure distances in feet. All of it syncs
-live between browsers, and everything except the pings and measurements — which
-are meant to be momentary — survives a reload.
-
-The biggest gaps, roughly in the order they hurt: there's no way to switch back
-to a scene once another is active, no initiative tracker, no way to inspect or
-edit a token after creating it (so no HP or conditions), fog only reveals and
-never hides again, and a dropped WebSocket doesn't reconnect on its own.
-Uploaded images are also stored exactly as received — the decode-and-re-encode
-pass that [ADR-0005](planning/decisions/0005-webp-reencoding-library.md) settled
-on hasn't been built yet. There are no prebuilt binaries, so hosting means
-building from source.
-
-[`planning/backlog/`](planning/backlog/) is the live picture: `done/` records
-what shipped and why, `in-progress/` and `open/` what's next.

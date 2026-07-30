@@ -65,6 +65,13 @@ several. Both link into `user-stories/`. New items go in `open/` with a kebab-ca
    folder is the status, not the checkbox.
 4. If the work laid groundwork for another item, add a short note to *that* item pointing at what
    now exists. That's how the next session finds it.
+5. Update "Where things stand" in `CLAUDE.md` — a shipped feature moves out of the gap list, and
+   a gap you closed shouldn't still be advertised. Anything the change made untrue in the skill
+   references goes in the same commit; the `longtable-feature` skill lists what to check.
+
+All of that belongs in the commit that ships the work, not a tidying pass afterwards. This repo
+is early enough that a doc a week behind is worse than no doc — someone trusts it and loses an
+hour.
 
 The "What shipped" note is written for whoever touches the area next, not as a changelog. Look at
 `done/eraser-tool.md` and `done/measuring-tool-distance.md` for the shape of it: what a user can

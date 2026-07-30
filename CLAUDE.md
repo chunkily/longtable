@@ -1,27 +1,30 @@
 # Longtable — working notes for Claude
 
 Self-hosted virtual tabletop for D&D. One Go binary with the SvelteKit frontend embedded; the GM
-runs it on their own machine and everyone else joins over LAN in a browser. See
-[README.md](README.md) for the pitch, the architecture and the test commands.
+runs it on their own machine and everyone else joins over LAN in a browser.
 
-For what's actually built and what's next, `planning/backlog/` beats the README every time:
-`done/` records what shipped and the reasoning behind it, `in-progress/` and `open/` are the
-queue. Backlog items cite file paths and line numbers, which is often the fastest orientation
-available — but they go stale, so verify before relying on one.
+The README is deliberately thin — the pitch, how to run it, how to test it — because the shape of
+this codebase still changes weekly and a README nobody re-reads goes stale silently. **The
+architecture and current state live here instead**, and keeping them true is part of the work
+(see [Keeping these docs current](#keeping-these-docs-current)).
 
 ## Layout
 
 | Path | What lives there |
 | --- | --- |
 | `cmd/longtable/` | entrypoint: `serve` (default) plus a `room list` / `room reset-password` admin CLI |
-| `internal/api/` | HTTP routes; REST for rooms/assets, SPA fallback for the embedded frontend, `GET /ws` upgrade |
-| `internal/ws/` | the real-time hub — command/event protocol, permission checks, broadcast |
-| `internal/store/` | SQLite schema and every typed query. `store.go` holds `CREATE TABLE`s and migrations |
-| `internal/blobstore/` | uploaded images on disk, content-addressed |
+| `internal/api/` | HTTP routes: create/join room, GM login, asset upload + serving, health check, `GET /ws` upgrade, SPA fallback for the embedded frontend |
+| `internal/ws/` | the real-time hub and the authority on room state — command/event protocol, permission checks, broadcast |
+| `internal/store/` | SQLite schema and every typed query (rooms, participants, scenes, tokens, fog, drawings, chat). `store.go` holds the `CREATE TABLE`s and migrations |
+| `internal/blobstore/` | uploaded images on disk, addressed by content hash so identical uploads share a file |
+| `internal/auth/` | session tokens and bcrypt password hashing. No accounts — identity in a room is a token in `localStorage` |
 | `internal/dice/` | `/roll 2d6+3` expression parser |
+| `internal/db/` | SQLite wiring (`modernc.org/sqlite`, no CGO) |
 | `assets.go` (root) | `go:embed`s `web/build`. Has to be at the root — embed can't reach outside its own directory |
+| `web/src/lib/api.ts`, `session.ts` | REST client; per-room session in `localStorage` |
 | `web/src/lib/room.svelte.ts` | `RoomClient`: the WS protocol wrapped in Svelte 5 runes state |
 | `web/src/lib/components/game-canvas.svelte` | the whole Konva map: layers, tools, rendering |
+| `web/src/routes/r/[slug]/+page.svelte` | the room page — join form, toolbar, chat |
 | `web/e2e/` | Playwright specs; several read canvas pixels because Konva has no DOM |
 | `planning/` | backlog, user stories, ADRs (`decisions/`), role glossary |
 
@@ -29,6 +32,24 @@ Flow for anything that happens on the map: client sends a **command** over the s
 validates it, applies it through the store, and broadcasts an **event** to the room →
 `RoomClient` folds the event into runes state → `game-canvas.svelte` re-renders. The Go side is
 authoritative; the client never writes to the database.
+
+## Where things stand
+
+Working today: rooms with a GM password and player join, scenes built from an uploaded map,
+tokens (GM creates, anyone drags, hidden ones withheld from players), reveal-only fog, drawings
+(freehand/line/rect/ellipse) with an eraser and per-session undo/redo, pings, distance measuring,
+chat with `/roll`. All of it syncs live; everything but pings and measurements persists.
+
+Known gaps, which is also roughly the queue: no scene-switcher UI (a new scene auto-activates
+because there's nowhere to pick one), no initiative tracker, no token detail panel (so no HP or
+conditions), fog can't be hidden again or reset, no WebSocket reconnect, no prebuilt releases.
+Uploads are stored as received — the re-encode pass in
+[ADR-0005](planning/decisions/0005-webp-reencoding-library.md) is accepted but unbuilt.
+
+`planning/backlog/` is the authority on all of this and goes into far more detail: `done/`
+records what shipped and why, `in-progress/` and `open/` are the queue. Items cite paths and line
+numbers, which is often the fastest orientation available — but they go stale, so verify before
+relying on one.
 
 ## Commands
 
@@ -39,10 +60,10 @@ cd web && npm install && npm run build && cd .. && go build -o longtable ./cmd/l
 | Task | Command |
 | --- | --- |
 | Go build/vet/test | `go build ./internal/... ./cmd/...`, `go vet ./internal/... ./cmd/...`, `go test ./internal/... ./cmd/...` |
-| Frontend unit tests | `npm test` (in `web/`, vitest + jsdom) |
-| Types | `npm run check` (svelte-check) |
-| Lint + format | `npm run lint` (prettier check + eslint), `npm run format` to fix |
-| E2E | `npx playwright test` (in `web/`) — builds the Go binary and starts both servers itself |
+| Frontend unit tests | `npm --prefix web run test` (vitest + jsdom) |
+| Types | `npm --prefix web run check` (svelte-check) |
+| Lint + format | `npm --prefix web run lint` (prettier check + eslint), `... run format` to fix |
+| E2E | `cd web && npx playwright test` — builds the Go binary and starts both servers itself |
 
 Scope the Go commands to `./internal/... ./cmd/...`, not `./...`: the repo root also contains
 `web/node_modules`, which the go tool would walk looking for packages. CI (`.github/workflows/ci.yml`)
@@ -59,10 +80,11 @@ so a run leaves test rooms in whatever data another session is looking at.
 ## House style
 
 The thing that most distinguishes this codebase: **comments explain why, not what.** Nearly every
-non-obvious line has a note on the constraint or failure that produced it — `renderDrawings`
-using `draw()` instead of `batchDraw()`, `GridOffset*` being dead, the LIFO defer ordering in
-`ServeHTTP`. When you change something with a reason behind it, leave the reason. When you find
-such a comment, treat it as load-bearing: it's usually recording a bug someone already hit.
+non-obvious line has a note on the constraint or failure that produced it — the `track()` helper
+existing because `$effect` can't see reads after an `await`, `isCanonicalUUID` rejecting the
+braced spelling so an echoed id stays byte-identical, the LIFO defer ordering in `ServeHTTP`.
+When you change something with a reason behind it, leave the reason. When you find such a
+comment, treat it as load-bearing: it's usually recording a bug someone already hit.
 
 Others worth matching:
 
@@ -79,5 +101,37 @@ Others worth matching:
 
 - `.claude/skills/longtable-feature/` — adding or changing a room feature end to end (protocol,
   client state, canvas, tests). Read it before touching `internal/ws/` or `game-canvas.svelte`.
+  Its `references/` hold the command/event table, the canvas layer table and the testing
+  harnesses.
 - `.claude/skills/longtable-backlog/` — how `planning/` works: picking an item up, moving it
   through the folders, writing the "What shipped" note.
+
+## Keeping these docs current
+
+Each file owns something, and duplication between them is what rots first:
+
+| File | Owns |
+| --- | --- |
+| `README.md` | what Longtable is, how to run it, how to test it. Nothing that churns weekly |
+| `CLAUDE.md` | layout, the command→event→state→render flow, current state, commands, house style |
+| `.claude/skills/longtable-feature/references/ws-protocol.md` | every command and event, who may send it, what persists |
+| `.claude/skills/longtable-feature/references/canvas.md` | Konva layer order and indices, the tool-handler contract |
+| `.claude/skills/longtable-feature/references/testing.md` | the three test harnesses and their helpers |
+| `planning/` | why a thing exists, what shipped, what's next |
+
+Update them **in the same commit as the change**, not in a later sweep — a doc corrected a week
+after the fact has already misled someone. The triggers, all cheap:
+
+- Added a package, or moved something in the table above → the layout table here.
+- Added or changed a WS command or event, or who's allowed to send one → the command table in
+  `ws-protocol.md`.
+- Added a Konva layer or a tool → the layer table in `canvas.md`, **and** the layer-order
+  comments in `web/e2e/*.spec.ts`, which index layers by number.
+- Added a test helper or changed how a suite runs → `testing.md`, and the README if the command
+  a human types changed.
+- Shipped a feature or closed a gap → "Where things stand" above, plus the backlog move and its
+  "What shipped" note.
+- Found one of these docs contradicting the code → fix it then, even mid-task. It's a two-line
+  edit now and an hour of someone's confusion later. If the contradiction is in a `planning/done/`
+  note, correct it in place rather than deleting the old text: the reasoning that turned out to be
+  wrong is usually why the code changed.
