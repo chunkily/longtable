@@ -71,17 +71,25 @@ and sent but never applied; grid alignment is being handled at asset upload time
 ## Effects and re-render cost
 
 `render()` is `async` and awaits the map image, so Svelte's dependency tracking — which only sees
-reads before the first `await` — would miss `room.tokens`, `fogCells` and `you` entirely. The
-`track(...)` helper forces those reads into the synchronous window. Any new async render path
-needs the same.
+reads before the first `await` — would miss `fogCells` and `you` entirely. The `track(...)` helper
+forces those reads into the synchronous window. Any new async render path needs the same.
 
 The effects are split by cost on purpose:
 
-- `render()` tracks scene/tokens/fogCells/you/activeTool — the expensive full rebuild.
+- `render()` tracks scene/fogCells/you — the expensive full rebuild.
 - `renderDrawings()` has its own effect, because drawing and erasing are the most frequent things
   that happen and rebuilding the map, grid, fog and every token for one stroke was a real
   performance bug (`planning/backlog/done/erasing-causes-canvas-lag.md`).
+- `renderTokens()` has its own effect for exactly the same reason, dragging a token having been
+  the same bug a second time (`planning/backlog/done/token-drag-causes-canvas-lag.md`). It is
+  also where `activeTool` is tracked, because token draggability is the only thing in the whole
+  render path that reads it — pairing it with `render()` made every tool switch redraw the map.
 - Pings, measurements and the eraser's halo each get their own.
+
+Both of those effects call the same render function `render()` calls, so a scene change runs it
+twice. That is deliberate: a scene change is rare, and the alternative — teaching `render()` to
+skip the layers that own themselves — puts the ordering back in one place where the next
+frequently-changing collection would have to be remembered.
 
 Follow that pattern: a frequently-changing collection deserves its own effect and its own layer.
 Rebuilding a whole layer wholesale is fine when it holds a handful of shapes; diffing is only

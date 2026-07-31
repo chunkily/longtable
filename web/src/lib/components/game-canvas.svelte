@@ -222,23 +222,32 @@
 		return values.length;
 	}
 
-	// activeTool is tracked here too, not just by the handler effect
-	// below: tokens are only draggable in 'none' mode, so switching to
-	// any tool has to re-render them to take that away.
-	//
-	// Deliberately not tracking room.drawings: that would rebuild the
-	// map image, every grid line, every fog cell and every token for a
-	// change that only touched a stroke — and drawing and erasing are
-	// the most frequent things that happen to a scene. They get their
-	// own effect below.
+	// Deliberately not tracking room.drawings or room.tokens: either one
+	// would rebuild the map image, every grid line and every fog cell for
+	// a change that only touched a single stroke or a single token's
+	// position — and drawing, erasing and dragging tokens are the most
+	// frequent things that happen to a scene. They get their own effects
+	// below.
 	$effect(() => {
-		track(room.scene, room.tokens, room.fogCells, room.you, activeTool);
+		track(room.scene, room.fogCells, room.you);
 		render();
 	});
 
 	$effect(() => {
 		track(room.drawings);
 		if (stage) renderDrawings();
+	});
+
+	// activeTool is tracked here, not only by the handler effect below,
+	// because tokens are draggable in 'none' mode alone — switching to
+	// any tool has to re-render them to take that away. It is tracked
+	// *here* rather than alongside render() because token draggability is
+	// the only thing in the whole render path that reads it, so pairing
+	// it with the full rebuild made every tool switch redraw the map too.
+	$effect(() => {
+		track(room.tokens, room.scene, activeTool);
+		const gridSize = room.scene?.gridSize;
+		if (stage && gridSize) renderTokens(gridSize);
 	});
 
 	$effect(() => {

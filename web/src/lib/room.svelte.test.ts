@@ -108,6 +108,36 @@ describe('RoomClient', () => {
 		expect(t2.x).toBe(5); // untouched
 	});
 
+	// Identity is the assertion rather than contents because identity is
+	// what the canvas re-renders on: a token dropped back where it started
+	// still broadcasts, and holding the same array is what stops that from
+	// rebuilding every token group for a move of nowhere.
+	it('holds the same tokens array when token.moved changes nothing', () => {
+		const { client, socket } = connectedClient();
+		socket.emit({
+			type: 'state.sync',
+			payload: {
+				room: { slug: 'abc123', name: 'Room' },
+				you: { participantId: 'p1', displayName: 'A', role: 'gm' },
+				tokens: [{ id: 't1', x: 3, y: 4, name: 'A' }]
+			}
+		});
+		const before = client.tokens;
+
+		socket.emit({ type: 'token.moved', payload: { tokenId: 't1', x: 3, y: 4 } });
+		expect(client.tokens).toBe(before);
+
+		// An id the client isn't holding — a token on a scene it isn't
+		// showing — leaves the list alone too.
+		socket.emit({ type: 'token.moved', payload: { tokenId: 'nope', x: 1, y: 1 } });
+		expect(client.tokens).toBe(before);
+
+		// ...but a real move still lands.
+		socket.emit({ type: 'token.moved', payload: { tokenId: 't1', x: 3, y: 5 } });
+		expect(client.tokens).not.toBe(before);
+		expect(client.tokens[0].y).toBe(5);
+	});
+
 	it('merges fog.revealed cells only when they belong to the active scene', () => {
 		const { client, socket } = connectedClient();
 		socket.emit({

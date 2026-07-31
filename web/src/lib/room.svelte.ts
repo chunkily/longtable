@@ -556,6 +556,15 @@ export class RoomClient {
 
 			case 'token.moved': {
 				const payload = env.payload as TokenMovedPayload;
+				const current = this.tokens.find((t) => t.id === payload.tokenId);
+				// Dropping a token back on the cell it started from still
+				// broadcasts, and the hub only ever broadcasts coordinates it
+				// accepted — a refusal comes back as an error instead. So an
+				// event that matches what we already hold changes nothing, and
+				// reassigning would rebuild every token group for it, briefly
+				// destroying the one under the pointer if a second drag has
+				// already begun.
+				if (!current || (current.x === payload.x && current.y === payload.y)) break;
 				this.tokens = this.tokens.map((t) =>
 					t.id === payload.tokenId ? { ...t, x: payload.x, y: payload.y } : t
 				);
