@@ -942,10 +942,35 @@ describe('RoomClient', () => {
 					participantId: 'p1',
 					participantName: 'Alice',
 					sceneId: 's1',
+					// A measurement with no shape named is the plain distance
+					// line the tool started as; the area templates share this
+					// same path and differ only in the kind.
+					kind: 'distance',
 					from: { x: 0, y: 0 },
-					to: { x: 100, y: 0 }
+					to: { x: 100, y: 0 },
+					widthFeet: undefined
 				}
 			]);
+		});
+
+		// Templates ride the measuring gesture rather than a channel of
+		// their own, so the shape and the line's width have to survive the
+		// throttle and reach the wire.
+		it('sends the template shape and width on an area measurement', () => {
+			const { client, socket } = measuringClient();
+			client.updateMeasure('s1', { x: 0, y: 0 }, { x: 140, y: 0 }, 'line', 10);
+
+			expect(client.measurements[0].kind).toBe('line');
+			expect(JSON.parse(socket.sent.at(-1)!)).toEqual({
+				type: 'measure.update',
+				payload: {
+					sceneId: 's1',
+					kind: 'line',
+					from: { x: 0, y: 0 },
+					to: { x: 140, y: 0 },
+					widthFeet: 10
+				}
+			});
 		});
 
 		it('keeps one measurement per participant as the drag moves', () => {

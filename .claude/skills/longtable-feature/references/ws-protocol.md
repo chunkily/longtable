@@ -37,6 +37,17 @@ Envelope both ways:
 | `measure.update` | anyone | no | `measure.updated` |
 | `measure.end` | anyone | no | `measure.ended` |
 
+`measure.update` carries a `kind` — `distance` (the default when absent, so an older client is
+unaffected) or one of the four area templates `circle`, `cone`, `line`, `cube`. An unknown kind is
+refused. Only `line` uses `widthFeet`, since a drag gives length and direction but never width;
+feet rather than world units so it means the same on a scene with a different grid size. The
+templates share the distance line's whole lifecycle — one per participant, replaced on each
+update, cleaned up on disconnect — so nothing else about the relay changes.
+
+Neither the distance nor a template's outline is computed server-side, and snapping is applied on
+the client *before* sending. The points that arrive are final: a recipient renders what it's
+given and never has to know which snap convention produced them.
+
 Unknown command types get an `error` back naming the type. `chat.send` text starting with `/` is
 routed to `handleSlashCommand` (only `/roll` and `/r` today; unknown commands error back to the
 sender and never enter the chat log).

@@ -16,7 +16,7 @@ fixed 5ft. Everyone else in the room sees the line as it's dragged, labelled wit
 name, and it disappears when the drag ends.
 
 Three decisions worth knowing before extending this — the area-of-effect tool in
-[measuring-tool-aoe](../in-progress/measuring-tool-aoe.md) is the obvious next user of all
+[measuring-tool-aoe](measuring-tool-aoe.md) is the obvious next user of all
 three:
 
 - The wire carries two endpoints and nothing else. Distance is derived on each client from the

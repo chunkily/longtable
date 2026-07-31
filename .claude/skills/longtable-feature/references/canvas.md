@@ -28,7 +28,8 @@ harmless; the separation is what keeps a stroke from forcing a token re-render.
 
 ## Tools
 
-`Tool` is `'none' | 'fog-reveal' | 'fog-hide' | DrawingKind | 'ping' | 'eraser' | 'measure'`.
+`Tool` is `'none' | 'fog-reveal' | 'fog-hide' | DrawingKind | 'ping' | 'eraser' | 'measure' |
+'template-circle' | 'template-cone' | 'template-line' | 'template-cube'`.
 `'none'` is plain pan/token-drag; every other tool takes the stage's pointer exclusively, because
 they all interpret a left-drag differently. The toolbar lives in
 `web/src/routes/r/[slug]/+page.svelte` and toggles — clicking the active tool returns to `'none'`.
@@ -38,6 +39,19 @@ differing only in which command the gesture ends with and the colour it previews
 whole-scene fog actions (`Reveal all`, `Reset fog`) are plain buttons rather than tools —
 neither has a gesture to make, and making them modes would arm something that fires on the next
 click anywhere on the map.
+
+The four area templates share the *measuring tool's* branch, since they are the same gesture with
+a different shape on the wire (see `$lib/aoe`, and its header comment on why nothing highlights
+the squares a template covers). Their options — snap mode, and a Line's width — live in a row
+that only appears while a template tool is active. Note that row changes the page height, which
+moves the canvas: an e2e spec must re-read `canvasOrigin` after selecting a template tool, or
+every drag it makes is silently offset.
+
+**Anything a handler needs from a prop has to be read in `attachToolHandlers` itself, not inside
+the handler closure.** The function runs inside the `$effect` that rebinds handlers, so only what
+it reads *synchronously* is tracked; a prop read later, when a pointer event fires, is captured
+once and never refreshed. That's why `snapMode` is copied to a local before the closures are
+built — read in place, the snap control did nothing until the tool was reselected.
 
 `attachToolHandlers()` runs in an `$effect` on `activeTool`/`scene`/`you` and is the single place
 pointer handlers are bound. It:
@@ -64,7 +78,9 @@ helper tests "is a `MouseEvent` *and* not button 0" rather than `button !== 0`, 
 Adding a tool: extend the `Tool` union, add a branch in `attachToolHandlers`, add a toolbar button
 with a distinct `aria-label` (the e2e helpers select by accessible name, and assert the active
 styling `bg-primary` before dragging — the rebinding happens in an effect, so a click in the same
-tick can land on the old tool).
+tick can land on the old tool). The rubber-band drawing branch at the end of `attachToolHandlers`
+now names `line`/`rect`/`ellipse` explicitly instead of taking whatever is left over: as a
+fall-through, a tool added above without its own branch silently became a drawing tool.
 
 ## Screen pixels vs world units
 

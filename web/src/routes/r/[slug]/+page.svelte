@@ -5,6 +5,7 @@
 	import { gmLogin, joinRoom, type Session } from '$lib/api';
 	import { loadSession, saveSession } from '$lib/session';
 	import { RoomClient } from '$lib/room.svelte';
+	import { DEFAULT_LINE_WIDTH_FEET, LINE_WIDTH_CHOICES_FEET, type SnapMode } from '$lib/aoe';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -25,6 +26,10 @@
 	import Undo from '@lucide/svelte/icons/undo';
 	import Redo from '@lucide/svelte/icons/redo';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+	import CircleDot from '@lucide/svelte/icons/circle-dot';
+	import Cone from '@lucide/svelte/icons/cone';
+	import Minus from '@lucide/svelte/icons/minus';
+	import Square from '@lucide/svelte/icons/square';
 
 	const slug = $derived(page.params.slug ?? '');
 
@@ -48,6 +53,21 @@
 	// eraser is offered to everyone but reaches different drawings per
 	// role: a GM can erase anyone's, a Player only their own.
 	let activeTool = $state<Tool>('none');
+	// Where an area template's points may land. A setting rather than a
+	// rule because tables genuinely differ — some put a burst on a cell
+	// centre, some on an intersection, some eyeball it — and it never
+	// leaves this client: the points that go on the wire are already
+	// snapped, so nobody else needs to know which convention made them.
+	let snapMode = $state<SnapMode>('intersections');
+	const SNAP_MODES: { value: SnapMode; label: string }[] = [
+		{ value: 'intersections', label: 'Corners' },
+		{ value: 'centres', label: 'Centres' },
+		{ value: 'free', label: 'Free' }
+	];
+	// A Line is the one shape a single drag can't describe: the drag
+	// gives length and direction, never width.
+	let lineWidthFeet = $state(DEFAULT_LINE_WIDTH_FEET);
+	const isTemplateTool = $derived(activeTool.startsWith('template-'));
 	const STROKE_COLORS = [
 		{ label: 'Black', value: '#000000' },
 		{ label: 'Red', value: '#cc0000' },
@@ -343,6 +363,45 @@
 							>
 								<Ruler class="h-4 w-4" />
 							</Button>
+							<!-- The four area templates. Six shapes in the rules, but
+							     Sphere, Cylinder and Emanation are all a circle seen
+							     from above, so they share one tool. -->
+							<Button
+								variant={activeTool === 'template-circle' ? 'default' : 'outline'}
+								size="sm"
+								aria-label="Circle template"
+								onclick={() => selectTool('template-circle')}
+								title="Sphere, cylinder or emanation — drag from the centre"
+							>
+								<CircleDot class="h-4 w-4" />
+							</Button>
+							<Button
+								variant={activeTool === 'template-cone' ? 'default' : 'outline'}
+								size="sm"
+								aria-label="Cone template"
+								onclick={() => selectTool('template-cone')}
+								title="Cone — drag from the point of origin"
+							>
+								<Cone class="h-4 w-4" />
+							</Button>
+							<Button
+								variant={activeTool === 'template-line' ? 'default' : 'outline'}
+								size="sm"
+								aria-label="Line template"
+								onclick={() => selectTool('template-line')}
+								title="Line — drag its length; set its width below"
+							>
+								<Minus class="h-4 w-4" />
+							</Button>
+							<Button
+								variant={activeTool === 'template-cube' ? 'default' : 'outline'}
+								size="sm"
+								aria-label="Cube template"
+								onclick={() => selectTool('template-cube')}
+								title="Cube — drag one corner to the opposite corner"
+							>
+								<Square class="h-4 w-4" />
+							</Button>
 							<Button
 								variant={activeTool === 'eraser' ? 'default' : 'outline'}
 								size="sm"
@@ -408,7 +467,50 @@
 							</Button>
 						</div>
 					</div>
-					<GameCanvas room={client} {activeTool} {strokeColor} bind:this={canvasRef} />
+					<!-- Template options appear only while a template tool is
+					     active: they mean nothing otherwise, and the tool row is
+					     long enough already. -->
+					{#if isTemplateTool}
+						<div class="flex flex-wrap items-center gap-3 rounded-md border p-2">
+							<div class="flex items-center gap-2">
+								<span class="text-xs text-muted-foreground">Snap to</span>
+								{#each SNAP_MODES as mode (mode.value)}
+									<Button
+										variant={snapMode === mode.value ? 'default' : 'outline'}
+										size="sm"
+										aria-pressed={snapMode === mode.value}
+										onclick={() => (snapMode = mode.value)}
+									>
+										{mode.label}
+									</Button>
+								{/each}
+							</div>
+							{#if activeTool === 'template-line'}
+								<div class="flex items-center gap-2">
+									<span class="text-xs text-muted-foreground">Line width</span>
+									{#each LINE_WIDTH_CHOICES_FEET as feet (feet)}
+										<Button
+											variant={lineWidthFeet === feet ? 'default' : 'outline'}
+											size="sm"
+											aria-label="{feet} foot wide line"
+											aria-pressed={lineWidthFeet === feet}
+											onclick={() => (lineWidthFeet = feet)}
+										>
+											{feet} ft
+										</Button>
+									{/each}
+								</div>
+							{/if}
+						</div>
+					{/if}
+					<GameCanvas
+						room={client}
+						{activeTool}
+						{strokeColor}
+						{snapMode}
+						{lineWidthFeet}
+						bind:this={canvasRef}
+					/>
 				{:else}
 					<Card.Root class="flex h-64 w-full items-center justify-center">
 						<p class="text-sm text-muted-foreground">

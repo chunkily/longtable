@@ -785,9 +785,31 @@ func (h *Hub) handlePing(ctx context.Context, c *client, raw json.RawMessage) {
 
 type measureUpdateRequest struct {
 	SceneID string      `json:"sceneId"`
+	Kind    string      `json:"kind"`
 	From    store.Point `json:"from"`
 	To      store.Point `json:"to"`
+	// Only a line has a width a drag can't express. Feet rather than
+	// world units, so it means the same thing on a scene with a
+	// different grid size.
+	WidthFeet float64 `json:"widthFeet"`
 }
+
+// measureKinds is the set of shapes a measurement may be, and doubles as
+// the recognised-kind check. A plain distance line is the original and
+// stays the default, so a client that doesn't know about templates —
+// or an older one — keeps working unchanged.
+//
+// The four area shapes are what the 2024 PHB's six flatten to on a
+// top-down map: sphere, cylinder and emanation are all a circle.
+var measureKinds = map[string]bool{
+	"distance": true,
+	"circle":   true,
+	"cone":     true,
+	"line":     true,
+	"cube":     true,
+}
+
+const defaultMeasureKind = "distance"
 
 // handleMeasureUpdate relays where a participant is currently dragging a
 // measurement. Like ping it is never persisted — a measurement only
@@ -796,14 +818,24 @@ type measureUpdateRequest struct {
 // every update replaces the last. Recipients key on participantId; the
 // gesture ends with measure.end.
 //
-// The distance itself is deliberately not computed here: the two
-// endpoints are all anyone needs, and every client already knows the
-// scene's grid size, so sending a number as well would just be a second
-// source of truth to keep in step with the line.
+// Neither the distance nor the template's outline is computed here: the
+// two endpoints (plus a width, for a line) are all anyone needs, and
+// every client already knows the scene's grid size, so sending a number
+// or a polygon as well would just be a second source of truth to keep in
+// step with the shape. Snapping is applied client-side before sending
+// for the same reason — the points that arrive here are final, and a
+// recipient never needs to know which convention produced them.
 func (h *Hub) handleMeasureUpdate(ctx context.Context, c *client, raw json.RawMessage) {
 	var req measureUpdateRequest
 	if err := decodePayload(raw, &req); err != nil || req.SceneID == "" {
 		h.sendError(ctx, c, "invalid measure.update payload")
+		return
+	}
+	if req.Kind == "" {
+		req.Kind = defaultMeasureKind
+	}
+	if !measureKinds[req.Kind] {
+		h.sendError(ctx, c, fmt.Sprintf("unknown measurement kind %q", req.Kind))
 		return
 	}
 	if !h.requireSceneInRoom(ctx, c, req.SceneID) {
@@ -814,8 +846,10 @@ func (h *Hub) handleMeasureUpdate(ctx context.Context, c *client, raw json.RawMe
 		"participantId":   c.participant.ID,
 		"participantName": c.participant.DisplayName,
 		"sceneId":         req.SceneID,
+		"kind":            req.Kind,
 		"from":            req.From,
 		"to":              req.To,
+		"widthFeet":       req.WidthFeet,
 	})
 }
 

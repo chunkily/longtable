@@ -41,7 +41,8 @@ picked library asset and managed from a picker (switch, delete, swap the map und
 tokens (GM creates, anyone drags, hidden ones withheld from players),
 fog the GM paints on and off a square at a time (plus reveal-all and reset for the whole scene),
 drawings (freehand/line/rect/ellipse) with an eraser and per-session undo/redo,
-pings, distance measuring, chat with `/roll`. Every upload is decoded and re-encoded to WebP and
+pings, distance measuring, area-of-effect templates (circle/cone/line/cube, with a snap mode),
+chat with `/roll`. Every upload is decoded and re-encoded to WebP and
 joins the uploading room's library — content-addressed globally so identical uploads share one
 file, but a room only ever sees what it added itself. All of it syncs live; everything but pings
 and measurements persists.

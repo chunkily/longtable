@@ -2,6 +2,7 @@
 // command/event protocol (see internal/ws/hub.go) in Svelte 5 runes
 // state so components just read fields and let the UI update itself.
 
+import type { TemplateKind } from './aoe';
 import { MEASURE_SEND_INTERVAL_MS } from './measure';
 import { PING_COOLDOWN_MS, PING_LIFETIME_MS } from './ping';
 
@@ -80,17 +81,23 @@ export interface Ping {
 	participantName: string;
 }
 
-// A measurement someone is dragging out right now — two world-space
-// points, with the distance left to the reader (see $lib/measure). Never
+// What someone is dragging out right now: a plain distance line, or one
+// of the four area templates. Two world-space points either way, with
+// the shape left to the reader (see $lib/measure and $lib/aoe). Never
 // persisted and never in state.sync: it exists only for as long as the
 // drag does. Keyed by participantId, since each person has one at a
 // time and every update replaces their last.
+export type MeasurementKind = 'distance' | TemplateKind;
+
 export interface Measurement {
 	participantId: string;
 	participantName: string;
 	sceneId: string;
+	kind: MeasurementKind;
 	from: DrawingPoint;
 	to: DrawingPoint;
+	/** Only a Line has one; a drag can't express a width on its own. */
+	widthFeet?: number;
 }
 
 export interface You {
@@ -519,7 +526,16 @@ export class RoomClient {
 	// (see handleEnvelope), so a throttled update can't arrive late and
 	// drag their own line back to where the pointer used to be.
 
-	updateMeasure(sceneId: string, from: DrawingPoint, to: DrawingPoint) {
+	// Area templates ride this same path rather than a channel of their
+	// own: one gesture per participant, the same throttle, the same
+	// cleanup on disconnect. Only the shape differs.
+	updateMeasure(
+		sceneId: string,
+		from: DrawingPoint,
+		to: DrawingPoint,
+		kind: MeasurementKind = 'distance',
+		widthFeet?: number
+	) {
 		const you = this.you;
 		if (!you) return;
 
@@ -527,8 +543,10 @@ export class RoomClient {
 			participantId: you.participantId,
 			participantName: you.displayName,
 			sceneId,
+			kind,
 			from,
-			to
+			to,
+			widthFeet
 		};
 		this.measurements = upsertMeasurement(this.measurements, measurement);
 
@@ -565,8 +583,10 @@ export class RoomClient {
 		this.unsentMeasure = null;
 		this.send('measure.update', {
 			sceneId: measurement.sceneId,
+			kind: measurement.kind,
 			from: measurement.from,
-			to: measurement.to
+			to: measurement.to,
+			widthFeet: measurement.widthFeet ?? 0
 		});
 		this.measureTimer = setTimeout(() => this.flushMeasure(), MEASURE_SEND_INTERVAL_MS);
 	}

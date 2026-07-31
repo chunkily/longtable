@@ -3,6 +3,15 @@
 	import Konva from 'konva';
 	import { assetUrl } from '$lib/api';
 	import { DRAWING_STROKE_WIDTH, pickDrawing, strokeWidthOf } from '$lib/drawing-hit';
+	import {
+		DEFAULT_LINE_WIDTH_FEET,
+		circleRadius,
+		snapPoint,
+		templateLabel,
+		templatePolygon,
+		type SnapMode,
+		type TemplateKind
+	} from '$lib/aoe';
 	import { cellAt, cellCentre, measureLabel } from '$lib/measure';
 	import { PING_PULSES, PING_PULSE_INTERVAL_MS, PING_PULSE_SECONDS } from '$lib/ping';
 	import type {
@@ -19,16 +28,41 @@
 	// the stage's pointer handling exclusively — only one can be active
 	// at a time, since they all interpret a left-drag differently.
 	export type Tool =
-		'none' | 'fog-reveal' | 'fog-hide' | DrawingKind | 'ping' | 'eraser' | 'measure';
+		| 'none'
+		| 'fog-reveal'
+		| 'fog-hide'
+		| DrawingKind
+		| 'ping'
+		| 'eraser'
+		| 'measure'
+		| 'template-circle'
+		| 'template-cone'
+		| 'template-line'
+		| 'template-cube';
+
+	// The area templates and the shape each drags out. They share the
+	// measuring tool's whole gesture — one per participant, thrown away
+	// when the drag ends — so the only thing that varies is this.
+	const TEMPLATE_TOOLS: Partial<Record<Tool, TemplateKind>> = {
+		'template-circle': 'circle',
+		'template-cone': 'cone',
+		'template-line': 'line',
+		'template-cube': 'cube'
+	};
 
 	let {
 		room,
 		activeTool = 'none',
-		strokeColor = '#000000'
+		strokeColor = '#000000',
+		snapMode = 'intersections',
+		lineWidthFeet = DEFAULT_LINE_WIDTH_FEET
 	}: {
 		room: RoomClient;
 		activeTool?: Tool;
 		strokeColor?: string;
+		/** Where template points may land. Purely a local input aid. */
+		snapMode?: SnapMode;
+		lineWidthFeet?: number;
 	} = $props();
 
 	const MIN_SCALE = 0.2;
@@ -52,6 +86,10 @@
 	// participant: they're transient, and at most one per person is on
 	// the map at a time with their name on it.
 	const MEASURE_COLOR = '#0ea5e9';
+	// Area templates are filled as well as outlined, faintly enough to
+	// read the map and the tokens through — the point is to see what a
+	// shape covers, not to hide it. A paper cutout you can see through.
+	const TEMPLATE_FILL = 'rgba(14, 165, 233, 0.18)';
 	// Sized in screen pixels and converted at the current zoom, so a
 	// measurement reads the same whether you're zoomed in or out.
 	const MEASURE_LINE_WIDTH = 2;
@@ -574,18 +612,36 @@
 			return;
 		}
 
-		if (activeTool === 'measure') {
+		// The distance line and all four area templates are one gesture:
+		// press to set the point of origin, drag to size it, release to
+		// take it off everyone's map. Only the shape sent differs, and
+		// only templates snap — the distance line already reports whole
+		// squares from the cells its ends fall in.
+		const templateKind = TEMPLATE_TOOLS[activeTool];
+		if (activeTool === 'measure' || templateKind) {
+			const kind = templateKind ?? 'distance';
+			// Both read *here* rather than inside the handlers below. This
+			// function runs inside the $effect that rebinds tool handlers, so
+			// only what it reads synchronously is tracked — a value read
+			// later, when a pointer event fires, would be captured once and
+			// never refreshed, leaving the snap control doing nothing until
+			// the tool was reselected.
+			const snap = snapMode;
+			const width = templateKind === 'line' ? lineWidthFeet : undefined;
+			const place = (point: DrawingPoint) =>
+				templateKind ? snapPoint(point, gridSize, snap) : point;
+
 			stage.on('mousedown.tool touchstart.tool', (e) => {
 				if (!isPrimaryPointer(e)) return;
 				const pos = stage!.getRelativePointerPosition();
 				if (!pos) return;
-				measureStart = pos;
-				room.updateMeasure(sceneId, pos, pos);
+				measureStart = place(pos);
+				room.updateMeasure(sceneId, measureStart, measureStart, kind, width);
 			});
 			stage.on('mousemove.tool touchmove.tool', () => {
 				const pos = stage!.getRelativePointerPosition();
 				if (!measureStart || !pos) return;
-				room.updateMeasure(sceneId, measureStart, pos);
+				room.updateMeasure(sceneId, measureStart, place(pos), kind, width);
 			});
 			stage.on('mouseup.tool touchend.tool', (e) => {
 				if (!isPrimaryPointer(e)) return;
@@ -656,6 +712,12 @@
 
 		// line, rect, ellipse: rubber-band from a fixed start point to
 		// wherever the pointer currently is.
+		//
+		// Named explicitly rather than taken as whatever is left over: this
+		// used to be a fall-through, so a tool added above without its own
+		// branch silently became a rubber-band drawing tool instead of
+		// doing nothing. The type checker catches it now.
+		if (activeTool !== 'line' && activeTool !== 'rect' && activeTool !== 'ellipse') return;
 		const kind = activeTool;
 		stage.on('mousedown.tool touchstart.tool', (e) => {
 			if (!isPrimaryPointer(e)) return;
@@ -1054,11 +1116,76 @@
 		measureLayer.batchDraw();
 	}
 
+	function drawMeasurement(measurement: Measurement, gridSize: number) {
+		if (measurement.kind !== 'distance') {
+			drawTemplate(measurement, gridSize);
+			return;
+		}
+		drawDistance(measurement, gridSize);
+	}
+
+	// An area template is drawn as its true shape and nothing else — no
+	// squares are highlighted, deliberately. Tables disagree about which
+	// squares an area catches, so highlighting would be picking a side
+	// invisibly; this is the paper cutout laid on the map, and the
+	// players read it. See the header comment in $lib/aoe.
+	function drawTemplate(measurement: Measurement, gridSize: number) {
+		const { kind, from, to } = measurement;
+		if (kind === 'distance') return;
+
+		const outline = {
+			stroke: MEASURE_COLOR,
+			strokeWidth: screenToWorld(MEASURE_LINE_WIDTH),
+			fill: TEMPLATE_FILL,
+			listening: false
+		};
+
+		if (kind === 'circle') {
+			const radius = circleRadius(from, to);
+			if (radius <= 0) return;
+			measureLayer.add(new Konva.Circle({ x: from.x, y: from.y, radius, ...outline }));
+		} else {
+			const polygon = templatePolygon(kind, from, to, gridSize, measurement.widthFeet);
+			if (polygon.length === 0) return;
+			measureLayer.add(
+				new Konva.Line({
+					points: polygon.flatMap((p) => [p.x, p.y]),
+					closed: true,
+					...outline
+				})
+			);
+		}
+
+		// The point of origin, marked because it's the one part of a
+		// template that isn't obvious from the outline — a cube's origin
+		// is a corner, a cone's is the apex, a circle's is the centre.
+		measureLayer.add(
+			new Konva.Circle({
+				x: from.x,
+				y: from.y,
+				radius: screenToWorld(MEASURE_END_RADIUS),
+				fill: MEASURE_COLOR,
+				listening: false
+			})
+		);
+
+		const size = templateLabel(kind, from, to, gridSize, measurement.widthFeet);
+		addMeasureLabel(labelFor(measurement, size), to);
+	}
+
+	// Someone else's measurement says whose it is; your own doesn't need
+	// to.
+	function labelFor(measurement: Measurement, text: string): string {
+		return measurement.participantId === room.you?.participantId
+			? text
+			: `${measurement.participantName}: ${text}`;
+	}
+
 	// Drawn cell centre to cell centre rather than pointer to pointer:
 	// the distance is counted in whole squares, so a line that stopped
 	// wherever the pointer happened to be would disagree with its own
 	// label about which square it had reached.
-	function drawMeasurement(measurement: Measurement, gridSize: number) {
+	function drawDistance(measurement: Measurement, gridSize: number) {
 		const from = cellCentre(cellAt(measurement.from, gridSize), gridSize);
 		const to = cellCentre(cellAt(measurement.to, gridSize), gridSize);
 
@@ -1083,13 +1210,10 @@
 			);
 		}
 
-		// Someone else's measurement says whose it is; your own doesn't
-		// need to.
-		const label =
-			measurement.participantId === room.you?.participantId
-				? measureLabel(measurement.from, measurement.to, gridSize)
-				: `${measurement.participantName}: ${measureLabel(measurement.from, measurement.to, gridSize)}`;
-		addMeasureLabel(label, to);
+		addMeasureLabel(
+			labelFor(measurement, measureLabel(measurement.from, measurement.to, gridSize)),
+			to
+		);
 	}
 
 	function addMeasureLabel(text: string, at: DrawingPoint) {

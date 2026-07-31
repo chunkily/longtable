@@ -3,6 +3,7 @@ package ws
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/coder/websocket"
 
@@ -62,6 +63,8 @@ type measureUpdatedPayload struct {
 	To struct {
 		X, Y float64
 	} `json:"to"`
+	Kind      string  `json:"kind"`
+	WidthFeet float64 `json:"widthFeet"`
 }
 
 // Measuring is open to everyone, not just the GM: knowing how far away
@@ -108,6 +111,61 @@ func TestMeasureUpdate_RelaysEndpointsWithoutPersisting(t *testing.T) {
 	if len(drawings) != 0 {
 		t.Fatalf("len(drawings) = %d, want 0 (measurements must not be persisted)", len(drawings))
 	}
+
+	// An update that names no kind is the plain distance line the tool
+	// started as, so an older client keeps working untouched.
+	if payload.Kind != "distance" {
+		t.Fatalf("kind = %q, want the distance default", payload.Kind)
+	}
+}
+
+// Area templates ride the same relay as the distance line: same
+// lifecycle, same one-per-participant keying, same cleanup. Only the
+// shape differs, so the kind has to survive the round trip.
+func TestMeasureUpdate_CarriesTheTemplateShapeAndWidth(t *testing.T) {
+	r := newMeasureTestRoom(t)
+
+	r.playerClient.send(t, "measure.update", map[string]any{
+		"sceneId":   r.scene.ID,
+		"kind":      "line",
+		"from":      map[string]float64{"x": 0, "y": 0},
+		"to":        map[string]float64{"x": 420, "y": 0},
+		"widthFeet": 10,
+	})
+
+	r.playerClient.readEnvelope(t)
+	env := r.gmClient.readEnvelope(t)
+
+	var payload measureUpdatedPayload
+	if err := json.Unmarshal(env.Payload, &payload); err != nil {
+		t.Fatalf("unmarshal measure.updated payload: %v", err)
+	}
+	if payload.Kind != "line" {
+		t.Fatalf("kind = %q, want line", payload.Kind)
+	}
+	// Feet rather than world units, so the width means the same thing on
+	// a scene with a different grid size.
+	if payload.WidthFeet != 10 {
+		t.Fatalf("widthFeet = %v, want 10", payload.WidthFeet)
+	}
+}
+
+func TestMeasureUpdate_RejectsAnUnknownShape(t *testing.T) {
+	r := newMeasureTestRoom(t)
+
+	r.playerClient.send(t, "measure.update", map[string]any{
+		"sceneId": r.scene.ID,
+		"kind":    "pyramid",
+		"from":    map[string]float64{"x": 0, "y": 0},
+		"to":      map[string]float64{"x": 70, "y": 0},
+	})
+
+	env := r.playerClient.readEnvelope(t)
+	if env.Type != "error" {
+		t.Fatalf("type = %q, want error", env.Type)
+	}
+	// Nothing should have reached the rest of the room.
+	r.gmClient.expectNoMessage(t, 200*time.Millisecond)
 }
 
 func TestMeasureEnd_TellsEveryoneWhoseMeasurementEnded(t *testing.T) {
