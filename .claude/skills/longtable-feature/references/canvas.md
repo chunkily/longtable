@@ -47,6 +47,14 @@ Handlers use `stage.getRelativePointerPosition()`, not the raw event coordinates
 accounts for the stage's own pan and zoom. `mouseleave.tool` matters for any held gesture: no
 `mouseup` arrives if the button is released outside the canvas.
 
+**Every handler that opens or closes a gesture checks `isPrimaryPointer(e)` first.** Konva reports
+all mouse buttons through the same `mousedown`/`mouseup`, so without it a right-drag drives the
+active tool exactly as a left one does. Both ends need it: guarding only `mousedown` still lets a
+stray right-click *during* a left-button gesture fire `mouseup` and commit it early. `mouseleave`
+is the deliberate exception — it must end a held gesture whatever the buttons are doing. Note the
+helper tests "is a `MouseEvent` *and* not button 0" rather than `button !== 0`, because
+`TouchEvent` has no `button` at all and the shorter spelling rejects every touch.
+
 Adding a tool: extend the `Tool` union, add a branch in `attachToolHandlers`, add a toolbar button
 with a distinct `aria-label` (the e2e helpers select by accessible name, and assert the active
 styling `bg-primary` before dragging — the rebinding happens in an effect, so a click in the same

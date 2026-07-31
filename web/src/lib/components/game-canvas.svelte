@@ -469,6 +469,18 @@
 		}
 	}
 
+	// Konva reports every mouse button through the same mousedown/mouseup
+	// events, so without this a right-drag draws, erases, reveals fog,
+	// pings and measures exactly as a left one does. Every tool that opens
+	// a gesture checks this.
+	//
+	// Touch events carry no `button` at all, so they have to pass rather
+	// than be rejected for failing to be the primary button — testing
+	// `button !== 0` alone would silently break every tool on a tablet.
+	function isPrimaryPointer(e: Konva.KonvaEventObject<MouseEvent | TouchEvent>): boolean {
+		return !(e.evt instanceof MouseEvent) || e.evt.button === 0;
+	}
+
 	function attachToolHandlers() {
 		if (!stage) return;
 		stage.off(
@@ -495,14 +507,16 @@
 
 		if (activeTool === 'fog') {
 			if (room.you?.role !== 'gm') return; // fog stays GM-only
-			stage.on('mousedown.tool touchstart.tool', () => {
+			stage.on('mousedown.tool touchstart.tool', (e) => {
+				if (!isPrimaryPointer(e)) return;
 				painting = true;
 				paintAtPointer(gridSize);
 			});
 			stage.on('mousemove.tool touchmove.tool', () => {
 				if (painting) paintAtPointer(gridSize);
 			});
-			stage.on('mouseup.tool touchend.tool', () => {
+			stage.on('mouseup.tool touchend.tool', (e) => {
+				if (!isPrimaryPointer(e)) return;
 				if (!painting) return;
 				painting = false;
 				if (pendingCells.size > 0) {
@@ -517,7 +531,8 @@
 			// Held down, the eraser keeps taking whatever it's dragged
 			// across, so clearing a scribbled-over area is one gesture
 			// rather than a click per stroke.
-			stage.on('mousedown.tool touchstart.tool', () => {
+			stage.on('mousedown.tool touchstart.tool', (e) => {
+				if (!isPrimaryPointer(e)) return;
 				const pos = stage!.getRelativePointerPosition();
 				if (!pos) return;
 				erasing = true;
@@ -535,7 +550,13 @@
 				}
 				updateEraserCursor();
 			});
-			stage.on('mouseup.tool touchend.tool', stopErasing);
+			stage.on('mouseup.tool touchend.tool', (e) => {
+				if (!isPrimaryPointer(e)) return;
+				stopErasing();
+			});
+			// Unguarded, unlike the mouseup above: leaving the canvas ends the
+			// sweep whatever the buttons are doing, since no mouseup is coming
+			// once the pointer is released outside.
 			stage.on('mouseleave.tool', () => {
 				stopErasing();
 				clearCursorOverlay();
@@ -544,7 +565,8 @@
 		}
 
 		if (activeTool === 'measure') {
-			stage.on('mousedown.tool touchstart.tool', () => {
+			stage.on('mousedown.tool touchstart.tool', (e) => {
+				if (!isPrimaryPointer(e)) return;
 				const pos = stage!.getRelativePointerPosition();
 				if (!pos) return;
 				measureStart = pos;
@@ -555,15 +577,21 @@
 				if (!measureStart || !pos) return;
 				room.updateMeasure(sceneId, measureStart, pos);
 			});
-			// Leaving the canvas ends the measurement rather than leaving it
+			stage.on('mouseup.tool touchend.tool', (e) => {
+				if (!isPrimaryPointer(e)) return;
+				stopMeasuring();
+			});
+			// Split from the mouseup above, and deliberately unguarded:
+			// leaving the canvas ends the measurement rather than leaving it
 			// frozen at the edge on everyone else's map, since no mouseup is
 			// coming once the pointer is released outside.
-			stage.on('mouseup.tool touchend.tool mouseleave.tool', stopMeasuring);
+			stage.on('mouseleave.tool', stopMeasuring);
 			return;
 		}
 
 		if (activeTool === 'ping') {
-			stage.on('mousedown.tool touchstart.tool', () => {
+			stage.on('mousedown.tool touchstart.tool', (e) => {
+				if (!isPrimaryPointer(e)) return;
 				const pos = stage!.getRelativePointerPosition();
 				if (!pos) return;
 				room.sendPing(sceneId, pos.x, pos.y);
@@ -572,7 +600,8 @@
 		}
 
 		if (activeTool === 'freehand') {
-			stage.on('mousedown.tool touchstart.tool', () => {
+			stage.on('mousedown.tool touchstart.tool', (e) => {
+				if (!isPrimaryPointer(e)) return;
 				const pos = stage!.getRelativePointerPosition();
 				if (!pos) return;
 				freehandPoints = [pos];
@@ -602,7 +631,10 @@
 				(previewShape as Konva.Line).points(freehandPoints.flatMap((p) => [p.x, p.y]));
 				previewLayer.batchDraw();
 			});
-			stage.on('mouseup.tool touchend.tool', () => {
+			stage.on('mouseup.tool touchend.tool', (e) => {
+				// Guarded as well as mousedown, so releasing the right button
+				// part-way through a left-button stroke doesn't commit it early.
+				if (!isPrimaryPointer(e)) return;
 				if (freehandPoints.length >= 2) {
 					room.createDrawing(sceneId, 'freehand', freehandPoints, strokeColor);
 				}
@@ -615,7 +647,8 @@
 		// line, rect, ellipse: rubber-band from a fixed start point to
 		// wherever the pointer currently is.
 		const kind = activeTool;
-		stage.on('mousedown.tool touchstart.tool', () => {
+		stage.on('mousedown.tool touchstart.tool', (e) => {
+			if (!isPrimaryPointer(e)) return;
 			const pos = stage!.getRelativePointerPosition();
 			if (!pos) return;
 			drawStart = pos;
@@ -629,7 +662,10 @@
 			updatePreviewShape(previewShape, kind, drawStart, pos);
 			previewLayer.batchDraw();
 		});
-		stage.on('mouseup.tool touchend.tool', () => {
+		stage.on('mouseup.tool touchend.tool', (e) => {
+			// Same reason as freehand: a right-button release must not commit
+			// the shape a left-button drag is still rubber-banding.
+			if (!isPrimaryPointer(e)) return;
 			if (drawStart) {
 				const pos = stage!.getRelativePointerPosition() ?? drawStart;
 				if (pos.x !== drawStart.x || pos.y !== drawStart.y) {

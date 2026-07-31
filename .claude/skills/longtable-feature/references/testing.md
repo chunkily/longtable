@@ -69,6 +69,25 @@ Two helpers worth copying verbatim rather than rewriting:
 - `canvasOrigin(page)` — canvas-relative pixels double as world coordinates, because a fresh scene
   starts at the identity transform. Don't pan or zoom in a spec that relies on that.
 
+`selectTool` does **not** work for the fog tool, which relabels itself (`Reveal fog` →
+`Painting fog…`) rather than only restyling: its locator stops matching the moment the tool goes
+active, so the wait can never pass. `drawing-right-click.spec.ts` has a `selectFogTool` that
+clicks the old label and waits on the new one, which is what proves the switch happened.
+
+Two things that quietly make a pixel assertion measure nothing:
+
+- **Counting non-transparent pixels is blind to a GM's fog.** A GM's cover is drawn at
+  `opacity: 0.35` and revealed cells are punched out at `0.35` too, so revealing takes a pixel
+  from roughly alpha 89 to roughly 58 — lower, never zero, and the count comes back identical.
+  Sum the alpha channel instead (`layerAlpha`). Players get `opacity: 1` and a full punch-out, so
+  the same probe works against a player's view; it's the GM rendering that defeats it.
+- **The freehand tool always has ink on the preview layer**, because it paints a cursor ring
+  sized to the stroke width that tracks the pointer whether or not a stroke is in progress.
+
+Both of those produced passing tests that asserted nothing. Pair a "this must not happen"
+assertion with a positive control on the *same* probe — the gesture that *should* work, checked
+the same way — or a probe that has silently stopped measuring anything still reads as green.
+
 Asserting a *non*-event ("this must not happen") needs an explicit `waitForTimeout` — there's no
 event to poll on, which is the point. Everything else should be `expect.poll`.
 
