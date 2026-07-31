@@ -241,19 +241,42 @@
 							sessionToken={session.sessionToken}
 						/>
 						{#if client.scene}
+							<!-- Captured here because the handlers below read it inside a
+							     closure, where the {#if}'s narrowing doesn't reach. -->
+							{@const sceneId = client.scene.id}
 							<CreateTokenDialog
 								room={client}
-								sceneId={client.scene.id}
+								{sceneId}
 								roomSlug={session.roomSlug}
 								sessionToken={session.sessionToken}
 								spawnCell={() => canvasRef?.viewCenterCell() ?? { x: 0, y: 0 }}
 							/>
 							<Button
-								variant={activeTool === 'fog' ? 'default' : 'outline'}
-								onclick={() => selectTool('fog')}
+								variant={activeTool === 'fog-reveal' ? 'default' : 'outline'}
+								onclick={() => selectTool('fog-reveal')}
 							>
-								{activeTool === 'fog' ? 'Painting fog…' : 'Reveal fog'}
+								{activeTool === 'fog-reveal' ? 'Painting fog…' : 'Reveal fog'}
 							</Button>
+							<Button
+								variant={activeTool === 'fog-hide' ? 'default' : 'outline'}
+								onclick={() => selectTool('fog-hide')}
+								title="Drag over revealed squares to cover them again"
+							>
+								{activeTool === 'fog-hide' ? 'Hiding fog…' : 'Hide fog'}
+							</Button>
+							<!-- The two bulk actions are one-shot buttons rather than
+							     tools: neither has a gesture to make, so making them
+							     modes would mean arming something that fires on the
+							     next click anywhere on the map. -->
+							<Button variant="outline" onclick={() => client?.revealAllFog(sceneId)}>
+								Reveal all
+							</Button>
+							<!-- Deliberately not behind a confirmation. The story asks
+							     for a single action, and the room has no confirm dialog
+							     to borrow; the cost is that a misclick here drops a
+							     session's worth of revealed fog with no undo, which is
+							     worth fixing the first time someone actually hits it. -->
+							<Button variant="outline" onclick={() => client?.resetFog(sceneId)}>Reset fog</Button>
 						{/if}
 					</div>
 				{/if}

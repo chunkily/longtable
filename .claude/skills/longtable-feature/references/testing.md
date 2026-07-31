@@ -69,10 +69,12 @@ Two helpers worth copying verbatim rather than rewriting:
 - `canvasOrigin(page)` — canvas-relative pixels double as world coordinates, because a fresh scene
   starts at the identity transform. Don't pan or zoom in a spec that relies on that.
 
-`selectTool` does **not** work for the fog tool, which relabels itself (`Reveal fog` →
-`Painting fog…`) rather than only restyling: its locator stops matching the moment the tool goes
-active, so the wait can never pass. `drawing-right-click.spec.ts` has a `selectFogTool` that
-clicks the old label and waits on the new one, which is what proves the switch happened.
+`selectTool` does **not** work for either fog tool, both of which relabel themselves (`Reveal
+fog` → `Painting fog…`, `Hide fog` → `Hiding fog…`) rather than only restyling: the locator stops
+matching the moment the tool goes active, so the wait can never pass. `drawing-right-click.spec.ts`
+has a `selectFogTool` for the reveal tool and `fog-controls.spec.ts` a two-label version covering
+both, either of which clicks the old label and waits on the new one — which is what proves the
+switch happened.
 
 Two things that quietly make a pixel assertion measure nothing:
 
@@ -80,7 +82,10 @@ Two things that quietly make a pixel assertion measure nothing:
   `opacity: 0.35` and revealed cells are punched out at `0.35` too, so revealing takes a pixel
   from roughly alpha 89 to roughly 58 — lower, never zero, and the count comes back identical.
   Sum the alpha channel instead (`layerAlpha`). Players get `opacity: 1` and a full punch-out, so
-  the same probe works against a player's view; it's the GM rendering that defeats it.
+  the same probe works against a player's view; it's the GM rendering that defeats it. Prefer
+  asserting on a *player's* canvas for anything about fog for that reason — `fog-controls.spec.ts`
+  does, which is what lets it assert exact equality with the fully-covered baseline after a
+  re-hide, and an exact zero after a reveal-all.
 - **The freehand tool always has ink on the preview layer**, because it paints a cursor ring
   sized to the stroke width that tracks the pointer whether or not a stroke is in progress.
 

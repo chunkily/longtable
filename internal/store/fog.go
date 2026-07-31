@@ -29,6 +29,40 @@ func (s *Store) RevealCells(sceneID string, cells []FogCell) error {
 	return tx.Commit()
 }
 
+// HideCells un-reveals cells for sceneID, the exact inverse of
+// RevealCells and equally idempotent — a cell that was never revealed
+// simply deletes nothing. Fog is stored as the set of revealed cells
+// rather than a per-cell revealed flag, so hiding is a delete and the
+// two operations can't disagree about what an absent row means.
+func (s *Store) HideCells(sceneID string, cells []FogCell) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.Prepare(`DELETE FROM fog_cell WHERE scene_id = ? AND cell_x = ? AND cell_y = ?`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, c := range cells {
+		if _, err := stmt.Exec(sceneID, c.X, c.Y); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+// ClearFog re-hides a whole scene at once, returning it to the fully
+// covered state a scene starts in.
+func (s *Store) ClearFog(sceneID string) error {
+	_, err := s.db.Exec(`DELETE FROM fog_cell WHERE scene_id = ?`, sceneID)
+	return err
+}
+
 func (s *Store) ListFogCells(sceneID string) ([]FogCell, error) {
 	rows, err := s.db.Query(`SELECT cell_x, cell_y FROM fog_cell WHERE scene_id = ?`, sceneID)
 	if err != nil {

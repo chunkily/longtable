@@ -38,7 +38,8 @@ authoritative; the client never writes to the database.
 
 Working today: rooms with a GM password and player join, scenes built from an uploaded map or a
 picked library asset, tokens (GM creates, anyone drags, hidden ones withheld from players),
-reveal-only fog, drawings (freehand/line/rect/ellipse) with an eraser and per-session undo/redo,
+fog the GM paints on and off a square at a time (plus reveal-all and reset for the whole scene),
+drawings (freehand/line/rect/ellipse) with an eraser and per-session undo/redo,
 pings, distance measuring, chat with `/roll`. Every upload is decoded and re-encoded to WebP and
 joins the uploading room's library — content-addressed globally so identical uploads share one
 file, but a room only ever sees what it added itself. All of it syncs live; everything but pings
@@ -46,8 +47,8 @@ and measurements persists.
 
 Known gaps, which is also roughly the queue: no scene-switcher UI (a new scene auto-activates
 because there's nowhere to pick one), no initiative tracker, no token detail panel (so no HP or
-conditions), fog can't be hidden again or reset, the asset library is an unfiltered grid with no
-search, no WebSocket reconnect, no prebuilt releases, no way for a Host to remove a moderated
+conditions), fog has no automatic vision from tokens, the asset library is an unfiltered grid with
+no search, no WebSocket reconnect, no prebuilt releases, no way for a Host to remove a moderated
 asset or cap upload sizes per room.
 
 `planning/backlog/` is the authority on all of this and goes into far more detail: `done/`

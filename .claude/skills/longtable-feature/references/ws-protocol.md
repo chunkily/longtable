@@ -24,6 +24,9 @@ Envelope both ways:
 | `token.create` | GM only | yes | `token.created` (GM-only if hidden) |
 | `token.move` | anyone | yes | `token.moved` |
 | `fog.reveal` | GM only | yes | `fog.revealed` |
+| `fog.hide` | GM only | yes | `fog.hidden` |
+| `fog.revealAll` | GM only | yes | `fog.revealed` |
+| `fog.reset` | GM only | yes | `fog.reset` |
 | `scene.create` | GM only | yes | `scene.activated` |
 | `scene.setActive` | GM only | yes | `scene.activated` |
 | `draw.create` | anyone | yes | `drawing.created` |
@@ -36,14 +39,21 @@ Unknown command types get an `error` back naming the type. `chat.send` text star
 routed to `handleSlashCommand` (only `/roll` and `/r` today; unknown commands error back to the
 sender and never enter the chat log).
 
-Notable gaps as of the last pass: there is no way to hide a revealed fog cell, delete a scene,
-replace a scene's map, or move a token with an ownership lock. See
-`planning/backlog/in-progress/`.
+`fog.revealAll` deliberately broadcasts `fog.revealed` rather than an event of its own: it
+enumerates the scene's cells server-side (`sceneFogCells`) and sends them as an ordinary reveal,
+so clients need no extra case and the server stays the only thing that decides what cells a scene
+has. It's refused for a scene with no width/height or no grid, and capped at
+`maxRevealAllCells` — the count is quadratic in map size and every cell is both a row and an
+entry in the payload every client receives.
+
+Notable gaps as of the last pass: there is no way to delete a scene, replace a scene's map, or
+move a token with an ownership lock. See `planning/backlog/in-progress/`.
 
 ## Events (server → client)
 
-`state.sync`, `chat.posted`, `token.created`, `token.moved`, `fog.revealed`, `scene.activated`,
-`drawing.created`, `drawing.deleted`, `ping`, `measure.updated`, `measure.ended`, `error`.
+`state.sync`, `chat.posted`, `token.created`, `token.moved`, `fog.revealed`, `fog.hidden`,
+`fog.reset`, `scene.activated`, `drawing.created`, `drawing.deleted`, `ping`, `measure.updated`,
+`measure.ended`, `error`.
 
 `state.sync` and `scene.activated` both carry the same full picture — `{scene, tokens, fogCells,
 drawings}` built by `sceneStatePayload` — so a client can render immediately without another

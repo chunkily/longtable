@@ -28,10 +28,16 @@ harmless; the separation is what keeps a stroke from forcing a token re-render.
 
 ## Tools
 
-`Tool` is `'none' | 'fog' | DrawingKind | 'ping' | 'eraser' | 'measure'`. `'none'` is plain
-pan/token-drag; every other tool takes the stage's pointer exclusively, because they all interpret
-a left-drag differently. The toolbar lives in `web/src/routes/r/[slug]/+page.svelte` and toggles —
-clicking the active tool returns to `'none'`.
+`Tool` is `'none' | 'fog-reveal' | 'fog-hide' | DrawingKind | 'ping' | 'eraser' | 'measure'`.
+`'none'` is plain pan/token-drag; every other tool takes the stage's pointer exclusively, because
+they all interpret a left-drag differently. The toolbar lives in
+`web/src/routes/r/[slug]/+page.svelte` and toggles — clicking the active tool returns to `'none'`.
+
+The two fog tools share one branch in `attachToolHandlers`: same sweep over the same cells,
+differing only in which command the gesture ends with and the colour it previews in. The
+whole-scene fog actions (`Reveal all`, `Reset fog`) are plain buttons rather than tools —
+neither has a gesture to make, and making them modes would arm something that fires on the next
+click anywhere on the map.
 
 `attachToolHandlers()` runs in an `$effect` on `activeTool`/`scene`/`you` and is the single place
 pointer handlers are bound. It:

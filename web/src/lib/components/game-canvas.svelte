@@ -18,7 +18,8 @@
 	// 'none' is plain pan/token-drag mode. Every other tool takes over
 	// the stage's pointer handling exclusively — only one can be active
 	// at a time, since they all interpret a left-drag differently.
-	export type Tool = 'none' | 'fog' | DrawingKind | 'ping' | 'eraser' | 'measure';
+	export type Tool =
+		'none' | 'fog-reveal' | 'fog-hide' | DrawingKind | 'ping' | 'eraser' | 'measure';
 
 	let {
 		room,
@@ -505,22 +506,31 @@
 		const gridSize = scene.gridSize;
 		const sceneId = scene.id;
 
-		if (activeTool === 'fog') {
+		// Revealing and hiding are the same gesture over the same cells in
+		// opposite directions, so they share a handler and differ only in
+		// which command the sweep ends with.
+		if (activeTool === 'fog-reveal' || activeTool === 'fog-hide') {
 			if (room.you?.role !== 'gm') return; // fog stays GM-only
+			const hiding = activeTool === 'fog-hide';
 			stage.on('mousedown.tool touchstart.tool', (e) => {
 				if (!isPrimaryPointer(e)) return;
 				painting = true;
-				paintAtPointer(gridSize);
+				paintAtPointer(gridSize, hiding);
 			});
 			stage.on('mousemove.tool touchmove.tool', () => {
-				if (painting) paintAtPointer(gridSize);
+				if (painting) paintAtPointer(gridSize, hiding);
 			});
 			stage.on('mouseup.tool touchend.tool', (e) => {
 				if (!isPrimaryPointer(e)) return;
 				if (!painting) return;
 				painting = false;
 				if (pendingCells.size > 0) {
-					room.revealFog(sceneId, Array.from(pendingCells.values()));
+					const cells = Array.from(pendingCells.values());
+					// A sweep sends every cell it crossed, including ones already
+					// in the target state — both commands are idempotent server
+					// side, which is what lets the gesture stay this simple.
+					if (hiding) room.hideFog(sceneId, cells);
+					else room.revealFog(sceneId, cells);
 				}
 				pendingCells.clear();
 			});
@@ -711,7 +721,14 @@
 		}
 	}
 
-	function paintAtPointer(gridSize: number) {
+	// The two fog tools mark their swept cells in different colours so a
+	// GM mid-drag can tell which direction they're painting in. Neither
+	// is what the cell will end up looking like — that arrives with the
+	// broadcast, which re-renders the layer from scratch.
+	const FOG_REVEAL_PREVIEW = 'yellow';
+	const FOG_HIDE_PREVIEW = '#dc2626';
+
+	function paintAtPointer(gridSize: number, hiding: boolean) {
 		// Pointer position adjusted for the stage's own pan/zoom, so
 		// painting still lands on the right cell after the camera moves.
 		const pos = stage?.getRelativePointerPosition();
@@ -727,7 +744,7 @@
 				y: cell.y * gridSize,
 				width: gridSize,
 				height: gridSize,
-				fill: 'yellow',
+				fill: hiding ? FOG_HIDE_PREVIEW : FOG_REVEAL_PREVIEW,
 				opacity: 0.35,
 				listening: false
 			})

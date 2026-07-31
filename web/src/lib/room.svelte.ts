@@ -122,9 +122,13 @@ interface TokenMovedPayload {
 	y: number;
 }
 
-interface FogRevealedPayload {
+interface FogCellsPayload {
 	sceneId: string;
 	cells: FogCell[];
+}
+
+interface FogResetPayload {
+	sceneId: string;
 }
 
 interface SceneActivatedPayload {
@@ -284,6 +288,22 @@ export class RoomClient {
 
 	revealFog(sceneId: string, cells: FogCell[]) {
 		this.send('fog.reveal', { sceneId, cells });
+	}
+
+	hideFog(sceneId: string, cells: FogCell[]) {
+		this.send('fog.hide', { sceneId, cells });
+	}
+
+	// The bulk pair. Neither renders optimistically: they're one click
+	// rather than a drag with a preview to keep in sync, so waiting for
+	// the round trip costs nothing and keeps the whole room's fog coming
+	// from one place.
+	revealAllFog(sceneId: string) {
+		this.send('fog.revealAll', { sceneId });
+	}
+
+	resetFog(sceneId: string) {
+		this.send('fog.reset', { sceneId });
 	}
 
 	// Drawn locally straight away rather than after the round trip: at
@@ -572,9 +592,25 @@ export class RoomClient {
 			}
 
 			case 'fog.revealed': {
-				const payload = env.payload as FogRevealedPayload;
+				const payload = env.payload as FogCellsPayload;
 				if (this.scene?.id === payload.sceneId) {
 					this.fogCells = mergeFogCells(this.fogCells, payload.cells);
+				}
+				break;
+			}
+
+			case 'fog.hidden': {
+				const payload = env.payload as FogCellsPayload;
+				if (this.scene?.id === payload.sceneId) {
+					this.fogCells = removeFogCells(this.fogCells, payload.cells);
+				}
+				break;
+			}
+
+			case 'fog.reset': {
+				const payload = env.payload as FogResetPayload;
+				if (this.scene?.id === payload.sceneId) {
+					this.fogCells = [];
 				}
 				break;
 			}
@@ -687,4 +723,12 @@ function mergeFogCells(existing: FogCell[], added: FogCell[]): FogCell[] {
 		}
 	}
 	return merged;
+}
+
+function removeFogCells(existing: FogCell[], removed: FogCell[]): FogCell[] {
+	// Same throwaway-Set reasoning as mergeFogCells above — no disable
+	// comment needed here, though: the lint rule only fires on a Set that
+	// is written to after construction.
+	const drop = new Set(removed.map((c) => `${c.x},${c.y}`));
+	return existing.filter((c) => !drop.has(`${c.x},${c.y}`));
 }

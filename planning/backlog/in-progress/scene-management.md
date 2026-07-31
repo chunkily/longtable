@@ -16,6 +16,11 @@ now handled at asset upload time instead, baked directly into the image's pixels
 [map-asset-grid-offset-padding](map-asset-grid-offset-padding.md); the scene-level fields become
 unnecessary under that approach.
 
+Deleting a scene has to take its fog with it
+([gm-delete-scene](../../user-stories/gm-delete-scene.md)), and
+[fog-of-war-controls](../done/fog-of-war-controls.md) already shipped `store.ClearFog(sceneID)`
+for exactly that delete — no need to write the query again.
+
 ## Related user stories
 
 - [gm-switch-active-scene](../../user-stories/gm-switch-active-scene.md)

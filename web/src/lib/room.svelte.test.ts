@@ -167,6 +167,97 @@ describe('RoomClient', () => {
 		]);
 	});
 
+	it('drops fog.hidden cells only when they belong to the active scene', () => {
+		const { client, socket } = connectedClient();
+		socket.emit({
+			type: 'state.sync',
+			payload: {
+				room: { slug: 'abc123', name: 'Room' },
+				you: { participantId: 'p1', displayName: 'A', role: 'gm' },
+				scene: { id: 'scene1', name: 'Scene' },
+				fogCells: [
+					{ x: 0, y: 0 },
+					{ x: 1, y: 1 }
+				]
+			}
+		});
+
+		socket.emit({ type: 'fog.hidden', payload: { sceneId: 'scene1', cells: [{ x: 0, y: 0 }] } });
+		expect(client.fogCells).toEqual([{ x: 1, y: 1 }]);
+
+		// Hiding a cell that isn't revealed is a no-op rather than an error —
+		// the hide tool sweeps across cells it never revealed.
+		socket.emit({ type: 'fog.hidden', payload: { sceneId: 'scene1', cells: [{ x: 7, y: 7 }] } });
+		expect(client.fogCells).toEqual([{ x: 1, y: 1 }]);
+
+		socket.emit({
+			type: 'fog.hidden',
+			payload: { sceneId: 'other-scene', cells: [{ x: 1, y: 1 }] }
+		});
+		expect(client.fogCells).toEqual([{ x: 1, y: 1 }]);
+	});
+
+	it('clears every cell on fog.reset, but only for the active scene', () => {
+		const { client, socket } = connectedClient();
+		socket.emit({
+			type: 'state.sync',
+			payload: {
+				room: { slug: 'abc123', name: 'Room' },
+				you: { participantId: 'p1', displayName: 'A', role: 'gm' },
+				scene: { id: 'scene1', name: 'Scene' },
+				fogCells: [
+					{ x: 0, y: 0 },
+					{ x: 1, y: 1 }
+				]
+			}
+		});
+
+		socket.emit({ type: 'fog.reset', payload: { sceneId: 'other-scene' } });
+		expect(client.fogCells).toHaveLength(2);
+
+		socket.emit({ type: 'fog.reset', payload: { sceneId: 'scene1' } });
+		expect(client.fogCells).toEqual([]);
+	});
+
+	// Reveal-all deliberately reuses fog.revealed rather than an event of
+	// its own, so there is nothing extra for the client to handle — this
+	// pins that, since a future server change growing a fog.revealedAll
+	// event would silently do nothing here.
+	it('takes a whole-scene reveal through the same fog.revealed case', () => {
+		const { client, socket } = connectedClient();
+		socket.emit({
+			type: 'state.sync',
+			payload: {
+				room: { slug: 'abc123', name: 'Room' },
+				you: { participantId: 'p1', displayName: 'A', role: 'gm' },
+				scene: { id: 'scene1', name: 'Scene' },
+				fogCells: [{ x: 0, y: 0 }]
+			}
+		});
+
+		client.revealAllFog('scene1');
+		expect(JSON.parse(socket.sent.at(-1)!)).toEqual({
+			type: 'fog.revealAll',
+			payload: { sceneId: 'scene1' }
+		});
+
+		socket.emit({
+			type: 'fog.revealed',
+			payload: {
+				sceneId: 'scene1',
+				cells: [
+					{ x: 0, y: 0 },
+					{ x: 1, y: 0 }
+				]
+			}
+		});
+		// (0,0) was already revealed and must not double up.
+		expect(client.fogCells).toEqual([
+			{ x: 0, y: 0 },
+			{ x: 1, y: 0 }
+		]);
+	});
+
 	it('replaces scene/tokens/fog wholesale on scene.activated', () => {
 		const { client, socket } = connectedClient();
 		socket.emit({
