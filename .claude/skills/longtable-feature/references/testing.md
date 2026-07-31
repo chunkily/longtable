@@ -117,6 +117,13 @@ tiny image (`image/png` encoded in Go and pasted in as a literal, or built inlin
 `imageproc.Reencode` sniffs content and rejects anything that isn't a genuine image, so an
 arbitrary byte string won't get past the upload handler at all.
 
+**Encode that fixture, don't hand-edit one.** Mutating a few base64 characters of an existing
+spec's PNG to get "different" pixels produces a corrupt file, and the failure is genuinely hard
+to read: the upload answers 400, the server logs nothing (the request never gets past the
+decode), and the only symptom is an asset picker that stays empty — the error toast expires
+before a 5s locator timeout does. Encode a real one (a few lines of Go with `image/png`) and
+paste that.
+
 **Fixture content has to be unique per test, not just per spec file.** The e2e database is
 persistent across runs (`web/.e2e-data/longtable.db`, gitignored, never reset between
 `playwright test` invocations) and content-addressed — uploading the same pixels a second time,

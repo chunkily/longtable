@@ -11,4 +11,5 @@ and [ADR-0005](../../decisions/0005-webp-reencoding-library.md)), rather than as
 `GridOffsetX`/`GridOffsetY` metadata applied at render time.
 
 Replaces the originally-planned fix for the dead `GridOffsetX`/`GridOffsetY` scene fields — see
-[scene-management](scene-management.md).
+[scene-management](../done/scene-management.md), which shipped without touching them, so they
+are still stored, still sent to the client, and still applied nowhere.

@@ -13,6 +13,7 @@
 	import ChevronUpIcon from '@lucide/svelte/icons/chevron-up';
 	import GameCanvas, { type Tool } from '$lib/components/game-canvas.svelte';
 	import CreateSceneDialog from '$lib/components/create-scene-dialog.svelte';
+	import SceneManagerDialog from '$lib/components/scene-manager-dialog.svelte';
 	import CreateTokenDialog from '$lib/components/create-token-dialog.svelte';
 	import Pen from '@lucide/svelte/icons/pen';
 	import Slash from '@lucide/svelte/icons/slash';
@@ -236,6 +237,11 @@
 				{#if isGM}
 					<div class="flex flex-wrap gap-2">
 						<CreateSceneDialog
+							room={client}
+							roomSlug={session.roomSlug}
+							sessionToken={session.sessionToken}
+						/>
+						<SceneManagerDialog
 							room={client}
 							roomSlug={session.roomSlug}
 							sessionToken={session.sessionToken}

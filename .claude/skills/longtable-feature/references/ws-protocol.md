@@ -27,8 +27,10 @@ Envelope both ways:
 | `fog.hide` | GM only | yes | `fog.hidden` |
 | `fog.revealAll` | GM only | yes | `fog.revealed` |
 | `fog.reset` | GM only | yes | `fog.reset` |
-| `scene.create` | GM only | yes | `scene.activated` |
+| `scene.create` | GM only | yes | `scene.created` (+ `scene.activated` if it's the room's first) |
 | `scene.setActive` | GM only | yes | `scene.activated` |
+| `scene.delete` | GM only | yes | `scene.deleted` |
+| `scene.setMap` | GM only | yes | `scene.updated` |
 | `draw.create` | anyone | yes | `drawing.created` |
 | `draw.delete` | author, or any GM | yes | `drawing.deleted` |
 | `ping` | anyone | no | `ping` |
@@ -46,19 +48,30 @@ has. It's refused for a scene with no width/height or no grid, and capped at
 `maxRevealAllCells` — the count is quadratic in map size and every cell is both a row and an
 entry in the payload every client receives.
 
-Notable gaps as of the last pass: there is no way to delete a scene, replace a scene's map, or
-move a token with an ownership lock. See `planning/backlog/in-progress/`.
+Only the room's *first* scene auto-activates. A later `scene.create` is prep work, so it stays
+off screen until the GM switches to it — before the scene picker existed it activated
+unconditionally, because activation was the only way to ever reach a scene again.
+`scene.delete` refuses the active scene: `room.active_scene_id` has no foreign key to clean it
+up, so deleting it would leave every client pointed at a scene the server can't load.
+
+Notable gaps as of the last pass: there is no way to move a token with an ownership lock. See
+`planning/backlog/in-progress/`.
 
 ## Events (server → client)
 
 `state.sync`, `chat.posted`, `token.created`, `token.moved`, `fog.revealed`, `fog.hidden`,
-`fog.reset`, `scene.activated`, `drawing.created`, `drawing.deleted`, `ping`, `measure.updated`,
-`measure.ended`, `error`.
+`fog.reset`, `scene.activated`, `scene.created`, `scene.updated`, `scene.deleted`,
+`drawing.created`, `drawing.deleted`, `ping`, `measure.updated`, `measure.ended`, `error`.
 
 `state.sync` and `scene.activated` both carry the same full picture — `{scene, tokens, fogCells,
 drawings}` built by `sceneStatePayload` — so a client can render immediately without another
-round trip. `state.sync` adds `room`, `you`, and the last 50 chat messages (newest first; the
-client reverses them).
+round trip. `state.sync` adds `room`, `you`, the last 50 chat messages (newest first; the
+client reverses them), and `scenes`: every scene in the room, for the picker.
+
+`scene.created` and `scene.updated` carry **only** `{scene}` — deliberately not the full picture.
+A map swap changes the backdrop and nothing else, and sending `scene.activated` for it would make
+clients treat it as a scene change and throw away undo history and any gesture in flight, which
+is the opposite of the point: replacing a map keeps the tokens, fog and drawings on it.
 
 ## Delivery
 

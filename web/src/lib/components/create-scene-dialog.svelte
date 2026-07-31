@@ -66,7 +66,8 @@
 		<Dialog.Header>
 			<Dialog.Title>New scene</Dialog.Title>
 			<Dialog.Description>
-				Creating a scene makes it the room's active scene immediately.
+				The room's first scene becomes active straight away. After that, new scenes wait in
+				<strong>Scenes</strong> until you switch to one.
 			</Dialog.Description>
 		</Dialog.Header>
 		<form class="flex flex-col gap-4" onsubmit={handleSubmit}>

@@ -258,6 +258,83 @@ describe('RoomClient', () => {
 		]);
 	});
 
+	it('keeps the scene list in step with created, updated and deleted', () => {
+		const { client, socket } = connectedClient();
+		socket.emit({
+			type: 'state.sync',
+			payload: {
+				room: { slug: 'abc123', name: 'Room' },
+				you: { participantId: 'p1', displayName: 'A', role: 'gm' },
+				scenes: [{ id: 's1', name: 'Tavern' }],
+				scene: { id: 's1', name: 'Tavern' }
+			}
+		});
+		expect(client.scenes.map((s) => s.id)).toEqual(['s1']);
+
+		socket.emit({ type: 'scene.created', payload: { scene: { id: 's2', name: 'Dungeon' } } });
+		expect(client.scenes.map((s) => s.id)).toEqual(['s1', 's2']);
+		// Creating a scene must not drag anyone onto it.
+		expect(client.scene?.id).toBe('s1');
+
+		socket.emit({ type: 'scene.deleted', payload: { sceneId: 's2' } });
+		expect(client.scenes.map((s) => s.id)).toEqual(['s1']);
+	});
+
+	// A map swap changes the backdrop and nothing else. Anything that
+	// reset tokens/fog/drawings here would be discarding a session's
+	// progress for a change of art.
+	it('applies scene.updated to the active scene without clearing what is on it', () => {
+		const { client, socket } = connectedClient();
+		socket.emit({
+			type: 'state.sync',
+			payload: {
+				room: { slug: 'abc123', name: 'Room' },
+				you: { participantId: 'p1', displayName: 'A', role: 'gm' },
+				scenes: [{ id: 's1', name: 'Tavern', mapAssetId: 'old' }],
+				scene: { id: 's1', name: 'Tavern', mapAssetId: 'old' },
+				tokens: [{ id: 't1', x: 1, y: 1, name: 'Goblin' }],
+				fogCells: [{ x: 0, y: 0 }],
+				drawings: [{ id: 'd1', sceneId: 's1', kind: 'line', points: [], color: '#000' }]
+			}
+		});
+
+		socket.emit({
+			type: 'scene.updated',
+			payload: { scene: { id: 's1', name: 'Tavern', mapAssetId: 'new' } }
+		});
+
+		expect(client.scene?.mapAssetId).toBe('new');
+		expect(client.scenes[0].mapAssetId).toBe('new');
+		expect(client.tokens).toHaveLength(1);
+		expect(client.fogCells).toEqual([{ x: 0, y: 0 }]);
+		expect(client.drawings).toHaveLength(1);
+	});
+
+	it('ignores scene.updated for a scene that is not the one on screen', () => {
+		const { client, socket } = connectedClient();
+		socket.emit({
+			type: 'state.sync',
+			payload: {
+				room: { slug: 'abc123', name: 'Room' },
+				you: { participantId: 'p1', displayName: 'A', role: 'gm' },
+				scenes: [
+					{ id: 's1', name: 'Tavern' },
+					{ id: 's2', name: 'Dungeon', mapAssetId: 'old' }
+				],
+				scene: { id: 's1', name: 'Tavern' }
+			}
+		});
+
+		socket.emit({
+			type: 'scene.updated',
+			payload: { scene: { id: 's2', name: 'Dungeon', mapAssetId: 'new' } }
+		});
+
+		// The list learns about it; the canvas doesn't change scene.
+		expect(client.scenes[1].mapAssetId).toBe('new');
+		expect(client.scene?.id).toBe('s1');
+	});
+
 	it('replaces scene/tokens/fog wholesale on scene.activated', () => {
 		const { client, socket } = connectedClient();
 		socket.emit({

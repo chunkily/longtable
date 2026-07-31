@@ -38,6 +38,156 @@ func TestSceneRoomID_NotFound(t *testing.T) {
 	}
 }
 
+func TestListScenesForRoom_OldestFirstAndScopedToTheRoom(t *testing.T) {
+	s := newTestStore(t)
+
+	room, _, err := s.CreateRoom("Room", "GM", "password")
+	if err != nil {
+		t.Fatalf("CreateRoom: %v", err)
+	}
+	other, _, err := s.CreateRoom("Other", "GM", "password")
+	if err != nil {
+		t.Fatalf("CreateRoom(other): %v", err)
+	}
+
+	for _, name := range []string{"Tavern", "Dungeon"} {
+		if _, err := s.CreateScene(room.ID, name, nil, 70, 700, 700); err != nil {
+			t.Fatalf("CreateScene(%s): %v", name, err)
+		}
+	}
+	if _, err := s.CreateScene(other.ID, "Theirs", nil, 70, 700, 700); err != nil {
+		t.Fatalf("CreateScene(theirs): %v", err)
+	}
+
+	scenes, err := s.ListScenesForRoom(room.ID)
+	if err != nil {
+		t.Fatalf("ListScenesForRoom: %v", err)
+	}
+	names := make([]string, len(scenes))
+	for i, sc := range scenes {
+		names[i] = sc.Name
+	}
+	if len(names) != 2 || names[0] != "Tavern" || names[1] != "Dungeon" {
+		t.Fatalf("scenes = %v, want [Tavern Dungeon] and nothing from the other room", names)
+	}
+}
+
+// The tokens, fog and drawings on a scene go with it via ON DELETE
+// CASCADE, which only works because the connection turns foreign keys
+// on. If that pragma is ever lost this is the test that catches it.
+func TestDeleteScene_TakesItsTokensFogAndDrawingsWithIt(t *testing.T) {
+	s := newTestStore(t)
+
+	room, _, err := s.CreateRoom("Room", "GM", "password")
+	if err != nil {
+		t.Fatalf("CreateRoom: %v", err)
+	}
+	scene, err := s.CreateScene(room.ID, "Doomed", nil, 70, 700, 700)
+	if err != nil {
+		t.Fatalf("CreateScene: %v", err)
+	}
+	survivor, err := s.CreateScene(room.ID, "Survivor", nil, 70, 700, 700)
+	if err != nil {
+		t.Fatalf("CreateScene(survivor): %v", err)
+	}
+
+	for _, sc := range []Scene{scene, survivor} {
+		if _, err := s.CreateToken(Token{SceneID: sc.ID, Name: "Goblin", Width: 1, Height: 1}); err != nil {
+			t.Fatalf("CreateToken: %v", err)
+		}
+		if err := s.RevealCells(sc.ID, []FogCell{{X: 1, Y: 1}}); err != nil {
+			t.Fatalf("RevealCells: %v", err)
+		}
+		if _, err := s.CreateDrawing(Drawing{
+			SceneID: sc.ID,
+			Kind:    DrawingKindLine,
+			Points:  []Point{{X: 0, Y: 0}, {X: 1, Y: 1}},
+			Color:   "#000000",
+		}); err != nil {
+			t.Fatalf("CreateDrawing: %v", err)
+		}
+	}
+
+	if err := s.DeleteScene(scene.ID); err != nil {
+		t.Fatalf("DeleteScene: %v", err)
+	}
+
+	if _, err := s.GetScene(scene.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("GetScene err = %v, want ErrNotFound", err)
+	}
+	if tokens, err := s.ListTokensForScene(scene.ID); err != nil || len(tokens) != 0 {
+		t.Fatalf("tokens = %+v (err %v), want none left", tokens, err)
+	}
+	if cells, err := s.ListFogCells(scene.ID); err != nil || len(cells) != 0 {
+		t.Fatalf("fog cells = %+v (err %v), want none left", cells, err)
+	}
+	if drawings, err := s.ListDrawingsForScene(scene.ID); err != nil || len(drawings) != 0 {
+		t.Fatalf("drawings = %+v (err %v), want none left", drawings, err)
+	}
+
+	// The other scene in the same room keeps everything.
+	if tokens, err := s.ListTokensForScene(survivor.ID); err != nil || len(tokens) != 1 {
+		t.Fatalf("survivor tokens = %+v (err %v), want 1", tokens, err)
+	}
+	if cells, err := s.ListFogCells(survivor.ID); err != nil || len(cells) != 1 {
+		t.Fatalf("survivor fog = %+v (err %v), want 1", cells, err)
+	}
+	if drawings, err := s.ListDrawingsForScene(survivor.ID); err != nil || len(drawings) != 1 {
+		t.Fatalf("survivor drawings = %+v (err %v), want 1", drawings, err)
+	}
+}
+
+func TestSetSceneMap_SwapsTheImageAndBoundsButKeepsWhatIsOnIt(t *testing.T) {
+	s := newTestStore(t)
+
+	room, _, err := s.CreateRoom("Room", "GM", "password")
+	if err != nil {
+		t.Fatalf("CreateRoom: %v", err)
+	}
+	scene, err := s.CreateScene(room.ID, "Scene", nil, 70, 700, 700)
+	if err != nil {
+		t.Fatalf("CreateScene: %v", err)
+	}
+	token, err := s.CreateToken(Token{SceneID: scene.ID, Name: "Goblin", X: 2, Y: 3, Width: 1, Height: 1})
+	if err != nil {
+		t.Fatalf("CreateToken: %v", err)
+	}
+	if err := s.RevealCells(scene.ID, []FogCell{{X: 1, Y: 1}}); err != nil {
+		t.Fatalf("RevealCells: %v", err)
+	}
+
+	asset, err := s.CreateAsset("hash", "map.webp", "image/webp", 10)
+	if err != nil {
+		t.Fatalf("CreateAsset: %v", err)
+	}
+	if err := s.SetSceneMap(scene.ID, &asset.ID, 1400, 1000); err != nil {
+		t.Fatalf("SetSceneMap: %v", err)
+	}
+
+	got, err := s.GetScene(scene.ID)
+	if err != nil {
+		t.Fatalf("GetScene: %v", err)
+	}
+	if got.MapAssetID == nil || *got.MapAssetID != asset.ID {
+		t.Fatalf("map asset = %v, want %q", got.MapAssetID, asset.ID)
+	}
+	if got.Width != 1400 || got.Height != 1000 {
+		t.Fatalf("bounds = %dx%d, want 1400x1000", got.Width, got.Height)
+	}
+
+	// The whole point of replacing rather than recreating: progress stays.
+	tokens, err := s.ListTokensForScene(scene.ID)
+	if err != nil {
+		t.Fatalf("ListTokensForScene: %v", err)
+	}
+	if len(tokens) != 1 || tokens[0].ID != token.ID || tokens[0].X != 2 || tokens[0].Y != 3 {
+		t.Fatalf("tokens = %+v, want the original still at (2,3)", tokens)
+	}
+	if cells, err := s.ListFogCells(scene.ID); err != nil || len(cells) != 1 {
+		t.Fatalf("fog cells = %+v (err %v), want the revealed cell kept", cells, err)
+	}
+}
+
 func TestCreateToken_DefaultsAndLookup(t *testing.T) {
 	s := newTestStore(t)
 

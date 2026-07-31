@@ -58,8 +58,8 @@ func TestSceneCreate_RejectsAssetFromAnotherRoom(t *testing.T) {
 		"width":      100,
 		"height":     100,
 	})
-	if env := clientA.readEnvelope(t); env.Type != "scene.activated" {
-		t.Fatalf("type = %q, want scene.activated", env.Type)
+	if env := clientA.readEnvelope(t); env.Type != "scene.created" {
+		t.Fatalf("type = %q, want scene.created", env.Type)
 	}
 }
 
@@ -175,7 +175,7 @@ func TestSceneCreate_NoAssetIsStillFine(t *testing.T) {
 	client.readEnvelope(t) // state.sync
 	client.send(t, "scene.create", map[string]any{"name": "Blank", "gridSize": 70})
 
-	if env := client.readEnvelope(t); env.Type != "scene.activated" {
-		t.Fatalf("type = %q, want scene.activated", env.Type)
+	if env := client.readEnvelope(t); env.Type != "scene.created" {
+		t.Fatalf("type = %q, want scene.created", env.Type)
 	}
 }

@@ -228,6 +228,10 @@ func (h *Hub) handleMessage(ctx context.Context, c *client, data []byte) {
 		h.handleSceneCreate(ctx, c, env.Payload)
 	case "scene.setActive":
 		h.handleSceneSetActive(ctx, c, env.Payload)
+	case "scene.delete":
+		h.handleSceneDelete(ctx, c, env.Payload)
+	case "scene.setMap":
+		h.handleSceneSetMap(ctx, c, env.Payload)
 	case "chat.send":
 		h.handleChatSend(ctx, c, env.Payload)
 	case "draw.create":
@@ -867,6 +871,13 @@ func (h *Hub) handleSceneCreate(ctx context.Context, c *client, raw json.RawMess
 		req.GridSize = 70
 	}
 
+	room, err := h.store.GetRoomByID(c.roomID)
+	if err != nil {
+		slog.Error("ws: load room for scene create failed", "error", err)
+		h.sendError(ctx, c, "failed to create scene")
+		return
+	}
+
 	scene, err := h.store.CreateScene(c.roomID, req.Name, req.MapAssetID, req.GridSize, req.Width, req.Height)
 	if err != nil {
 		slog.Error("ws: create scene failed", "error", err)
@@ -874,10 +885,18 @@ func (h *Hub) handleSceneCreate(ctx context.Context, c *client, raw json.RawMess
 		return
 	}
 
-	// There's no scene-switcher UI yet and the WS protocol has no
-	// request/response correlation for the client to learn the new
-	// scene's ID otherwise, so a newly created scene just becomes the
-	// room's active one immediately.
+	h.broadcast(ctx, c.roomID, "scene.created", map[string]any{"scene": scenePayload(scene)})
+
+	// A new scene only takes over the room when there wasn't one to take
+	// over from. Building the *second* scene mid-session is prep work —
+	// yanking the party off the map they're standing on to look at an
+	// empty one is not what a GM meant by "New scene". They switch to it
+	// deliberately, through the picker. (Before that picker existed this
+	// activated unconditionally, because activation was the only way to
+	// ever reach a scene again.)
+	if room.ActiveSceneID != nil {
+		return
+	}
 	if err := h.store.SetActiveScene(c.roomID, scene.ID); err != nil {
 		slog.Error("ws: activate new scene failed", "error", err)
 		h.sendError(ctx, c, "created scene, but failed to activate it")
@@ -885,6 +904,97 @@ func (h *Hub) handleSceneCreate(ctx context.Context, c *client, raw json.RawMess
 	}
 
 	h.broadcastSceneActivated(ctx, c, scene.ID)
+}
+
+type sceneDeleteRequest struct {
+	SceneID string `json:"sceneId"`
+}
+
+// handleSceneDelete removes a scene and everything on it. The room's
+// active scene is refused: `room.active_scene_id` has no foreign key to
+// clean it up, so deleting it would leave every client staring at a
+// scene the server can no longer load. Switching away first is one
+// click, and makes the destruction deliberate.
+func (h *Hub) handleSceneDelete(ctx context.Context, c *client, raw json.RawMessage) {
+	if !h.requireGM(ctx, c) {
+		return
+	}
+
+	var req sceneDeleteRequest
+	if err := decodePayload(raw, &req); err != nil || req.SceneID == "" {
+		h.sendError(ctx, c, "invalid scene.delete payload")
+		return
+	}
+	if !h.requireSceneInRoom(ctx, c, req.SceneID) {
+		return
+	}
+
+	room, err := h.store.GetRoomByID(c.roomID)
+	if err != nil {
+		slog.Error("ws: load room for scene delete failed", "error", err)
+		h.sendError(ctx, c, "failed to delete scene")
+		return
+	}
+	if room.ActiveSceneID != nil && *room.ActiveSceneID == req.SceneID {
+		h.sendError(ctx, c, "switch to another scene before deleting this one")
+		return
+	}
+
+	if err := h.store.DeleteScene(req.SceneID); err != nil {
+		slog.Error("ws: delete scene failed", "error", err)
+		h.sendError(ctx, c, "failed to delete scene")
+		return
+	}
+
+	h.broadcast(ctx, c.roomID, "scene.deleted", map[string]any{"sceneId": req.SceneID})
+}
+
+type sceneSetMapRequest struct {
+	SceneID    string  `json:"sceneId"`
+	MapAssetID *string `json:"mapAssetId"`
+	Width      int     `json:"width"`
+	Height     int     `json:"height"`
+}
+
+// handleSceneSetMap swaps the art under a scene without disturbing what
+// has been placed on it. Deliberately *not* a scene.activated broadcast
+// even for the active scene: that carries the full picture and makes
+// clients treat it as a scene change, throwing away undo history and
+// in-flight gestures. Only the scene itself changed, so only the scene
+// is sent, and the tokens, fog and drawings already on screen stay
+// exactly where they are — which is the whole point of replacing a map
+// rather than building a new scene.
+func (h *Hub) handleSceneSetMap(ctx context.Context, c *client, raw json.RawMessage) {
+	if !h.requireGM(ctx, c) {
+		return
+	}
+
+	var req sceneSetMapRequest
+	if err := decodePayload(raw, &req); err != nil || req.SceneID == "" {
+		h.sendError(ctx, c, "invalid scene.setMap payload")
+		return
+	}
+	if !h.requireSceneInRoom(ctx, c, req.SceneID) {
+		return
+	}
+	if !h.requireAssetInRoom(ctx, c, req.MapAssetID) {
+		return
+	}
+
+	if err := h.store.SetSceneMap(req.SceneID, req.MapAssetID, req.Width, req.Height); err != nil {
+		slog.Error("ws: set scene map failed", "error", err)
+		h.sendError(ctx, c, "failed to replace the map")
+		return
+	}
+
+	scene, err := h.store.GetScene(req.SceneID)
+	if err != nil {
+		slog.Error("ws: load scene after map swap failed", "error", err)
+		h.sendError(ctx, c, "replaced the map, but failed to load the scene")
+		return
+	}
+
+	h.broadcast(ctx, c.roomID, "scene.updated", map[string]any{"scene": scenePayload(scene)})
 }
 
 type sceneSetActiveRequest struct {

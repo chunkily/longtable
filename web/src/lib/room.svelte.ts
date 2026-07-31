@@ -110,6 +110,7 @@ interface StateSyncPayload {
 	room: { slug: string; name: string };
 	you: You;
 	messages?: ChatMessage[];
+	scenes?: Scene[];
 	scene?: Scene | null;
 	tokens?: Token[];
 	fogCells?: FogCell[];
@@ -136,6 +137,17 @@ interface SceneActivatedPayload {
 	tokens?: Token[];
 	fogCells?: FogCell[];
 	drawings?: Drawing[];
+}
+
+// scene.created and scene.updated both carry just the scene, deliberately
+// without the tokens/fog/drawings that scene.activated brings — see the
+// note on the scene.updated case below.
+interface ScenePayload {
+	scene: Scene;
+}
+
+interface SceneDeletedPayload {
+	sceneId: string;
 }
 
 interface DrawingDeletedPayload {
@@ -183,6 +195,10 @@ export class RoomClient {
 	you = $state<You | null>(null);
 
 	messages = $state<ChatMessage[]>([]);
+	// Every scene in the room, for the scene picker. `scene` below is the
+	// one actually on screen — the two are kept in step, but only `scene`
+	// carries the tokens/fog/drawings that go with it.
+	scenes = $state<Scene[]>([]);
 	scene = $state<Scene | null>(null);
 	tokens = $state<Token[]>([]);
 	fogCells = $state<FogCell[]>([]);
@@ -273,6 +289,17 @@ export class RoomClient {
 
 	setActiveScene(sceneId: string) {
 		this.send('scene.setActive', { sceneId });
+	}
+
+	deleteScene(sceneId: string) {
+		this.send('scene.delete', { sceneId });
+	}
+
+	// Bounds travel with the image the way they do at creation: they
+	// describe the map, and keeping the old ones would stretch the new
+	// art to the shape of the art it replaced.
+	setSceneMap(sceneId: string, mapAssetId: string | null, width: number, height: number) {
+		this.send('scene.setMap', { sceneId, mapAssetId, width, height });
 	}
 
 	createToken(
@@ -558,6 +585,7 @@ export class RoomClient {
 				this.you = payload.you;
 				// server returns newest-first; the log reads top-to-bottom.
 				this.messages = [...(payload.messages ?? [])].reverse();
+				this.scenes = payload.scenes ?? [];
 				this.scene = payload.scene ?? null;
 				this.tokens = payload.tokens ?? [];
 				this.fogCells = payload.fogCells ?? [];
@@ -618,10 +646,35 @@ export class RoomClient {
 			case 'scene.activated': {
 				const payload = env.payload as SceneActivatedPayload;
 				this.scene = payload.scene;
+				this.scenes = upsertScene(this.scenes, payload.scene);
 				this.tokens = payload.tokens ?? [];
 				this.fogCells = payload.fogCells ?? [];
 				this.drawings = payload.drawings ?? [];
 				this.resetAfterSync();
+				break;
+			}
+
+			case 'scene.created': {
+				const payload = env.payload as ScenePayload;
+				this.scenes = upsertScene(this.scenes, payload.scene);
+				break;
+			}
+
+			// Only the scene itself, never the tokens/fog/drawings on it.
+			// A map swap leaves all of that in place, and folding it in
+			// through scene.activated instead would make the client treat a
+			// change of backdrop as a change of scene — throwing away undo
+			// history and any gesture in flight.
+			case 'scene.updated': {
+				const payload = env.payload as ScenePayload;
+				this.scenes = upsertScene(this.scenes, payload.scene);
+				if (this.scene?.id === payload.scene.id) this.scene = payload.scene;
+				break;
+			}
+
+			case 'scene.deleted': {
+				const payload = env.payload as SceneDeletedPayload;
+				this.scenes = this.scenes.filter((s) => s.id !== payload.sceneId);
 				break;
 			}
 
@@ -723,6 +776,15 @@ function mergeFogCells(existing: FogCell[], added: FogCell[]): FogCell[] {
 		}
 	}
 	return merged;
+}
+
+// Replaces a scene in the list, or appends it if it's new. Both cases
+// arrive: scene.created is always new, scene.updated never is, and
+// scene.activated can be either — a client that connected before a scene
+// existed still gets activated onto it.
+function upsertScene(existing: Scene[], scene: Scene): Scene[] {
+	if (!existing.some((s) => s.id === scene.id)) return [...existing, scene];
+	return existing.map((s) => (s.id === scene.id ? scene : s));
 }
 
 function removeFogCells(existing: FogCell[], removed: FogCell[]): FogCell[] {

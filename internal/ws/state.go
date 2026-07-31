@@ -31,6 +31,16 @@ func (h *Hub) sendStateSync(ctx context.Context, c *client, room store.Room) {
 		payload["messages"] = messagePayloads(messages)
 	}
 
+	// Every scene in the room, not just the active one: the scene picker
+	// needs the whole list, and it changes rarely enough that carrying it
+	// in the initial sync beats a second round trip on open.
+	scenes, err := h.store.ListScenesForRoom(room.ID)
+	if err != nil {
+		slog.Error("ws: list scenes failed", "error", err)
+	} else {
+		payload["scenes"] = scenePayloads(scenes)
+	}
+
 	if room.ActiveSceneID != nil {
 		sceneState, err := h.sceneStatePayload(*room.ActiveSceneID, c.participant.Role)
 		if err != nil {
@@ -128,6 +138,14 @@ func scenePayload(s store.Scene) map[string]any {
 		"width":       s.Width,
 		"height":      s.Height,
 	}
+}
+
+func scenePayloads(scenes []store.Scene) []map[string]any {
+	out := make([]map[string]any, len(scenes))
+	for i, s := range scenes {
+		out[i] = scenePayload(s)
+	}
+	return out
 }
 
 func drawingPayload(d store.Drawing) map[string]any {
