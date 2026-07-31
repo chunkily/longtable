@@ -10,6 +10,11 @@ turn tracking — current turn highlighted, next/previous navigation, round coun
 
 Surfaced as a tab alongside chat and event logs — see [chat-panel-tabs](chat-panel-tabs.md).
 
+[token-selection-highlight](../open/token-selection-highlight.md) wants clicking a tracker entry
+to select its linked token, and [token-recent-interaction-stacking](../open/token-recent-interaction-stacking.md)
+wants that same selection to bump the token to the top of the canvas stack; both are blocked on
+this item shipping first.
+
 ## Related user stories
 
 - [gm-add-initiative-entry](../../user-stories/gm-add-initiative-entry.md)

@@ -36,7 +36,14 @@ untouched. Its own story defers it ("tracked when we cover the tokens feature ar
 a different shape of history entry — a position to move back to rather than a drawing to recreate
 — though it can reuse the same stack and the same `token.move` command.
 
+## Also open: token deletion
+
+[delete-token](../open/delete-token.md) adds a second, unrelated kind of token undo entry —
+recreating a deleted token via `token.create`, the same shape as the drawing-erase undo above,
+rather than the move-undo case just above this one.
+
 ## Related user stories
 
 - [room-member-undo-drawing](../../user-stories/room-member-undo-drawing.md)
 - [room-member-undo-own-token-move](../../user-stories/room-member-undo-own-token-move.md)
+- [gm-delete-token](../../user-stories/gm-delete-token.md)
