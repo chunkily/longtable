@@ -1,24 +1,10 @@
 import { expect, test, type Page, type Browser } from '@playwright/test';
+import { fixture } from './fixtures';
 
 // Reaching a scene other than the one you just made. Before this there
 // was no switcher at all, which is why scene.create used to activate
 // every new scene — so the thing most worth proving here is that the
 // second scene *doesn't* take over, and that a GM can still get to it.
-
-// A real 8x8 PNG of a flat colour nothing else in the suite uploads.
-// Content-addressed storage plus a scratch database that is never reset
-// between runs means reusing another spec's pixels would resolve to that
-// spec's asset row under its original filename.
-//
-// Genuinely encoded, not hand-edited from another spec's base64: an
-// upload has to survive imageproc's re-encode, which sniffs the content
-// and answers 400 for anything that isn't really an image. A corrupted
-// literal fails as an empty asset library with no server-side log,
-// because the request never gets past the handler's decode.
-const SWAMP_PNG = Buffer.from(
-	'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAGUlEQVR4nGLRz7ZiwAaYsIoOWglAAAAA//+tTQDnQ54igQAAAABJRU5ErkJggg==',
-	'base64'
-);
 
 // Layer order, by index into document.querySelectorAll('canvas'):
 // 0 map, 1 grid, 2 fog, 3 drawings, 4 tokens, 5 pings, 6 measurements,
@@ -151,9 +137,7 @@ test('replacing a map keeps the tokens already standing on the scene', async ({ 
 
 	await openScenes(gm.page);
 	await gm.page.getByRole('button', { name: 'Replace the map for Tavern' }).click();
-	await gm.page
-		.getByLabel('Upload an image')
-		.setInputFiles({ name: 'swamp.png', mimeType: 'image/png', buffer: SWAMP_PNG });
+	await gm.page.getByLabel('Upload an image').setInputFiles(fixture('swamp.png'));
 	// The upload re-encodes to WebP on the way past, so the library entry
 	// appearing under the new name is what proves the round trip landed.
 	await expect(gm.page.getByRole('button', { name: 'swamp.webp' })).toBeVisible();

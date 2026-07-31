@@ -1,4 +1,6 @@
+import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
+import { fixture } from './fixtures';
 
 // The asset library spans two dialogs (scene and token creation) and two
 // scoping guarantees the unit/API/ws tests already prove at their own
@@ -6,19 +8,8 @@ import { expect, test, type Page } from '@playwright/test';
 // it added — this exercises through the real forms, since a UI can
 // reflect the wrong thing even when the API underneath it is correct.
 
-// Two tiny real 8x8 PNGs, distinct colours so their content hashes never
-// collide with each other or with anything already sitting in the
-// shared e2e scratch database from another spec's run. Each exercises
-// the actual imageproc re-encode path rather than an arbitrary blob — an
-// upload that doesn't sniff as a real image is rejected outright.
-const GOBLIN_PNG = Buffer.from(
-	'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAGUlEQVR4nGLR2KLBgA0wYRUdtBKAAAAA///SeAEXxUgYIQAAAABJRU5ErkJggg==',
-	'base64'
-);
-const MAP_PNG = Buffer.from(
-	'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAGUlEQVR4nGLR0DjBgA0wYRUdtBKAAAAA///hUAErxzdm8AAAAABJRU5ErkJggg==',
-	'base64'
-);
+// Uploads come from e2e/fixtures — real encoded images in colours no
+// other fixture uses, which their README explains the reasons for.
 
 async function createRoomAsGM(page: Page, roomName: string) {
 	await page.goto('/');
@@ -38,9 +29,7 @@ test('an upload joins the room library, both dialogs can reuse it, and another r
 
 	await pageA.getByRole('button', { name: 'New scene' }).click();
 	await pageA.getByLabel('Name').fill('Tavern');
-	await pageA
-		.getByLabel('Upload an image')
-		.setInputFiles({ name: 'goblin.png', mimeType: 'image/png', buffer: GOBLIN_PNG });
+	await pageA.getByLabel('Upload an image').setInputFiles(fixture('goblin.png'));
 
 	// The upload response rewrites the filename to .webp — that's the
 	// re-encode pipeline, not a display bug — so the library entry that
@@ -84,9 +73,7 @@ test('the library survives a reload, and re-uploading identical content reuses t
 
 	await page.getByRole('button', { name: 'New scene' }).click();
 	await page.getByLabel('Attribution or licence (optional)').fill('by Alice, CC-BY');
-	await page
-		.getByLabel('Upload an image')
-		.setInputFiles({ name: 'map.png', mimeType: 'image/png', buffer: MAP_PNG });
+	await page.getByLabel('Upload an image').setInputFiles(fixture('map.png'));
 	await expect(page.getByRole('button', { name: 'map.webp' })).toBeVisible();
 	await page.getByLabel('Name').fill('Map Room');
 	await page.getByRole('button', { name: 'Create scene' }).click();
@@ -107,8 +94,15 @@ test('the library survives a reload, and re-uploading identical content reuses t
 
 	// Uploading the exact same bytes again must not duplicate the entry:
 	// content hashing should resolve it to the asset already there.
-	await page
-		.getByLabel('Upload an image')
-		.setInputFiles({ name: 'map-again.png', mimeType: 'image/png', buffer: MAP_PNG });
+	//
+	// The one upload in the suite that passes bytes rather than a path,
+	// and deliberately: uploading by path would send the fixture's own
+	// basename, and sending *different* name with *identical* content is
+	// exactly what this is testing the server's answer to.
+	await page.getByLabel('Upload an image').setInputFiles({
+		name: 'map-again.png',
+		mimeType: 'image/png',
+		buffer: readFileSync(fixture('map.png'))
+	});
 	await expect(page.getByRole('button', { name: 'map.webp' })).toHaveCount(1);
 });

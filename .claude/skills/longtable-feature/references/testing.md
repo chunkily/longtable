@@ -110,29 +110,33 @@ to be called here"` / `"two different versions of @playwright/test"`, pointing a
 call in a spec file that is completely fine. If that error shows up, check `pwd` before doing
 anything else — don't start editing the spec.
 
-**Testing a file upload:** use `locator.setInputFiles({ name, mimeType, buffer })`. It works on a
+**Testing a file upload:** `locator.setInputFiles(fixture('goblin.png'))`, with `fixture()` from
+`e2e/fixtures.ts` and the images themselves in `e2e/fixtures/` (see its README). It works on a
 hidden `<input type="file">` — visibility doesn't matter to Playwright the way it does to a real
-click — so there's no need to reach for a visible-input workaround. Build the buffer from a real
-tiny image (`image/png` encoded in Go and pasted in as a literal, or built inline in the spec);
-`imageproc.Reencode` sniffs content and rejects anything that isn't a genuine image, so an
-arbitrary byte string won't get past the upload handler at all.
+click — so there's no need for a visible-input workaround.
 
-**Encode that fixture, don't hand-edit one.** Mutating a few base64 characters of an existing
-spec's PNG to get "different" pixels produces a corrupt file, and the failure is genuinely hard
-to read: the upload answers 400, the server logs nothing (the request never gets past the
-decode), and the only symptom is an asset picker that stays empty — the error toast expires
-before a 5s locator timeout does. Encode a real one (a few lines of Go with `image/png`) and
-paste that.
+Uploading **by path, not `{ name, mimeType, buffer }`**, is deliberate, and the reason is subtler
+than tidiness. The e2e database is persistent across runs (`web/.e2e-data/longtable.db`,
+gitignored, never reset between `playwright test` invocations) and assets are content-addressed,
+so identical pixels uploaded weeks later in an unrelated spec resolve to the *same* asset row
+under its *original* filename. A spec asserting on a freshly-uploaded name is therefore asserting
+on a name that belongs to the *bytes*, not to the call. `setInputFiles(path)` sends the file's
+real basename, so the two can't drift; the inline form lets a spec name a buffer whatever it
+likes. The one deliberate exception — re-uploading identical content under a different name to
+prove dedup — passes bytes explicitly and says why.
 
-**Fixture content has to be unique per test, not just per spec file.** The e2e database is
-persistent across runs (`web/.e2e-data/longtable.db`, gitignored, never reset between
-`playwright test` invocations) and content-addressed — uploading the same pixels a second time,
-weeks later, in an unrelated spec, resolves to the *same* asset row under its *original*
-filename. A test that asserts on a freshly-uploaded filename will flake the moment another spec
-(or a manual check through the Browser pane, which talks to this same database — see
-`.claude/launch.json`'s `backend` config) has ever uploaded identical bytes. Give each fixture a
-genuinely distinct pixel value (a different flat colour is enough) rather than reusing a
-constant across tests.
+Two rules for adding a fixture, both already paid for:
+
+- **Encode it, don't hand-edit one.** Mutating a few base64 characters of an existing PNG to get
+  "different" pixels produces a corrupt file, and the failure is genuinely hard to read: the
+  upload answers 400, the server logs nothing (the request never gets past the decode), and the
+  only symptom is an asset picker that stays empty — the error toast expires before a 5s locator
+  timeout does. `imageproc.Reencode` sniffs content, so nothing that isn't really an image gets
+  past the handler.
+- **Give it pixels no other fixture has** — a different flat colour is enough — or the
+  content-addressing above collapses it onto an existing row. This includes anything uploaded by
+  a manual check through the Browser pane, which talks to the same database (see
+  `.claude/launch.json`'s `backend` config).
 
 **Manual verification through the Browser pane is a different environment from a Playwright
 run**, and can fail in ways that look like application bugs but aren't. If `computer{screenshot}`

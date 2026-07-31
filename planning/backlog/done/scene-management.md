@@ -62,10 +62,13 @@ Two corrections to what's written above this section:
 - `GridOffsetX`/`GridOffsetY` are still dead, and still sent to the client. This item didn't
   touch them, as planned.
 
-Testing note for whoever adds to `e2e/scene-management.spec.ts`: the PNG fixture there is
-genuinely encoded, not hand-edited from another spec's base64. A corrupted literal is rejected by
-`imageproc`'s content sniffing with a 400, and the symptom is an asset picker that just stays
-empty — no server-side log, and the error toast expires before a 5s locator timeout does.
+Testing note for whoever adds to `e2e/scene-management.spec.ts`: uploads come from
+`e2e/fixtures/`, which exists because of a mistake made here. The fixture started as inline
+base64 hand-edited from another spec's literal to get "different" pixels, which produced a
+corrupt PNG — rejected by `imageproc`'s content sniffing with a 400, and the symptom is an asset
+picker that just stays empty, with no server-side log and an error toast that expires before a 5s
+locator timeout does. Files can't be corrupted that way, and uploading by path keeps a fixture's
+name tied to its bytes, which matters more than it looks: see `e2e/fixtures/README.md`.
 
 ## Related user stories
 
