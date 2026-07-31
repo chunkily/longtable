@@ -113,6 +113,21 @@ func (s *Store) createTables() error {
 		);
 		CREATE INDEX IF NOT EXISTS idx_drawing_scene ON drawing(scene_id);
 
+		-- Which assets a room's library holds. The asset row itself stays
+		-- global and content-addressed, so identical uploads share one
+		-- stored file no matter which room they arrived in; this table is
+		-- what keeps a room from *seeing* art it never added. Two rooms
+		-- uploading the same map get one blob, one asset row, and a
+		-- library entry each, with their own attribution text.
+		CREATE TABLE IF NOT EXISTS room_asset (
+			room_id      TEXT NOT NULL REFERENCES room(id) ON DELETE CASCADE,
+			asset_id     TEXT NOT NULL REFERENCES asset(id) ON DELETE CASCADE,
+			attribution  TEXT NOT NULL DEFAULT '',
+			added_at     TEXT NOT NULL,
+			PRIMARY KEY (room_id, asset_id)
+		);
+		CREATE INDEX IF NOT EXISTS idx_room_asset_room ON room_asset(room_id);
+
 		CREATE TABLE IF NOT EXISTS message (
 			id                 TEXT PRIMARY KEY,
 			room_id            TEXT NOT NULL REFERENCES room(id) ON DELETE CASCADE,

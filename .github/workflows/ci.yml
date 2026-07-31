@@ -30,9 +30,13 @@ jobs:
       # Scoped to internal/... and cmd/... rather than ./... — the repo
       # root also contains web/node_modules, which the go tool would
       # otherwise walk looking for packages.
-      - run: go build ./internal/... ./cmd/...
-      - run: go vet ./internal/... ./cmd/...
-      - run: go test ./internal/... ./cmd/... -race -cover
+      # -tags nodynamic keeps the WebP encoder on its transpiled-Go path
+      # instead of picking up a system libwebp if the runner happens to
+      # have one, so CI exercises what a Host's binary actually does.
+      # See planning/decisions/0005-webp-reencoding-library.md.
+      - run: go build -tags nodynamic ./internal/... ./cmd/...
+      - run: go vet -tags nodynamic ./internal/... ./cmd/...
+      - run: go test -tags nodynamic ./internal/... ./cmd/... -race -cover
 
   frontend:
     runs-on: ubuntu-latest

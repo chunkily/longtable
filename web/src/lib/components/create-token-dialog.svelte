@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import { uploadAsset } from '$lib/api';
 	import type { RoomClient } from '$lib/room.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as Dialog from '$lib/components/ui/dialog';
+	import AssetPicker from '$lib/components/asset-picker.svelte';
 
 	let {
 		room,
@@ -24,30 +24,20 @@
 	let open = $state(false);
 	let name = $state('');
 	let visibility = $state<'visible' | 'hidden'>('visible');
-	let file = $state<File | null>(null);
+	let imageAssetId = $state<string | null>(null);
 	let submitting = $state(false);
-
-	function handleFileChange(event: Event) {
-		const input = event.currentTarget as HTMLInputElement;
-		file = input.files?.[0] ?? null;
-	}
 
 	async function handleSubmit(event: SubmitEvent) {
 		event.preventDefault();
 		submitting = true;
 		try {
-			let imageAssetId: string | null = null;
-			if (file) {
-				const asset = await uploadAsset(roomSlug, sessionToken, file);
-				imageAssetId = asset.id;
-			}
 			// dropped near the middle of whatever the GM is currently looking
 			// at — drag it into place on the canvas after creation
 			const { x, y } = spawnCell();
 			room.createToken(sceneId, name, imageAssetId, x, y, visibility);
 			open = false;
 			name = '';
-			file = null;
+			imageAssetId = null;
 			visibility = 'visible';
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : 'failed to create token');
@@ -76,8 +66,14 @@
 				<Input id="token-name" bind:value={name} required />
 			</div>
 			<div class="flex flex-col gap-2">
-				<Label for="token-image">Image (optional)</Label>
-				<Input id="token-image" type="file" accept="image/*" onchange={handleFileChange} />
+				<Label>Image (optional)</Label>
+				<AssetPicker
+					{roomSlug}
+					{sessionToken}
+					idPrefix="token"
+					bind:selectedId={imageAssetId}
+					emptyHint="Nothing in the library yet — upload an image, or leave blank for a plain marker."
+				/>
 			</div>
 			<div class="flex flex-col gap-2">
 				<Label>Visibility</Label>

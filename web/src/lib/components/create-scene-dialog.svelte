@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import { uploadAsset } from '$lib/api';
+	import { assetUrl } from '$lib/api';
 	import type { RoomClient } from '$lib/room.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as Dialog from '$lib/components/ui/dialog';
+	import AssetPicker from '$lib/components/asset-picker.svelte';
 
 	let {
 		room,
@@ -18,36 +19,34 @@
 	let gridSize = $state(70);
 	let width = $state(1400);
 	let height = $state(1000);
-	let file = $state<File | null>(null);
+	let mapAssetId = $state<string | null>(null);
 	let submitting = $state(false);
 
-	function handleFileChange(event: Event) {
-		const input = event.currentTarget as HTMLInputElement;
-		file = input.files?.[0] ?? null;
-		if (!file) return;
+	// Width/height default to the chosen map's real dimensions, whichever
+	// way it was chosen — freshly uploaded or picked from the library.
+	// Loading it as a plain Image rather than trusting anything cached
+	// from the picker's thumbnail keeps this the actual asset dimensions,
+	// not a guess from a clipped 64px preview.
+	$effect(() => {
+		const id = mapAssetId;
+		if (!id) return;
 
 		const img = new Image();
 		img.onload = () => {
 			width = img.naturalWidth;
 			height = img.naturalHeight;
-			URL.revokeObjectURL(img.src);
 		};
-		img.src = URL.createObjectURL(file);
-	}
+		img.src = assetUrl(id);
+	});
 
 	async function handleSubmit(event: SubmitEvent) {
 		event.preventDefault();
 		submitting = true;
 		try {
-			let mapAssetId: string | null = null;
-			if (file) {
-				const asset = await uploadAsset(roomSlug, sessionToken, file);
-				mapAssetId = asset.id;
-			}
 			room.createScene(name, mapAssetId, gridSize, width, height);
 			open = false;
 			name = '';
-			file = null;
+			mapAssetId = null;
 			gridSize = 70;
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : 'failed to create scene');
@@ -67,7 +66,7 @@
 		<Dialog.Header>
 			<Dialog.Title>New scene</Dialog.Title>
 			<Dialog.Description>
-				Uploading a map makes this the room's active scene immediately.
+				Creating a scene makes it the room's active scene immediately.
 			</Dialog.Description>
 		</Dialog.Header>
 		<form class="flex flex-col gap-4" onsubmit={handleSubmit}>
@@ -76,8 +75,14 @@
 				<Input id="scene-name" bind:value={name} required />
 			</div>
 			<div class="flex flex-col gap-2">
-				<Label for="scene-map">Map image (optional)</Label>
-				<Input id="scene-map" type="file" accept="image/*" onchange={handleFileChange} />
+				<Label>Map (optional)</Label>
+				<AssetPicker
+					{roomSlug}
+					{sessionToken}
+					idPrefix="scene"
+					bind:selectedId={mapAssetId}
+					emptyHint="Nothing in the library yet — upload a map to get started."
+				/>
 			</div>
 			<div class="grid grid-cols-3 gap-2">
 				<div class="flex flex-col gap-2">

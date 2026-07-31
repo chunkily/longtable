@@ -52,7 +52,7 @@ Commands are lowerCamel, dot-namespaced by subject (`token.move`, `draw.create`,
 Register the command in `handleMessage`, then write the handler in the same style as its
 neighbours. [references/ws-protocol.md](references/ws-protocol.md) has the full command/event
 table, the permission and scoping helpers (`requireGM`, `requireSceneInRoom`,
-`requireAssetExists`), how per-recipient filtering works for hidden tokens, and the error
+`requireAssetInRoom`), how per-recipient filtering works for hidden tokens, and the error
 conventions — read it before adding a command.
 
 Two rules that are not negotiable, because they're what keeps one room out of another:
@@ -60,9 +60,12 @@ Two rules that are not negotiable, because they're what keeps one room out of an
 - **Identity comes from the connection, never the payload.** `c.participant.ID` /
   `c.participant.DisplayName`. A client can't claim to be someone else. This is why undoing an
   erase re-creates the drawing under whoever pressed undo.
-- **Scope every id through the room.** `sceneInRoom`, `TokenRoomID`, and for a drawing, check its
-  *own* scene rather than a scene id from the payload. A missing object and someone else's object
-  answer identically, so a client can't probe for what exists elsewhere.
+- **Scope every id through the room.** `sceneInRoom`, `TokenRoomID`, `requireAssetInRoom`, and
+  for a drawing, check its *own* scene rather than a scene id from the payload. A missing object
+  and someone else's object answer identically, so a client can't probe for what exists
+  elsewhere. Assets are the sharpest example: rows are global and content-addressed on purpose
+  (dedup across rooms), so *existing* is never enough — the check has to be membership in the
+  room's library (`room_asset`), or every room's asset IDs are usable by every other room.
 
 ## Client state
 

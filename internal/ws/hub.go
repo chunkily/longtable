@@ -273,17 +273,28 @@ func (h *Hub) requireSceneInRoom(ctx context.Context, c *client, sceneID string)
 	return true
 }
 
-// requireAssetExists confirms a referenced asset ID actually resolves
-// to an uploaded asset, so scenes/tokens never point at a dangling ID.
-// A nil assetID (no image set) is always allowed.
-func (h *Hub) requireAssetExists(ctx context.Context, c *client, assetID *string) bool {
+// requireAssetInRoom confirms a referenced asset ID is in this room's
+// library, so scenes and tokens never point at a dangling ID — or at
+// another room's art. A nil assetID (no image set) is always allowed.
+//
+// Membership in the library, not mere existence, is the check that
+// matters: asset rows are global so that identical uploads share one
+// stored file, which means every room's asset IDs live in one namespace.
+// An ID that leaked from a private room would otherwise be usable in any
+// room that learned it. "Not in your library" and "doesn't exist" get
+// the same answer, so this can't be used to probe for what exists
+// elsewhere.
+func (h *Hub) requireAssetInRoom(ctx context.Context, c *client, assetID *string) bool {
 	if assetID == nil {
 		return true
 	}
-	if _, err := h.store.GetAsset(*assetID); err != nil {
-		if !errors.Is(err, store.ErrNotFound) {
-			slog.Error("ws: lookup asset failed", "error", err)
-		}
+	inRoom, err := h.store.AssetInRoom(c.roomID, *assetID)
+	if err != nil {
+		slog.Error("ws: lookup room asset failed", "error", err)
+		h.sendError(ctx, c, "asset not found")
+		return false
+	}
+	if !inRoom {
 		h.sendError(ctx, c, "asset not found")
 		return false
 	}
@@ -361,7 +372,7 @@ func (h *Hub) handleTokenCreate(ctx context.Context, c *client, raw json.RawMess
 	if !h.requireSceneInRoom(ctx, c, req.SceneID) {
 		return
 	}
-	if !h.requireAssetExists(ctx, c, req.ImageAssetID) {
+	if !h.requireAssetInRoom(ctx, c, req.ImageAssetID) {
 		return
 	}
 
@@ -692,7 +703,7 @@ func (h *Hub) handleSceneCreate(ctx context.Context, c *client, raw json.RawMess
 		h.sendError(ctx, c, "invalid scene.create payload")
 		return
 	}
-	if !h.requireAssetExists(ctx, c, req.MapAssetID) {
+	if !h.requireAssetInRoom(ctx, c, req.MapAssetID) {
 		return
 	}
 	if req.GridSize == 0 {
