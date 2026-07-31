@@ -13,6 +13,20 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      # assets.go embeds web/build, and cmd/longtable imports it, so no Go
+      # command touching ./cmd/... compiles until the frontend has been
+      # built — not build, not vet, not test. web/build is gitignored, so a
+      # fresh checkout never has it and the embed fails with
+      # "pattern all:web/build: no matching files found".
+      - working-directory: web
+        run: npm ci
+      - working-directory: web
+        run: npm run build
       # Scoped to internal/... and cmd/... rather than ./... — the repo
       # root also contains web/node_modules, which the go tool would
       # otherwise walk looking for packages.
@@ -51,6 +65,11 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - working-directory: web
         run: npm ci
+      # Same reason as the backend job: run-backend.mjs builds
+      # ./cmd/longtable, which cannot compile until web/build exists. The
+      # specs themselves are served by vite, not by this build.
+      - working-directory: web
+        run: npm run build
       - working-directory: web
         run: npx playwright install --with-deps chromium
       - working-directory: web
