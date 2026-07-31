@@ -58,22 +58,11 @@ Two things found while measuring, both left alone:
 - `renderTokens` still destroys and rebuilds every token group for any change, so moving one
   token of N rebuilds the other N-1. Now confined to one cheap layer, same as `renderDrawings`.
   The fix, if a scene ever holds enough tokens to matter, is a map of id to group.
-- **`renderMap` stacks duplicate map images.** The map layer holds two identical `Konva.Image`s
-  over the same bitmap from the first load onward, doubling the cost of every map redraw. This
-  predates both lag fixes — the pre-fix build does it too — and it is now off the token path, but
-  it still costs on every pan, zoom and fog change.
-
-  It is a deterministic double-invocation, not a flaky race. `render()` has two call sites that
-  both fire at startup: `onMount` calls it directly, and the first run of the `$effect` calls it
-  again, in the same flush. `renderMap` clears synchronously and adds after an `await`, so both
-  clears land before either add and neither image removes the other. `imageCache` is only written
-  in `img.onload`, so both calls miss it and each starts its own fetch — the giveaway is **two
-  HTTP requests for the same asset URL on one page load**, which is how this was confirmed.
-
-  Two things that do *not* reproduce it, and why they mislead: switching scenes to a fresh
-  uncached map draws exactly one image, because only the effect fires; and two `fog.reveal`s in a
-  row also draw one each, because separate socket messages land in separate macrotasks and the
-  renders never overlap. Only the startup pair is concurrent.
+- **`renderMap` stacked duplicate map images.** Found while measuring this, but a separate bug
+  that predates both lag fixes, so it got its own note: `duplicate-map-image.md`. The short
+  version is that `render()` was called twice at startup, and `renderMap` clears before its await
+  and adds after it, so the map layer kept two copies of the bitmap. Fixed in the commit after
+  this one.
 
 ## Verifying this kind of thing
 

@@ -141,7 +141,15 @@
 		});
 		resizeObserver.observe(container);
 
-		render();
+		// Deliberately no render() here. The $effect below runs on mount
+		// as well, and because effects run in creation order — this
+		// onMount is declared above it — it runs after the stage exists.
+		// Calling render() here too ran it twice in the same flush, and
+		// renderMap clears synchronously but adds after an await, so both
+		// clears landed before either add: the map layer kept two
+		// identical copies of the bitmap for the rest of the session, and
+		// redrew both on every pan, zoom and fog change. See
+		// planning/backlog/done/duplicate-map-image.md.
 	});
 
 	onDestroy(() => {
