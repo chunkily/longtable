@@ -139,6 +139,13 @@
 	// the corner of the eye without competing with anything actually
 	// happening on the map.
 	const SELECTION_RING_PERIOD_MS = 14000;
+	// How long a token takes to slide to a new square. Fixed rather than
+	// scaled by distance: a move of twenty squares travelling twenty times
+	// slower reads as a different kind of event, and what this is for is
+	// letting the eye follow *which* token moved and roughly where from —
+	// which a fifth of a second does at any distance. Short enough that
+	// nobody is waiting on it, long enough to be followed.
+	const TOKEN_MOVE_SECONDS = 0.22;
 
 	let container: HTMLDivElement;
 	let stage: Konva.Stage | undefined;
@@ -245,8 +252,11 @@
 		for (const marker of pingMarkers.values()) destroyPingMarker(marker);
 		pingMarkers.clear();
 		// Before the stage goes: a running Konva.Animation would otherwise
-		// keep asking a destroyed layer to redraw itself every frame.
+		// keep asking a destroyed layer to redraw itself every frame, and a
+		// token still sliding would go on setting attributes on nodes that
+		// no longer exist.
 		clearSelectionRing();
+		for (const id of [...moveTweens.keys()]) stopTokenMove(id);
 		stage?.destroy();
 	});
 
@@ -912,6 +922,11 @@
 		if (sceneId !== lastSceneId) {
 			lastSceneId = sceneId;
 			resetView();
+			// Nothing on the new scene has a previous position on this one.
+			// Without this every token would slide in from wherever some
+			// unrelated token happened to be standing on the old map.
+			for (const id of [...moveTweens.keys()]) stopTokenMove(id);
+			renderedPositions.clear();
 		}
 
 		if (!scene) {
@@ -1433,13 +1448,109 @@
 		moveSelectionRing(token.id, token.x * gridSize, token.y * gridSize, w, h);
 	}
 
+	// --- sliding a token to its new square ---
+	//
+	// renderTokens rebuilds every group from scratch on any change to
+	// room.tokens, so there is never a node still around to animate. The
+	// way round that is to remember where each token was last *drawn* and
+	// build the new group there, then tween it to where it now belongs —
+	// which leaves the wholesale rebuild exactly as it was.
+	//
+	// This is not the selection ring's situation. That runs a
+	// Konva.Animation for as long as something is selected, which is why
+	// it earned a layer of its own; these tweens last a fifth of a second
+	// and stop.
+
+	// Last resting position drawn per token, in world units. Imperative
+	// bookkeeping — nothing reactive reads it.
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity
+	const renderedPositions = new Map<string, DrawingPoint>();
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity
+	const moveTweens = new Map<string, Konva.Tween>();
+
+	function stopTokenMove(tokenId: string) {
+		const tween = moveTweens.get(tokenId);
+		if (!tween) return;
+		// destroy() rather than stop(): the group it animates is about to
+		// be destroyed by the re-render, and a tween left alive would go on
+		// setting attributes on a detached node — and go on dragging the
+		// selection ring around after it.
+		tween.destroy();
+		moveTweens.delete(tokenId);
+	}
+
+	function startTokenMove(
+		group: Konva.Group,
+		token: Token,
+		to: DrawingPoint,
+		w: number,
+		h: number
+	) {
+		const tween = new Konva.Tween({
+			node: group,
+			duration: TOKEN_MOVE_SECONDS,
+			x: to.x,
+			y: to.y,
+			easing: Konva.Easings.EaseInOut,
+			// The ring is a sibling on another layer, so it has to be
+			// carried along by hand or it arrives before the token does.
+			onUpdate: () => moveSelectionRing(token.id, group.x(), group.y(), w, h),
+			onFinish: () => {
+				moveTweens.delete(token.id);
+				moveSelectionRing(token.id, to.x, to.y, w, h);
+			}
+		});
+		moveTweens.set(token.id, tween);
+		tween.play();
+	}
+
+	// Someone who has asked for less motion gets the old instant jump.
+	// matchMedia is read at render rather than cached so a change of the
+	// system setting takes effect on the next move.
+	function motionAllowed(): boolean {
+		return !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+	}
+
 	function renderTokens(gridSize: number) {
+		// Where each group has actually got to, for any slide still in
+		// flight. A re-render mid-slide — someone else moving a different
+		// token — would otherwise restart it from the resting position it
+		// had already left, snapping the token backwards.
+		// Local to this render and thrown away with it, so plain collections
+		// rather than the reactive ones — nothing reads either of them
+		// outside this function.
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity
+		const midSlide = new Map<string, DrawingPoint>();
+		// Selected by the same `.token` name the click handler walks up to,
+		// which is also what makes these typed as groups rather than the
+		// bare-node union getChildren() gives.
+		for (const node of tokenLayer.find<Konva.Group>('.token')) {
+			const id = node.getAttr('tokenId');
+			if (typeof id === 'string' && moveTweens.has(id)) {
+				midSlide.set(id, { x: node.x(), y: node.y() });
+			}
+		}
+		for (const id of [...moveTweens.keys()]) stopTokenMove(id);
+
 		tokenLayer.destroyChildren();
 
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity
+		const present = new Set<string>();
+		const animate = motionAllowed();
+
 		for (const token of room.tokens) {
+			present.add(token.id);
+			const to = { x: token.x * gridSize, y: token.y * gridSize };
+			const from = midSlide.get(token.id) ?? renderedPositions.get(token.id) ?? to;
+			// A token that has only been renamed, or that is new to the
+			// scene, has nothing to slide from.
+			const moved = Math.abs(from.x - to.x) > 0.01 || Math.abs(from.y - to.y) > 0.01;
+			const slide = animate && moved;
+			renderedPositions.set(token.id, to);
+
 			const group = new Konva.Group({
-				x: token.x * gridSize,
-				y: token.y * gridSize,
+				x: slide ? from.x : to.x,
+				y: slide ? from.y : to.y,
 				draggable: activeTool === 'none',
 				// Named and tagged so a click on whatever is inside — the
 				// image, or the placeholder circle and its initials — can be
@@ -1479,6 +1590,12 @@
 				const cellY = Math.round(group.y() / gridSize);
 				group.x(cellX * gridSize);
 				group.y(cellY * gridSize);
+				// Recorded now rather than waiting for the echo. Whoever did
+				// the dragging has already watched the token travel under
+				// their own pointer; without this the broadcast would come
+				// back, see the token still remembered at the square it left,
+				// and slide it the whole way a second time.
+				renderedPositions.set(token.id, { x: group.x(), y: group.y() });
 				// Again after the snap, and not left to the broadcast: a drop
 				// back onto the cell it started from is a no-op in RoomClient
 				// (see token.moved), so no state change arrives to re-render
@@ -1488,6 +1605,16 @@
 			});
 
 			tokenLayer.add(group);
+			// Started after the group is on the layer, so the first frame
+			// the tween draws has somewhere to land.
+			if (slide) startTokenMove(group, token, to, w, h);
+		}
+
+		// A token that has left the scene shouldn't leave its last position
+		// behind to be slid from if the same id ever comes back — which an
+		// undone deletion does, under exactly the same id.
+		for (const id of [...renderedPositions.keys()]) {
+			if (!present.has(id)) renderedPositions.delete(id);
 		}
 
 		tokenLayer.batchDraw();

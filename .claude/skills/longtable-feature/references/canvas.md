@@ -158,6 +158,24 @@ Follow that pattern: a frequently-changing collection deserves its own effect an
 Rebuilding a whole layer wholesale is fine when it holds a handful of shapes; diffing is only
 worth it for collections that accumulate.
 
+**Animating across a wholesale rebuild.** Tokens slide to a new square rather than jumping, which
+looks like it needs node identity preserved across renders — and it doesn't. `renderTokens`
+remembers where it last drew each token (`renderedPositions`, world units), builds the new group
+at *that* position, and tweens it to where the token now belongs. The rebuild is untouched. Three
+things that fall out of it, all already handled:
+
+- The dragger records the snapped position in `dragend`, before the echo. Otherwise the broadcast
+  comes back, finds the token still remembered at the square it left, and slides it the whole way
+  a second time.
+- A re-render mid-slide reads each group's *current* position first (`midSlide`), so an unrelated
+  token moving doesn't snap a travelling one back to where its slide started.
+- A scene change clears the memory, or every token slides in from wherever some unrelated token
+  stood on the previous map.
+
+These tweens are transient, unlike the selection ring's `Konva.Animation`, which is why they can
+live on the token layer rather than earning one of their own. `prefers-reduced-motion` turns them
+off.
+
 ## Optimistic rendering
 
 Drawings appear the instant the stroke ends rather than after the round trip: the preview shape is
