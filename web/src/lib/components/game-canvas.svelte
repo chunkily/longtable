@@ -125,7 +125,16 @@
 	// far outside the token the ring sits, and the dash/gap that rotating
 	// it makes legible.
 	const SELECTION_RING_PADDING = 6;
-	const SELECTION_RING_DASH = [5, 7];
+	// The dash is a *target* period and the share of it that is ink, not
+	// two fixed lengths, because a fixed dash almost never divides evenly
+	// into a circumference. At a 70px grid the ring is r=41, so its
+	// circumference is 257.6 and a 12px period fits 21.47 times: the last
+	// dash landed 0.6px from the first instead of 7px, leaving one pair of
+	// dashes visibly touching — and the group rotates, so that seam
+	// orbited the token. Fitting a whole number of periods removes it at
+	// every radius and every zoom.
+	const SELECTION_RING_DASH_PERIOD = 12;
+	const SELECTION_RING_DASH_INK = 5 / 12;
 	// One full turn, slow on purpose. It has to say "this is the one" from
 	// the corner of the eye without competing with anything actually
 	// happening on the map.
@@ -1404,7 +1413,17 @@
 		// Screen pixels converted at the current zoom, so the ring keeps its
 		// weight, its standoff and its dash spacing however far in you are.
 		const radius = Math.min(w, h) / 2 + screenToWorld(SELECTION_RING_PADDING);
-		const dash = SELECTION_RING_DASH.map((d) => screenToWorld(d));
+		// Round the period so a whole number of them closes the ring. The
+		// cost is that the period flexes by a few percent, and that zooming
+		// occasionally adds or drops one dash as the rounding crosses over —
+		// both far less noticeable than a permanent seam.
+		const circumference = 2 * Math.PI * radius;
+		const periods = Math.max(
+			1,
+			Math.round(circumference / screenToWorld(SELECTION_RING_DASH_PERIOD))
+		);
+		const period = circumference / periods;
+		const dash = [period * SELECTION_RING_DASH_INK, period * (1 - SELECTION_RING_DASH_INK)];
 		selectionRing.circles.forEach((circle, i) => {
 			circle.radius(radius);
 			circle.dash(dash);
