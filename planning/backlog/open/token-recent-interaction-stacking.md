@@ -14,10 +14,15 @@ actually doing on the map.
 Instead: any pointer interaction with a token — click or drag, not just a completed move — should
 bring it to the top of the stack. That also includes selecting a token's linked entry in the
 [initiative tracker](initiative-tracker.md), once that item ships — the same trigger
-[token-selection-highlight](token-selection-highlight.md) uses for its selection ring, so the two
-should share one bump-to-top call rather than each wiring up their own tracker hook. Purely local
-and purely visual: it's each client's own recency order, not synced to the room and not
-persisted, the same locality as token-selection-highlight.
+[token-selection-highlight](../done/token-selection-highlight.md) uses for its selection ring, so
+the two should share one bump-to-top call rather than each wiring up their own tracker hook.
+Purely local and purely visual: it's each client's own recency order, not synced to the room and
+not persisted, the same locality as token-selection-highlight.
+
+That item has since shipped, and its click handler is the hook to hang this on: a single
+`click.select`/`tap.select` handler on the stage that walks up from `e.target` to the group named
+`token` (`findAncestor('.token', true)`). It already resolves a click to the exact Konva group
+this item wants to `moveToTop()`, so there is no second hit-test to write.
 
 Worth landing this as a `moveToTop()` on the interacted group's existing Konva node, not a
 re-sort-and-rebuild of `tokenLayer`. [token-drag-causes-canvas-lag](../done/token-drag-causes-canvas-lag.md)

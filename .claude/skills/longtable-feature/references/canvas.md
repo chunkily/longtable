@@ -17,11 +17,17 @@ Added in this order, so this is also the `document.querySelectorAll('canvas')` i
 | 5 | pings | no | pulse rings |
 | 6 | measurements | no | in-progress measurements from anyone in the room |
 | 7 | preview | no | the current rubber-band shape, cursor ring, eraser halo |
+| 8 | selection | no | the rotating ring around the selected token, if any |
 
 Several Playwright specs read pixels from a layer *by index* (`DRAWING_LAYER = 3`,
-`PING_LAYER = 5`, `MEASURE_LAYER = 6`). Appending a layer is safe; inserting one renumbers
-everything above it. Either way, update the layer-order comments in `web/e2e/*.spec.ts` — they're
-the only documentation of that coupling.
+`PING_LAYER = 5`, `MEASURE_LAYER = 6`, `SELECTION_LAYER = 8`). Appending a layer is safe;
+inserting one renumbers everything above it. Either way, update the layer-order comments in
+`web/e2e/*.spec.ts` — they're the only documentation of that coupling.
+
+The selection ring has a layer to itself for a reason worth keeping: it's spun by a
+`Konva.Animation`, which redraws its whole layer every frame for as long as it runs. On the token
+layer that would be a 60fps rebuild of every token whenever anything was selected — the same
+shape as the two lag bugs in `planning/backlog/done/`.
 
 Konva warns above 5 layers ("Recommended maximum number of layers is 3-5"). Expected here and
 harmless; the separation is what keeps a stroke from forcing a token re-render.
@@ -52,6 +58,15 @@ the handler closure.** The function runs inside the `$effect` that rebinds handl
 it reads *synchronously* is tracked; a prop read later, when a pointer event fires, is captured
 once and never refreshed. That's why `snapMode` is copied to a local before the closures are
 built — read in place, the snap control did nothing until the tool was reselected.
+
+Selecting a token is *not* a tool — it's a plain click, bound in the same function under a
+`.select` namespace and only while `activeTool` is `'none'`, since with a tool active a click
+means erase, ping, or the first half of a drag. The handler walks up from `e.target` to a group
+named `token` (`findAncestor('.token', true)`), so a click on the art, the placeholder circle or
+its initials all resolve to the same token, and anything else — grid, map image, a drawing —
+clears the selection. Konva suppresses `click` after a real drag, which is what keeps dragging a
+token from also selecting it. Which token is selected is a `$bindable` prop, not `RoomClient`
+state: nothing about it goes on the wire.
 
 `attachToolHandlers()` runs in an `$effect` on `activeTool`/`scene`/`you` and is the single place
 pointer handlers are bound. It:

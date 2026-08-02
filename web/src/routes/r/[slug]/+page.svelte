@@ -4,7 +4,7 @@
 	import { toast } from 'svelte-sonner';
 	import { gmLogin, joinRoom, type Session } from '$lib/api';
 	import { loadSession, saveSession } from '$lib/session';
-	import { RoomClient } from '$lib/room.svelte';
+	import { RoomClient, type Token } from '$lib/room.svelte';
 	import { DEFAULT_LINE_WIDTH_FEET, LINE_WIDTH_CHOICES_FEET, type SnapMode } from '$lib/aoe';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -79,6 +79,21 @@
 	function selectTool(tool: Tool) {
 		activeTool = activeTool === tool ? 'none' : tool;
 	}
+
+	// Which token this client is looking at. Local to this browser and
+	// nothing more: it never goes on the wire, so two people can have
+	// different tokens selected, and a reload starts with none. Owned here
+	// rather than inside the canvas because the details section below
+	// chat reads it too — the canvas binds it so a click can set it.
+	let selectedTokenId = $state<string | null>(null);
+	// Derived rather than kept in step by an effect. A selection whose
+	// token has gone — the scene changed under it, or it was removed —
+	// simply reads as nothing selected, with no second copy of the truth
+	// to go stale. The id itself is left alone, so a token that comes back
+	// under the same id comes back selected.
+	const selectedToken = $derived<Token | null>(
+		client?.tokens.find((t) => t.id === selectedTokenId) ?? null
+	);
 	// Below the lg breakpoint the chat panel isn't shown inline — it's a
 	// bottom sheet toggled by the "Chat" bar, since there isn't room for
 	// canvas + chat side by side there (see viewport-layout discussion).
@@ -228,6 +243,27 @@
 				</li>
 			{/each}
 		</ul>
+	{/snippet}
+
+	<!-- Fixed above the message list in both layouts — the desktop sidebar
+	     and the mobile sheet — rather than scrolling away with the chat.
+	     The row is deliberately roomy on the right: Edit (token detail
+	     panel) and Delete (delete-token) both land there. -->
+	{#snippet tokenDetails(token: Token | null)}
+		<section aria-label="Selected token" class="flex items-center gap-2 rounded-md border p-2">
+			{#if token}
+				<div class="min-w-0 flex-1">
+					<p class="truncate text-sm font-medium">{token.name}</p>
+					<p class="text-xs text-muted-foreground">
+						{token.width}×{token.height} squares{token.visibility === 'hidden'
+							? ' · hidden from players'
+							: ''}
+					</p>
+				</div>
+			{:else}
+				<p class="text-sm text-muted-foreground">No token selected — click one on the map.</p>
+			{/if}
+		</section>
 	{/snippet}
 
 	{#snippet chatForm()}
@@ -509,6 +545,7 @@
 						{strokeColor}
 						{snapMode}
 						{lineWidthFeet}
+						bind:selectedTokenId
 						bind:this={canvasRef}
 					/>
 				{:else}
@@ -522,6 +559,7 @@
 
 			<Card.Root class="hidden w-full lg:flex lg:max-w-sm">
 				<Card.Content class="flex flex-col gap-3">
+					{@render tokenDetails(selectedToken)}
 					{@render chatMessages(client, 'max-h-96')}
 					{@render chatForm()}
 				</Card.Content>
@@ -532,6 +570,7 @@
 	<div class="fixed inset-x-0 bottom-0 lg:hidden">
 		{#if mobileChatOpen}
 			<div class="flex max-h-[60vh] flex-col gap-3 border-t bg-background p-4 shadow-lg">
+				{@render tokenDetails(selectedToken)}
 				{@render chatMessages(client, 'flex-1')}
 				{@render chatForm()}
 			</div>

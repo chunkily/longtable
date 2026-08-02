@@ -17,8 +17,12 @@ section above chat (see [token-selection-highlight](../open/token-selection-high
 only ever opens on a deliberate click, once a token is already selected there, never from a
 hover.
 
-See also token-selection-highlight, which adds the same missing click-to-select and should share
-its `selectedTokenId` state rather than this panel growing its own. Also see
+[token-selection-highlight](../done/token-selection-highlight.md) has **shipped**, so both
+prerequisites already exist: clicking a token on the canvas selects it, and the details section
+above chat is there with room on its right for this panel's "Edit" button. Read that item's
+"What shipped" before starting — the short version is that the selection lives in
+`selectedTokenId`, a `$bindable` prop on `game-canvas.svelte` owned by the room page, and this
+panel should read that same prop rather than grow its own. Also see
 [delete-token](../open/delete-token.md), which adds a second button in that same details
 section.
 

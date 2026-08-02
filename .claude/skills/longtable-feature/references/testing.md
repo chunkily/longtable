@@ -96,6 +96,14 @@ the same way — or a probe that has silently stopped measuring anything still r
 Asserting a *non*-event ("this must not happen") needs an explicit `waitForTimeout` — there's no
 event to poll on, which is the point. Everything else should be `expect.poll`.
 
+**`page.mouse.click(x, y)` skips every actionability check `locator.click()` makes**, including
+"is anything on top of this point". A dialog closed a moment earlier is still covering the middle
+of the canvas while its exit animation runs, and still takes the click — so the canvas never hears
+it and the feature looks broken. Wait for the dialog to be *gone*
+(`await expect(page.getByRole('button', { name: 'Create token' })).toBeHidden()`), not just for
+whatever the dialog produced, before any raw mouse coordinates. `token-selection.spec.ts`'s
+`createToken` waits on both that and the token arriving over the socket, and says why.
+
 Assertions that only a browser can make, and that are worth reaching for: state still holding after
 `page.reload()` (proves it's server-side, not just local), and `context.close()` mid-gesture
 (proves the server cleans up after a dropped client).

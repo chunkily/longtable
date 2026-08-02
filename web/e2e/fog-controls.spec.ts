@@ -10,7 +10,7 @@ import { expect, test, type Page, type Browser } from '@playwright/test';
 
 // Layer order, by index into document.querySelectorAll('canvas'):
 // 0 map, 1 grid, 2 fog, 3 drawings, 4 tokens, 5 pings, 6 measurements,
-// 7 preview. Inserting a layer renumbers these.
+// 7 preview, 8 selection. Inserting a layer renumbers these.
 const FOG_LAYER = 2;
 
 // Total alpha across the fog layer. A count of non-transparent pixels

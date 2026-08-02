@@ -10,10 +10,12 @@ turn tracking — current turn highlighted, next/previous navigation, round coun
 
 Surfaced as a tab alongside chat and event logs — see [chat-panel-tabs](chat-panel-tabs.md).
 
-[token-selection-highlight](../open/token-selection-highlight.md) wants clicking a tracker entry
-to select its linked token, and [token-recent-interaction-stacking](../open/token-recent-interaction-stacking.md)
-wants that same selection to bump the token to the top of the canvas stack; both are blocked on
-this item shipping first.
+[token-selection-highlight](../done/token-selection-highlight.md) has **shipped** everything
+except its last checkbox — clicking a tracker entry to select its linked token — which is waiting
+on this item and is a one-liner once entries exist: set `selectedTokenId`, the `$bindable` prop
+the room page already owns. [token-recent-interaction-stacking](../open/token-recent-interaction-stacking.md)
+wants that same selection to bump the token to the top of the canvas stack, and is still blocked
+on this item shipping first.
 
 ## Related user stories
 

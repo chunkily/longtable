@@ -8,7 +8,7 @@ import { fixture } from './fixtures';
 
 // Layer order, by index into document.querySelectorAll('canvas'):
 // 0 map, 1 grid, 2 fog, 3 drawings, 4 tokens, 5 pings, 6 measurements,
-// 7 preview. Inserting a layer renumbers these.
+// 7 preview, 8 selection. Inserting a layer renumbers these.
 const MAP_LAYER = 0;
 const TOKEN_LAYER = 4;
 

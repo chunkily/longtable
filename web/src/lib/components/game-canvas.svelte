@@ -55,7 +55,8 @@
 		activeTool = 'none',
 		strokeColor = '#000000',
 		snapMode = 'intersections',
-		lineWidthFeet = DEFAULT_LINE_WIDTH_FEET
+		lineWidthFeet = DEFAULT_LINE_WIDTH_FEET,
+		selectedTokenId = $bindable(null)
 	}: {
 		room: RoomClient;
 		activeTool?: Tool;
@@ -63,6 +64,13 @@
 		/** Where template points may land. Purely a local input aid. */
 		snapMode?: SnapMode;
 		lineWidthFeet?: number;
+		/**
+		 * The token this client has selected, or null. Bound rather than
+		 * owned here because the room page draws the details section that
+		 * goes with it — and because nothing about a selection goes on the
+		 * wire, so two clients can have different tokens selected at once.
+		 */
+		selectedTokenId?: string | null;
 	} = $props();
 
 	const MIN_SCALE = 0.2;
@@ -99,6 +107,28 @@
 	// How far above the end of the line the label floats, so the pointer
 	// isn't sitting on top of the number it's producing.
 	const MEASURE_LABEL_OFFSET = 18;
+	// The selection ring: two concentric dashed circles sharing one dash
+	// pattern, a thicker black one underneath and a thinner pale-yellow
+	// one on top, so each is the other's backing. Pale yellow alone
+	// disappears into a lit tavern floor and black alone disappears into a
+	// night-time dungeon; together they read on both. Order matters — this
+	// is the order they're added in, so the black goes down first. The two
+	// widths are close on purpose: the black is meant to read as an
+	// outline around a yellow dash, so leaving it much wider than the
+	// yellow turns the whole ring black at a glance.
+	const SELECTION_RING_LAYERS = [
+		{ color: '#000000', width: 5 },
+		{ color: '#fde68a', width: 3 }
+	];
+	// Ring geometry in screen pixels, converted at the current zoom: how
+	// far outside the token the ring sits, and the dash/gap that rotating
+	// it makes legible.
+	const SELECTION_RING_PADDING = 6;
+	const SELECTION_RING_DASH = [5, 7];
+	// One full turn, slow on purpose. It has to say "this is the one" from
+	// the corner of the eye without competing with anything actually
+	// happening on the map.
+	const SELECTION_RING_PERIOD_MS = 14000;
 
 	let container: HTMLDivElement;
 	let stage: Konva.Stage | undefined;
@@ -110,6 +140,7 @@
 	let pingLayer: Konva.Layer;
 	let measureLayer: Konva.Layer;
 	let previewLayer: Konva.Layer;
+	let selectionLayer: Konva.Layer;
 	let resizeObserver: ResizeObserver | undefined;
 
 	// Tracks the active scene so a switch to a different scene resets
@@ -158,6 +189,13 @@
 		pingLayer = new Konva.Layer({ listening: false });
 		measureLayer = new Konva.Layer({ listening: false });
 		previewLayer = new Konva.Layer({ listening: false });
+		// The selection ring gets a layer of its own because it is animated:
+		// a Konva.Animation redraws its whole layer every frame for as long
+		// as it runs, and putting a 60fps redraw on the token layer is the
+		// same mistake that produced the token-drag and erasing lag bugs.
+		// Appended last, so the existing layer indices the e2e specs read
+		// pixels from don't move.
+		selectionLayer = new Konva.Layer({ listening: false });
 		stage.add(
 			mapLayer,
 			gridLayer,
@@ -166,7 +204,8 @@
 			tokenLayer,
 			pingLayer,
 			measureLayer,
-			previewLayer
+			previewLayer,
+			selectionLayer
 		);
 
 		stage.on('wheel', handleWheel);
@@ -195,6 +234,9 @@
 		resizeObserver?.disconnect();
 		for (const marker of pingMarkers.values()) destroyPingMarker(marker);
 		pingMarkers.clear();
+		// Before the stage goes: a running Konva.Animation would otherwise
+		// keep asking a destroyed layer to redraw itself every frame.
+		clearSelectionRing();
 		stage?.destroy();
 	});
 
@@ -226,8 +268,10 @@
 		stage.batchDraw();
 		renderGrid();
 		// Measurement lines and labels are sized in screen pixels, so a
-		// zoom changes what they should be in world units.
+		// zoom changes what they should be in world units. The selection
+		// ring's stroke, dash and standoff are the same.
 		renderMeasurements();
+		renderSelection();
 		refreshCursorOverlay();
 	}
 
@@ -310,6 +354,14 @@
 	$effect(() => {
 		track(room.measurements, room.scene);
 		renderMeasurements();
+	});
+
+	// room.tokens is tracked because the ring has to follow the token it
+	// marks — someone else moving it, or it leaving the scene entirely,
+	// both arrive that way.
+	$effect(() => {
+		track(room.tokens, room.scene, selectedTokenId);
+		if (stage) renderSelection();
 	});
 
 	// The eraser's halo points at a specific drawing, so it has to be
@@ -539,6 +591,26 @@
 		// Tools and panning both start on left-drag, so only one can own
 		// the gesture at a time.
 		stage.draggable(!isActive);
+
+		// Selecting is its own namespace rather than part of the block
+		// above, because it isn't a tool: it only binds when no tool owns
+		// the pointer, since with one active a click means erase, ping, or
+		// the first half of a drag. An existing selection survives a tool
+		// switch — it just can't be changed until the tool is put down.
+		stage.off('click.select tap.select');
+		if (!isActive) {
+			stage.on('click.select tap.select', (e) => {
+				if (!isPrimaryPointer(e)) return;
+				// Konva suppresses `click` after a real drag, so dragging a
+				// token deliberately doesn't select it — only a click that
+				// stayed put does.
+				const group = e.target.findAncestor('.token', true) as Konva.Group | undefined;
+				// Anything that isn't a token — bare grid, the map image, a
+				// drawing — clears the selection.
+				selectedTokenId = (group?.getAttr('tokenId') as string | undefined) ?? null;
+			});
+		}
+
 		if (!isActive || !scene) return;
 
 		const gridSize = scene.gridSize;
@@ -1244,6 +1316,95 @@
 		measureLayer.add(group);
 	}
 
+	// --- the selection ring. Purely local: which token this client has
+	// selected is never sent anywhere, so two people can be looking at
+	// different tokens at the same time. ---
+
+	type SelectionRing = { group: Konva.Group; circles: Konva.Circle[]; spin: Konva.Animation };
+
+	// Konva bookkeeping for the ring currently on the map, and which token
+	// it belongs to. Deliberately not $state: `selectedTokenId` is the
+	// reactive truth, and these only exist so the ring can be kept alive
+	// across re-renders instead of rebuilt.
+	let selectionRing: SelectionRing | null = null;
+	let selectionRingTokenId: string | null = null;
+
+	function clearSelectionRing() {
+		selectionRing?.spin.stop();
+		selectionRing?.group.destroy();
+		selectionRing = null;
+		selectionRingTokenId = null;
+		selectionLayer?.batchDraw();
+	}
+
+	function buildSelectionRing(tokenId: string) {
+		const group = new Konva.Group({ listening: false });
+		const circles = SELECTION_RING_LAYERS.map((spec) => {
+			const circle = new Konva.Circle({ stroke: spec.color });
+			group.add(circle);
+			return circle;
+		});
+		selectionLayer.add(group);
+
+		const spin = new Konva.Animation((frame) => {
+			if (frame) group.rotation((frame.time / SELECTION_RING_PERIOD_MS) * 360);
+		}, selectionLayer);
+		spin.start();
+
+		selectionRing = { group, circles, spin };
+		selectionRingTokenId = tokenId;
+	}
+
+	// The ring is a sibling of the token rather than a child of it, so it
+	// has to be told where the token went. Takes an id and checks it here
+	// rather than at the call site: the token handlers that call this are
+	// built in an effect that doesn't track the selection, so a comparison
+	// made in one of their closures would be against a stale id.
+	function moveSelectionRing(tokenId: string, x: number, y: number, w: number, h: number) {
+		if (tokenId !== selectionRingTokenId || !selectionRing) return;
+		selectionRing.group.position({ x: x + w / 2, y: y + h / 2 });
+		selectionLayer.batchDraw();
+	}
+
+	function renderSelection() {
+		if (!selectionLayer) return;
+
+		const gridSize = room.scene?.gridSize;
+		const token = selectedTokenId ? room.tokens.find((t) => t.id === selectedTokenId) : undefined;
+		// A selected id with no token behind it — the scene changed under
+		// it, or someone removed it — reads as nothing selected. The id is
+		// left alone rather than cleared, so it isn't this function's job to
+		// write back into the state it renders from.
+		if (!token || !gridSize) {
+			clearSelectionRing();
+			return;
+		}
+
+		// Rebuilt only when the selection moves to a *different* token.
+		// Re-creating it every time would restart the animation, and this
+		// runs whenever anyone moves any token — so the ring would snap back
+		// to its start angle every time someone else dragged something.
+		if (selectionRingTokenId !== token.id) {
+			clearSelectionRing();
+			buildSelectionRing(token.id);
+		}
+		if (!selectionRing) return;
+
+		const w = token.width * gridSize;
+		const h = token.height * gridSize;
+		// Screen pixels converted at the current zoom, so the ring keeps its
+		// weight, its standoff and its dash spacing however far in you are.
+		const radius = Math.min(w, h) / 2 + screenToWorld(SELECTION_RING_PADDING);
+		const dash = SELECTION_RING_DASH.map((d) => screenToWorld(d));
+		selectionRing.circles.forEach((circle, i) => {
+			circle.radius(radius);
+			circle.dash(dash);
+			circle.strokeWidth(screenToWorld(SELECTION_RING_LAYERS[i].width));
+		});
+
+		moveSelectionRing(token.id, token.x * gridSize, token.y * gridSize, w, h);
+	}
+
 	function renderTokens(gridSize: number) {
 		tokenLayer.destroyChildren();
 
@@ -1251,8 +1412,13 @@
 			const group = new Konva.Group({
 				x: token.x * gridSize,
 				y: token.y * gridSize,
-				draggable: activeTool === 'none'
+				draggable: activeTool === 'none',
+				// Named and tagged so a click on whatever is inside — the
+				// image, or the placeholder circle and its initials — can be
+				// walked back up to the token it landed on.
+				name: 'token'
 			});
+			group.setAttr('tokenId', token.id);
 
 			const w = token.width * gridSize;
 			const h = token.height * gridSize;
@@ -1278,11 +1444,18 @@
 				group.opacity(0.55);
 			}
 
+			group.on('dragmove', () => moveSelectionRing(token.id, group.x(), group.y(), w, h));
+
 			group.on('dragend', () => {
 				const cellX = Math.round(group.x() / gridSize);
 				const cellY = Math.round(group.y() / gridSize);
 				group.x(cellX * gridSize);
 				group.y(cellY * gridSize);
+				// Again after the snap, and not left to the broadcast: a drop
+				// back onto the cell it started from is a no-op in RoomClient
+				// (see token.moved), so no state change arrives to re-render
+				// the ring — it would stay wherever the pointer let go.
+				moveSelectionRing(token.id, group.x(), group.y(), w, h);
 				room.moveToken(token.id, cellX, cellY);
 			});
 
