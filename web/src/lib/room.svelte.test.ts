@@ -829,6 +829,172 @@ describe('RoomClient', () => {
 		expect(client.canUndo).toBe(false);
 	});
 
+	// --- reconnecting ---
+	//
+	// The session probe is stubbed rather than mocked out of the module:
+	// what these are really about is which of its three answers leads
+	// where, so the answer is the input.
+
+	function withSessionProbe(answer: 'ok' | 'invalid' | 'unreachable') {
+		vi.stubGlobal('fetch', async () => ({
+			ok: answer === 'ok',
+			status: answer === 'invalid' ? 401 : answer === 'ok' ? 200 : 503
+		}));
+	}
+
+	// Drains the probe's promise chain, which onclose starts and which has
+	// to finish before the retry timer even exists to be advanced.
+	//
+	// A generous drain rather than a counted one: the exact number of
+	// microtasks depends on how many awaits the fetch stub and checkSession
+	// happen to go through, and a count that was right in isolation came up
+	// short when the whole file ran. Draining costs nothing and can't be
+	// off by one.
+	async function settleProbe() {
+		for (let i = 0; i < 50; i++) await Promise.resolve();
+	}
+
+	it('reopens the socket after a drop, with a growing delay', async () => {
+		vi.useFakeTimers();
+		try {
+			withSessionProbe('ok');
+			const { client, socket } = connectedClient();
+			expect(client.status).toBe('connecting');
+
+			socket.onclose!();
+			await settleProbe();
+			expect(client.status).toBe('reconnecting');
+			// Nothing yet: the delay has to elapse first.
+			expect(FakeWebSocket.instances).toHaveLength(1);
+
+			await vi.advanceTimersByTimeAsync(1000);
+			expect(FakeWebSocket.instances).toHaveLength(2);
+
+			// Second failure waits longer than the first — the cap and the
+			// jitter make exact numbers unhelpful, so this asserts on the
+			// shape: a short advance is no longer enough.
+			FakeWebSocket.instances[1].onclose!();
+			await settleProbe();
+			await vi.advanceTimersByTimeAsync(400);
+			expect(FakeWebSocket.instances).toHaveLength(2);
+			await vi.advanceTimersByTimeAsync(2000);
+			expect(FakeWebSocket.instances).toHaveLength(3);
+		} finally {
+			vi.useRealTimers();
+			vi.unstubAllGlobals();
+		}
+	});
+
+	it('goes back to a clean slate once a retry connects', async () => {
+		vi.useFakeTimers();
+		try {
+			withSessionProbe('ok');
+			const { client, socket } = connectedClient();
+
+			socket.onclose!();
+			await settleProbe();
+			await vi.advanceTimersByTimeAsync(1000);
+
+			const retry = FakeWebSocket.instances[1];
+			retry.onopen!();
+			expect(client.status).toBe('open');
+
+			// A later drop starts from the short delay again rather than
+			// carrying on where the previous sequence left off.
+			retry.onclose!();
+			await settleProbe();
+			await vi.advanceTimersByTimeAsync(1000);
+			expect(FakeWebSocket.instances).toHaveLength(3);
+		} finally {
+			vi.useRealTimers();
+			vi.unstubAllGlobals();
+		}
+	});
+
+	// Retrying can't fix a session the server no longer knows, and a
+	// spinner that never resolves is the worst way to say so.
+	it('stops retrying when the probe says the session is the problem', async () => {
+		vi.useFakeTimers();
+		try {
+			withSessionProbe('invalid');
+			const { client, socket } = connectedClient();
+
+			socket.onclose!();
+			await settleProbe();
+
+			expect(client.sessionExpired).toBe(true);
+			expect(client.reconnectExhausted).toBe(true);
+			await vi.advanceTimersByTimeAsync(60_000);
+			expect(FakeWebSocket.instances).toHaveLength(1);
+		} finally {
+			vi.useRealTimers();
+			vi.unstubAllGlobals();
+		}
+	});
+
+	// A probe that can't get an answer means the server is unreachable,
+	// which is the case retrying is *for*.
+	it('keeps retrying when the probe itself cannot be reached', async () => {
+		vi.useFakeTimers();
+		try {
+			withSessionProbe('unreachable');
+			const { client, socket } = connectedClient();
+
+			socket.onclose!();
+			await settleProbe();
+			await vi.advanceTimersByTimeAsync(1000);
+
+			expect(client.sessionExpired).toBe(false);
+			expect(FakeWebSocket.instances).toHaveLength(2);
+		} finally {
+			vi.useRealTimers();
+			vi.unstubAllGlobals();
+		}
+	});
+
+	it('gives up after a capped number of tries and offers a manual one', async () => {
+		vi.useFakeTimers();
+		try {
+			withSessionProbe('ok');
+			const { client } = connectedClient();
+
+			for (let i = 0; i < 20; i++) {
+				FakeWebSocket.instances.at(-1)!.onclose!();
+				await settleProbe();
+				await vi.advanceTimersByTimeAsync(30_000);
+			}
+
+			// Eight retries on top of the original connection.
+			expect(FakeWebSocket.instances).toHaveLength(9);
+			expect(client.reconnectExhausted).toBe(true);
+
+			client.reconnect();
+			expect(FakeWebSocket.instances).toHaveLength(10);
+			expect(client.reconnectExhausted).toBe(false);
+		} finally {
+			vi.useRealTimers();
+			vi.unstubAllGlobals();
+		}
+	});
+
+	// Leaving the page is not a failure to recover from.
+	it('does not reconnect after a close we asked for', async () => {
+		vi.useFakeTimers();
+		try {
+			withSessionProbe('ok');
+			const { client } = connectedClient();
+
+			client.disconnect();
+			await settleProbe();
+			await vi.advanceTimersByTimeAsync(60_000);
+
+			expect(FakeWebSocket.instances).toHaveLength(1);
+		} finally {
+			vi.useRealTimers();
+			vi.unstubAllGlobals();
+		}
+	});
+
 	// --- presence ---
 
 	function roomWithParticipants() {

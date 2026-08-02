@@ -151,6 +151,44 @@ func (srv *Server) listRoomAssets(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, payload)
 }
 
+// checkSession answers whether a session token is still good for this
+// room, and nothing else.
+//
+// It exists for the client's reconnect loop. A failed WebSocket
+// handshake reaches the browser as a bare `onclose` with no status, so
+// the socket alone cannot tell "the server is restarting, keep trying"
+// from "this session is gone, send them back to the join form" — and
+// guessing wrong either bounces someone out over a five-second blip or
+// retries forever against a room that no longer knows them. This gives
+// the same three answers the upgrade does: 200, 401 for a token that
+// isn't good, 404 for a room that isn't there.
+//
+// Deliberately does not echo the token back. The caller already has it,
+// and a response that repeats a credential is one redirect or one log
+// line away from leaking it.
+func (srv *Server) checkSession(w http.ResponseWriter, r *http.Request) {
+	room, ok := srv.lookupRoom(w, r.PathValue("slug"))
+	if !ok {
+		return
+	}
+	token := bearerToken(r)
+	if token == "" {
+		writeError(w, http.StatusUnauthorized, "missing session token")
+		return
+	}
+	participant, err := srv.store.GetParticipantByToken(room.ID, token)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "invalid session")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"participantId": participant.ID,
+		"displayName":   participant.DisplayName,
+		"role":          string(participant.Role),
+	})
+}
+
 // requireParticipant checks the bearer session token belongs to this
 // room, which is the whole of "are you allowed to see this room's
 // things" — there are no accounts, so holding a session for the room is

@@ -110,6 +110,35 @@ export function listRoomAssets(slug: string, sessionToken: string): Promise<Asse
 	});
 }
 
+/**
+ * Whether a session is still good for a room, for the reconnect loop.
+ *
+ * Three answers, not two. A refused WebSocket upgrade reaches the
+ * browser as a bare `onclose` with no status, so the socket alone can't
+ * separate "the server is restarting, keep trying" from "this session is
+ * gone, send them back to the join form" — and `unreachable` is the
+ * third case, where the probe itself couldn't get an answer and the only
+ * safe reading is to keep trying.
+ */
+export async function checkSession(
+	slug: string,
+	sessionToken: string
+): Promise<'ok' | 'invalid' | 'unreachable'> {
+	try {
+		const res = await fetch(`/api/rooms/${encodeURIComponent(slug)}/session`, {
+			headers: { Authorization: `Bearer ${sessionToken}` }
+		});
+		if (res.ok) return 'ok';
+		// 401 for a token the room doesn't know, 404 for a room that isn't
+		// there any more. Neither gets better by waiting. Anything else is
+		// the server having a bad time, which might.
+		if (res.status === 401 || res.status === 404) return 'invalid';
+		return 'unreachable';
+	} catch {
+		return 'unreachable';
+	}
+}
+
 export function assetUrl(assetId: string): string {
 	return `/api/assets/${encodeURIComponent(assetId)}`;
 }

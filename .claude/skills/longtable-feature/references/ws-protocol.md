@@ -137,6 +137,20 @@ The roster query deliberately never loads `session_token`, and `participantPaylo
 exhaustive struct-to-map rather than a marshalled struct — two lines of defence against a
 credential reaching every client in the room.
 
+## Reconnecting
+
+`GET /api/rooms/{slug}/session` (bearer token) answers 200 / 401 / 404 and exists only for the
+client's retry loop. A refused WebSocket upgrade reaches the browser as a bare `onclose` with no
+status, so the socket alone can't separate "the server is restarting, keep trying" from "this
+session is gone, send them back to the join form". The probe makes it exact. It deliberately
+doesn't echo the token back.
+
+`RoomClient` retries with capped exponential backoff and jitter, reusing the saved session token
+(re-opening the socket, never re-joining — joining again would mint a second participant). It
+gives up after eight attempts in favour of a manual button, and stops immediately when the probe
+says the session is the problem. The reducer side needs nothing: `state.sync` replaces the whole
+picture and `resetAfterSync` drops anything in flight, so a reconnect converges by construction.
+
 ## Events (server → client)
 
 `state.sync`, `chat.posted`, `token.created`, `token.moved`, `token.updated`, `token.deleted`,

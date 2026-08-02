@@ -178,6 +178,12 @@
 				? 'destructive'
 				: 'outline'
 	);
+	// A dropped socket used to be invisible beyond the small status badge,
+	// while every command silently did nothing. The banner is the one
+	// place that says so plainly.
+	const showConnectionBanner = $derived(
+		!!client && client.status !== 'open' && client.status !== 'connecting'
+	);
 	const isGM = $derived(client?.you?.role === 'gm');
 </script>
 
@@ -325,6 +331,25 @@
 				playing as <strong>{client.you?.displayName}</strong>
 			</span>
 		</header>
+
+		{#if showConnectionBanner}
+			<div
+				role="status"
+				class="flex flex-wrap items-center gap-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm"
+			>
+				{#if client.sessionExpired}
+					<span>
+						This session is no longer valid — the room may have been reset. Rejoin to carry on.
+					</span>
+					<Button variant="outline" size="sm" onclick={() => location.reload()}>Rejoin</Button>
+				{:else if client.reconnectExhausted}
+					<span>Can't reach the table. Nothing you do will reach the others until it's back.</span>
+					<Button variant="outline" size="sm" onclick={() => client?.reconnect()}>Try again</Button>
+				{:else}
+					<span>Reconnecting to the table…</span>
+				{/if}
+			</div>
+		{/if}
 
 		<div class="flex flex-col gap-4 lg:flex-row lg:items-start">
 			<div class="flex min-w-0 flex-1 flex-col gap-2">

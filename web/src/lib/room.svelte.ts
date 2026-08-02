@@ -2,6 +2,7 @@
 // command/event protocol (see internal/ws/hub.go) in Svelte 5 runes
 // state so components just read fields and let the UI update itself.
 
+import { checkSession } from './api';
 import type { TemplateKind } from './aoe';
 import { MEASURE_SEND_INTERVAL_MS } from './measure';
 import { PING_COOLDOWN_MS, PING_LIFETIME_MS } from './ping';
@@ -117,7 +118,17 @@ export interface You {
 	role: 'gm' | 'player';
 }
 
-type ConnectionStatus = 'connecting' | 'open' | 'closed';
+type ConnectionStatus = 'connecting' | 'open' | 'closed' | 'reconnecting';
+
+// Retry pacing. Doubling from half a second to a fifteen-second ceiling,
+// giving up after eight tries — by then roughly a minute has passed, and
+// a banner offering a manual retry is more honest than a spinner that
+// never stops. The jitter spreads a table's worth of clients out so a
+// restarted server isn't hit by all of them at once.
+const RECONNECT_BASE_MS = 500;
+const RECONNECT_MAX_MS = 15_000;
+const RECONNECT_MAX_ATTEMPTS = 8;
+const RECONNECT_JITTER = 0.25;
 
 interface Envelope {
 	type: string;
@@ -226,6 +237,11 @@ interface ErrorPayload {
 export class RoomClient {
 	status = $state<ConnectionStatus>('connecting');
 	error = $state('');
+	/**
+	 * Set when the server says the session itself is the problem, not the
+	 * connection. Retrying can't fix it — the only way out is rejoining.
+	 */
+	sessionExpired = $state(false);
 
 	roomName = $state('');
 	you = $state<You | null>(null);
@@ -261,6 +277,13 @@ export class RoomClient {
 
 	private lastPingSentAt = 0;
 
+	// What a reconnect needs to re-open the same socket, and where the
+	// backoff has got to. attempt is 0 whenever the connection is healthy.
+	private slug = '';
+	private sessionToken = '';
+	private attempt = $state(0);
+	private reconnectTimer = $state<ReturnType<typeof setTimeout> | null>(null);
+
 	// The latest measurement position not yet put on the wire, and the
 	// timer holding the wire until the interval is up. Both null when no
 	// measurement is in progress.
@@ -274,20 +297,38 @@ export class RoomClient {
 
 	connect(slug: string, sessionToken: string) {
 		this.disconnect();
-		this.status = 'connecting';
+		// Remembered so a retry can re-open the socket rather than re-join:
+		// the participant already exists, and joining again would make a
+		// second one with a new identity and a new name in the roster.
+		this.slug = slug;
+		this.sessionToken = sessionToken;
+		this.attempt = 0;
+		this.sessionExpired = false;
+		this.openSocket();
+	}
+
+	private openSocket() {
+		this.status = this.attempt === 0 ? 'connecting' : 'reconnecting';
 		this.error = '';
 
 		const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-		const url = `${proto}//${window.location.host}/ws?room=${encodeURIComponent(slug)}&token=${encodeURIComponent(sessionToken)}`;
+		const url = `${proto}//${window.location.host}/ws?room=${encodeURIComponent(this.slug)}&token=${encodeURIComponent(this.sessionToken)}`;
 
 		const socket = new WebSocket(url);
 		this.socket = socket;
 
 		socket.onopen = () => {
 			this.status = 'open';
+			// Reset here rather than on the first envelope: the backoff is
+			// about reaching the server, and we have.
+			this.attempt = 0;
 		};
 		socket.onclose = () => {
+			// A close we asked for is not a failure to recover from.
+			if (this.socket !== socket) return;
+			this.socket = null;
 			this.status = 'closed';
+			void this.scheduleReconnect();
 		};
 		socket.onerror = () => {
 			this.error = 'connection error';
@@ -297,10 +338,72 @@ export class RoomClient {
 		};
 	}
 
+	/**
+	 * Backoff between attempts: doubling from RECONNECT_BASE_MS, capped,
+	 * and jittered so a `longtable` restart doesn't bring every client at
+	 * the table back in the same millisecond.
+	 */
+	private retryDelay(): number {
+		const capped = Math.min(RECONNECT_BASE_MS * 2 ** this.attempt, RECONNECT_MAX_MS);
+		return capped * (1 - RECONNECT_JITTER + Math.random() * RECONNECT_JITTER * 2);
+	}
+
+	private async scheduleReconnect() {
+		if (this.attempt >= RECONNECT_MAX_ATTEMPTS) return;
+
+		// Ask REST whether the problem is us before spending another
+		// attempt. A refused upgrade arrives as a bare onclose with no
+		// status, so the socket alone can't tell a restarting server from
+		// a session the server no longer knows — and retrying a dead
+		// session forever is the worse of the two failures, because
+		// nothing on screen ever explains it.
+		const session = await checkSession(this.slug, this.sessionToken);
+		if (session === 'invalid') {
+			this.sessionExpired = true;
+			this.error = 'your session is no longer valid — rejoin the room';
+			return;
+		}
+
+		// Delay from the attempt just made, then count this one — so the
+		// first retry waits the base delay rather than already doubling it.
+		const delay = this.retryDelay();
+		this.attempt += 1;
+		this.status = 'reconnecting';
+		this.reconnectTimer = setTimeout(() => {
+			this.reconnectTimer = null;
+			this.openSocket();
+		}, delay);
+	}
+
+	/** Starts the retry sequence again from the top, for a manual button. */
+	reconnect() {
+		if (this.socket) return;
+		this.attempt = 0;
+		this.sessionExpired = false;
+		this.openSocket();
+	}
+
+	/** True once retrying has stopped and only a manual attempt is left. */
+	get reconnectExhausted(): boolean {
+		return (
+			this.status === 'closed' &&
+			this.reconnectTimer === null &&
+			(this.attempt >= RECONNECT_MAX_ATTEMPTS || this.sessionExpired)
+		);
+	}
+
 	disconnect() {
 		this.cancelPendingMeasure();
-		this.socket?.close();
+		if (this.reconnectTimer !== null) {
+			clearTimeout(this.reconnectTimer);
+			this.reconnectTimer = null;
+		}
+		const socket = this.socket;
+		// Cleared first so onclose can tell a close we asked for from one
+		// that happened to us, and doesn't start reconnecting to a room
+		// the page is leaving.
 		this.socket = null;
+		socket?.close();
 	}
 
 	// Returns whether the command actually went out — anything drawn

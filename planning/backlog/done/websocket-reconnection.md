@@ -53,3 +53,38 @@ so a reconnect converges on server state by construction.
 Killing the backend mid-session is the quickest manual check. For an automated one, the
 `routeWebSocket` interception in `web/e2e/drawing-optimistic.spec.ts` can close a live socket from
 the test rather than only dropping frames.
+
+## What shipped
+
+All three checkboxes. Retry with capped exponential backoff and jitter (500ms doubling to a 15s
+ceiling, eight attempts), a banner that says what is happening, and the authenticated probe this
+item argued was worth the few lines — `GET /api/rooms/{slug}/session`, answering 200/401/404, the
+same three answers the upgrade gives. That was the right call: the heuristic alternative
+("healthz answers but the socket won't open") would bounce someone to the join form during a
+server restart, which is the failure that loses work.
+
+Points worth keeping:
+
+- **It re-opens the socket, never re-joins.** The participant already exists; joining again would
+  mint a second one, with a second name in the roster and a second presence badge.
+- **`onclose` distinguishes a close we asked for from one that happened to us** by comparing the
+  socket against `this.socket`, which `disconnect()` clears *before* closing. Without that,
+  leaving the page starts a reconnect to a room nobody is in any more.
+- **The probe runs before spending an attempt, not after failures pile up.** A dead session is
+  the failure that retrying can never fix, and the one where a spinner explains nothing.
+- **`unreachable` is a third answer, distinct from `invalid`.** A probe that can't get a reply
+  means the server is down, which is the case retrying is *for* — treating a fetch failure as an
+  expired session would bounce everyone out on the first blip.
+- The first retry waits the base delay, not double it: `retryDelay()` is computed *before*
+  `attempt` is incremented. Getting that backwards is invisible in use and was caught by a test
+  advancing exactly 1000ms.
+
+The reducer side needed nothing, exactly as this item predicted — `state.sync` replaces the whole
+picture and `resetAfterSync` drops in-flight state, so a reconnect converges by construction.
+There's an e2e that proves it rather than asserting it: chat sent while the socket is down never
+arrives, and the log that comes back is the server's.
+
+Not done: nothing queues commands sent while the connection is down. They still silently no-op —
+the banner now says so, which was the cheap half of that problem. A real outbox would need to
+decide what is still meaningful to replay after a `state.sync` has rewritten everything, and is
+its own item if anyone wants it.
