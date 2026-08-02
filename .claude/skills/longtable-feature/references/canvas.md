@@ -68,6 +68,15 @@ clears the selection. Konva suppresses `click` after a real drag, which is what 
 token from also selecting it. Which token is selected is a `$bindable` prop, not `RoomClient`
 state: nothing about it goes on the wire.
 
+**A known consequence of rebuilding the token layer wholesale: a click can be lost.** Konva only
+fires `click` when `mousedown` and `mouseup` land on the *same* node, and `renderTokens` destroys
+and recreates every group whenever `room.tokens` changes — so a `token.moved` echo arriving
+between the two halves of a click silently swallows it. The window is about a frame, and in
+practice you click again; fixing it properly means diffing the token layer instead of rebuilding
+it, which this file argues against everywhere else. It matters most in tests, where a click
+immediately after a drag hits it roughly three runs in four — see `token-delete.spec.ts`, which
+selects before dragging for exactly this reason.
+
 `attachToolHandlers()` runs in an `$effect` on `activeTool`/`scene`/`you` and is the single place
 pointer handlers are bound. It:
 

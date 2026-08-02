@@ -829,6 +829,132 @@ describe('RoomClient', () => {
 		expect(client.canUndo).toBe(false);
 	});
 
+	// --- deleting tokens ---
+
+	function roomWithTokens(tokens: unknown[] = []) {
+		const { client, socket } = connectedClient();
+		socket.emit({
+			type: 'state.sync',
+			payload: {
+				room: { slug: 'abc123', name: 'Room' },
+				you: { participantId: 'p1', displayName: 'A', role: 'gm' },
+				scene: { id: 's1', gridSize: 70 },
+				tokens
+			}
+		});
+		return { client, socket };
+	}
+
+	const goblin = {
+		id: 't1',
+		sceneId: 's1',
+		name: 'Goblin',
+		imageAssetId: null,
+		x: 3,
+		y: 4,
+		width: 2,
+		height: 2,
+		ownerParticipantId: null,
+		visibility: 'visible'
+	};
+
+	it('removes a token on token.deleted', () => {
+		const { client, socket } = roomWithTokens([goblin, { ...goblin, id: 't2' }]);
+
+		socket.emit({ type: 'token.deleted', payload: { tokenId: 't1' } });
+
+		expect(client.tokens.map((t) => t.id)).toEqual(['t2']);
+	});
+
+	// Unlike the eraser, this waits for the broadcast: a token is deleted
+	// from a button, so there is no preview shape that would blink.
+	it('sends token.delete and leaves the token until the server confirms', () => {
+		const { client, socket } = roomWithTokens([goblin]);
+
+		client.deleteToken('t1');
+
+		expect(sentTypes(socket)).toEqual(['token.delete']);
+		expect(JSON.parse(socket.sent[0]).payload).toEqual({ tokenId: 't1' });
+		expect(client.tokens.map((t) => t.id)).toEqual(['t1']);
+
+		socket.emit({ type: 'token.deleted', payload: { tokenId: 't1' } });
+		expect(client.tokens).toHaveLength(0);
+	});
+
+	it('undoes a deletion by recreating the token under the same id', () => {
+		const { client, socket } = roomWithTokens([goblin]);
+
+		client.deleteToken('t1');
+		socket.emit({ type: 'token.deleted', payload: { tokenId: 't1' } });
+		expect(client.canUndo).toBe(true);
+
+		client.undo();
+
+		expect(sentTypes(socket)).toEqual(['token.delete', 'token.create']);
+		// Every property goes back, because the server rebuilds the row
+		// from this payload alone — a token that came back 1×1 in the wrong
+		// square would look like a different token to everyone.
+		expect(JSON.parse(socket.sent[1]).payload).toEqual({
+			tokenId: 't1',
+			sceneId: 's1',
+			name: 'Goblin',
+			imageAssetId: null,
+			x: 3,
+			y: 4,
+			width: 2,
+			height: 2,
+			ownerParticipantId: null,
+			visibility: 'visible'
+		});
+
+		// And redo deletes it again, once the recreation has landed.
+		socket.emit({ type: 'token.created', payload: goblin });
+		client.redo();
+		expect(sentTypes(socket)).toEqual(['token.delete', 'token.create', 'token.delete']);
+	});
+
+	it('skips a deletion whose token is already back and undoes the next thing instead', () => {
+		const { client, socket } = roomWithTokens([goblin]);
+
+		client.deleteToken('t1');
+		socket.emit({ type: 'token.deleted', payload: { tokenId: 't1' } });
+
+		// Someone else put a token back under the same id — recreating it
+		// would be refused, so undo passes over the entry rather than
+		// failing the whole gesture.
+		socket.emit({ type: 'token.created', payload: goblin });
+
+		client.undo();
+
+		expect(sentTypes(socket)).toEqual(['token.delete']);
+		expect(client.canUndo).toBe(false);
+	});
+
+	it('records nothing for a token deletion that could not be sent', () => {
+		const { client, socket } = roomWithTokens([goblin]);
+		socket.readyState = 0; // connecting
+
+		client.deleteToken('t1');
+		expect(client.canUndo).toBe(false);
+		expect(client.tokens).toHaveLength(1);
+	});
+
+	it('shares one history with drawings, so undo walks back through both', () => {
+		const { client, socket } = roomWithTokens([goblin]);
+
+		client.createDrawing('s1', 'line', [{ x: 0, y: 0 }], '#cc0000');
+		client.deleteToken('t1');
+		socket.emit({ type: 'token.deleted', payload: { tokenId: 't1' } });
+
+		// Newest first: the token comes back before the stroke goes away.
+		client.undo();
+		expect(sentTypes(socket).at(-1)).toBe('token.create');
+
+		client.undo();
+		expect(sentTypes(socket).at(-1)).toBe('draw.delete');
+		expect(client.canUndo).toBe(false);
+	});
+
 	it('adds a ping with a generated id and removes it after it expires', () => {
 		vi.useFakeTimers();
 		try {

@@ -25,8 +25,16 @@ type Token struct {
 	Visibility         Visibility
 }
 
+// CreateToken persists t. An empty ID gets one generated; a caller that
+// supplies one is restoring a token it just deleted, which has to come
+// back under the id the rest of the room is still holding rather than as
+// a new token that merely looks the same. Uniqueness is the primary
+// key's job either way, so a duplicate is an error here rather than
+// something to paper over — the same bargain CreateDrawing makes.
 func (s *Store) CreateToken(t Token) (Token, error) {
-	t.ID = uuid.NewString()
+	if t.ID == "" {
+		t.ID = uuid.NewString()
+	}
 	if t.Visibility == "" {
 		t.Visibility = VisibilityVisible
 	}
@@ -43,6 +51,35 @@ func (s *Store) CreateToken(t Token) (Token, error) {
 
 func (s *Store) MoveToken(id string, x, y float64) error {
 	_, err := s.db.Exec(`UPDATE token SET x = ?, y = ? WHERE id = ?`, x, y, id)
+	return err
+}
+
+// GetToken loads a single token by ID. The WS hub needs its scene before
+// it can decide whether the caller is allowed to touch it, and its
+// visibility before it can decide who is even told it's gone.
+func (s *Store) GetToken(id string) (Token, error) {
+	var t Token
+	var visibility string
+	err := s.db.QueryRow(
+		`SELECT id, scene_id, name, image_asset_id, x, y, width, height, owner_participant_id, visibility
+		 FROM token WHERE id = ?`, id,
+	).Scan(&t.ID, &t.SceneID, &t.Name, &t.ImageAssetID, &t.X, &t.Y, &t.Width, &t.Height, &t.OwnerParticipantID, &visibility)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Token{}, ErrNotFound
+		}
+		return Token{}, err
+	}
+	t.Visibility = Visibility(visibility)
+	return t, nil
+}
+
+// DeleteToken removes a token permanently. Deleting one that's already
+// gone is not an error, the same as DeleteDrawing: the caller has
+// already read the row it means, and racing with another GM shouldn't
+// fail the second one.
+func (s *Store) DeleteToken(id string) error {
+	_, err := s.db.Exec(`DELETE FROM token WHERE id = ?`, id)
 	return err
 }
 

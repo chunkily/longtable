@@ -53,7 +53,7 @@ The seam the other token items were waiting for: **`selectedTokenId` is a `$bind
 `game-canvas.svelte`, owned by the room page** — not `RoomClient`, which is only for things that
 cross the wire. `token-detail-panel` and `delete-token` should read that same prop rather than
 add their own, and their buttons go in the details section, which is laid out with room on the
-right for them.
+right for them. ([delete-token](delete-token.md) has since shipped and done exactly that.)
 
 Four things that would be expensive to work out again:
 

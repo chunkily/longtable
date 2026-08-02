@@ -23,6 +23,7 @@ Envelope both ways:
 | `chat.send` | anyone | yes | `chat.posted` |
 | `token.create` | GM only | yes | `token.created` (GM-only if hidden) |
 | `token.move` | anyone | yes | `token.moved` |
+| `token.delete` | GM only | yes | `token.deleted` (GM-only if hidden) |
 | `fog.reveal` | GM only | yes | `fog.revealed` |
 | `fog.hide` | GM only | yes | `fog.hidden` |
 | `fog.revealAll` | GM only | yes | `fog.revealed` |
@@ -65,12 +66,19 @@ unconditionally, because activation was the only way to ever reach a scene again
 `scene.delete` refuses the active scene: `room.active_scene_id` has no foreign key to clean it
 up, so deleting it would leave every client pointed at a scene the server can't load.
 
-Notable gaps as of the last pass: there is no way to move a token with an ownership lock. See
-`planning/backlog/in-progress/`.
+`token.delete` is GM-only, matching who may create one — deliberately *not* the "your own work"
+rule `draw.delete` uses, since a token has no author to fall back on: it's a piece of the GM's
+scene that a Player may merely be allowed to move. Its broadcast is withheld from Players when
+the token was hidden, exactly as its creation was; an id they were never told about turning up in
+a deletion is itself the leak. Undoing a deletion is a `token.create` carrying the original id,
+so the token returns as the same token to everyone still holding it.
+
+Notable gaps as of the last pass: there is no way to move a token with an ownership lock, and no
+way to edit a token's properties after creation. See `planning/backlog/in-progress/`.
 
 ## Events (server → client)
 
-`state.sync`, `chat.posted`, `token.created`, `token.moved`, `fog.revealed`, `fog.hidden`,
+`state.sync`, `chat.posted`, `token.created`, `token.moved`, `token.deleted`, `fog.revealed`, `fog.hidden`,
 `fog.reset`, `scene.activated`, `scene.created`, `scene.updated`, `scene.deleted`,
 `drawing.created`, `drawing.deleted`, `ping`, `measure.updated`, `measure.ended`, `error`.
 
@@ -125,3 +133,7 @@ Clients may mint a drawing's id so the stroke they've already drawn can be match
 `isCanonicalUUID` accepts only the lowercase hyphenated form — `uuid.Parse` alone also takes
 braced and URN spellings, which would echo back an id that doesn't match the one the client is
 holding. Any future client-chosen id should go through the same check.
+
+`token.create` takes an optional `tokenId` through that same check, for a different reason:
+nothing is rendered ahead of the server there, but undoing a deletion has to restore the token
+under the id the rest of the room still knows it by, not a fresh one.

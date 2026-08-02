@@ -22,9 +22,11 @@ prerequisites already exist: clicking a token on the canvas selects it, and the 
 above chat is there with room on its right for this panel's "Edit" button. Read that item's
 "What shipped" before starting — the short version is that the selection lives in
 `selectedTokenId`, a `$bindable` prop on `game-canvas.svelte` owned by the room page, and this
-panel should read that same prop rather than grow its own. Also see
-[delete-token](../open/delete-token.md), which adds a second button in that same details
-section.
+panel should read that same prop rather than grow its own.
+[delete-token](../done/delete-token.md) has since shipped too and put the first button in that
+strip, so this panel's "Edit" goes beside it — and `token.delete` is the worked example of
+adding a token command end to end, including the hidden-token broadcast filter this panel will
+need if it can change a token's visibility.
 
 ## Related user stories
 

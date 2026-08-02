@@ -216,6 +216,8 @@ func (h *Hub) handleMessage(ctx context.Context, c *client, data []byte) {
 		h.handleTokenMove(ctx, c, env.Payload)
 	case "token.create":
 		h.handleTokenCreate(ctx, c, env.Payload)
+	case "token.delete":
+		h.handleTokenDelete(ctx, c, env.Payload)
 	case "fog.reveal":
 		h.handleFogReveal(ctx, c, env.Payload)
 	case "fog.hide":
@@ -358,6 +360,10 @@ func (h *Hub) handleTokenMove(ctx context.Context, c *client, raw json.RawMessag
 }
 
 type tokenCreateRequest struct {
+	// TokenID is optional and normally absent — the server mints one. A
+	// client supplies it when undoing a deletion, where the token has to
+	// come back under the id everyone else in the room still knows it by.
+	TokenID            string  `json:"tokenId"`
 	SceneID            string  `json:"sceneId"`
 	Name               string  `json:"name"`
 	ImageAssetID       *string `json:"imageAssetId"`
@@ -377,6 +383,14 @@ func (h *Hub) handleTokenCreate(ctx context.Context, c *client, raw json.RawMess
 	var req tokenCreateRequest
 	if err := decodePayload(raw, &req); err != nil || req.SceneID == "" || req.Name == "" {
 		h.sendError(ctx, c, "invalid token.create payload")
+		return
+	}
+	// Same canonical-form check draw.create makes on a client-chosen id,
+	// and for the same reason: the id is echoed back, so anything but the
+	// lowercase hyphenated spelling would come back as a different string
+	// from the one the client is holding.
+	if req.TokenID != "" && !isCanonicalUUID(req.TokenID) {
+		h.sendError(ctx, c, "tokenId must be a canonical UUID")
 		return
 	}
 	if !h.requireSceneInRoom(ctx, c, req.SceneID) {
@@ -404,6 +418,7 @@ func (h *Hub) handleTokenCreate(ctx context.Context, c *client, raw json.RawMess
 	}
 
 	token, err := h.store.CreateToken(store.Token{
+		ID:                 req.TokenID,
 		SceneID:            req.SceneID,
 		Name:               req.Name,
 		ImageAssetID:       req.ImageAssetID,
@@ -422,6 +437,67 @@ func (h *Hub) handleTokenCreate(ctx context.Context, c *client, raw json.RawMess
 
 	payload := tokenPayload(token)
 	h.broadcastPerClient(ctx, c.roomID, "token.created", func(recipient *client) any {
+		if token.Visibility == store.VisibilityHidden && recipient.participant.Role != store.RoleGM {
+			return nil
+		}
+		return payload
+	})
+}
+
+type tokenDeleteRequest struct {
+	TokenID string `json:"tokenId"`
+}
+
+// handleTokenDelete takes a token off the map for everyone. GM-only,
+// matching who may create one: anyone at the table can drag a token
+// around, but only the GM decides what is on the map at all.
+//
+// Deliberately not the erase-style "your own work" rule draw.delete
+// uses. A token isn't authored the way a stroke is — it's a piece of the
+// GM's scene that a Player may be allowed to move — so there's no
+// authorship to fall back on.
+func (h *Hub) handleTokenDelete(ctx context.Context, c *client, raw json.RawMessage) {
+	if !h.requireGM(ctx, c) {
+		return
+	}
+
+	var req tokenDeleteRequest
+	if err := decodePayload(raw, &req); err != nil || req.TokenID == "" {
+		h.sendError(ctx, c, "invalid token.delete payload")
+		return
+	}
+
+	// Read before deleting, for two things the broadcast needs: the scene
+	// that scopes the permission check, and the visibility that decides
+	// who hears about it.
+	token, err := h.store.GetToken(req.TokenID)
+	if err != nil {
+		if !errors.Is(err, store.ErrNotFound) {
+			slog.Error("ws: lookup token failed", "error", err)
+		}
+		h.sendError(ctx, c, "token not found")
+		return
+	}
+	// Scoped through the token's own scene rather than one named in the
+	// payload, so a client can't reach into another room by id. A token
+	// that doesn't exist and one belonging to someone else's room answer
+	// identically.
+	if !h.sceneInRoom(c, token.SceneID) {
+		h.sendError(ctx, c, "token not found")
+		return
+	}
+
+	if err := h.store.DeleteToken(token.ID); err != nil {
+		slog.Error("ws: delete token failed", "error", err)
+		h.sendError(ctx, c, "failed to delete token")
+		return
+	}
+
+	// Withheld from Players when the token was hidden, exactly as its
+	// creation was. They were never told it existed, and an id they have
+	// never seen turning up in a deletion would tell them that it did.
+	payload := map[string]any{"tokenId": token.ID}
+	h.broadcastPerClient(ctx, c.roomID, "token.deleted", func(recipient *client) any {
 		if token.Visibility == store.VisibilityHidden && recipient.participant.Role != store.RoleGM {
 			return nil
 		}

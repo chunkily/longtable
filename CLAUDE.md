@@ -38,11 +38,12 @@ authoritative; the client never writes to the database.
 
 Working today: rooms with a GM password and player join, scenes built from an uploaded map or a
 picked library asset and managed from a picker (switch, delete, swap the map under one),
-tokens (GM creates, anyone drags, hidden ones withheld from players; anyone can click one to
-select it, which rings it on the map and shows its details above chat — local to that browser,
-never synced),
+tokens (GM creates and deletes, anyone drags, hidden ones withheld from players; anyone can click
+one to select it, which rings it on the map and shows its details above chat — local to that
+browser, never synced),
 fog the GM paints on and off a square at a time (plus reveal-all and reset for the whole scene),
-drawings (freehand/line/rect/ellipse) with an eraser and per-session undo/redo,
+drawings (freehand/line/rect/ellipse) with an eraser, and per-session undo/redo covering
+drawing, erasing and token deletion,
 pings, distance measuring, area-of-effect templates (circle/cone/line/cube, with a snap mode),
 chat with `/roll`. Every upload is decoded and re-encoded to WebP and
 joins the uploading room's library — content-addressed globally so identical uploads share one
@@ -50,8 +51,8 @@ file, but a room only ever sees what it added itself. All of it syncs live; ever
 and measurements persists.
 
 Known gaps, which is also roughly the queue: no initiative tracker, no token detail panel (so no
-HP or conditions, and no way to edit or delete a token once it exists — the details section
-above chat is where those buttons go), fog has no automatic vision from tokens, the asset library is an unfiltered grid with
+HP or conditions, and no way to edit a token once it exists — the details section above chat is
+where that button goes, next to Delete), fog has no automatic vision from tokens, the asset library is an unfiltered grid with
 no search, no WebSocket reconnect, no prebuilt releases, no way for a Host to remove a moderated
 asset or cap upload sizes per room.
 

@@ -29,18 +29,22 @@ Two behaviours worth knowing before extending this:
   no longer erase it themselves. Fixing that properly needs a server-side restore that preserves
   the original author, which is a new command rather than a tweak.
 
+## Done: token deletion
+
+[delete-token](../done/delete-token.md) has **shipped**, and with it the generalisation this item
+had been assuming. The history entry is no longer drawing-shaped: `DrawingAction` is now a
+discriminated union, `HistoryAction`, and `reverse`/`apply` switch on `kind`. Adding a third
+variant is now a case in each of those two switches plus a pair of send helpers — most of the
+cost was in the first one.
+
 ## Still open: token moves
 
 [room-member-undo-own-token-move](../../user-stories/room-member-undo-own-token-move.md) is
 untouched. Its own story defers it ("tracked when we cover the tokens feature area"), and it needs
 a different shape of history entry — a position to move back to rather than a drawing to recreate
-— though it can reuse the same stack and the same `token.move` command.
-
-## Also open: token deletion
-
-[delete-token](../open/delete-token.md) adds a second, unrelated kind of token undo entry —
-recreating a deleted token via `token.create`, the same shape as the drawing-erase undo above,
-rather than the move-undo case just above this one.
+— though it can reuse the same stack and the same `token.move` command. Note this is the one
+remaining case where the entry holds *less* than the whole object: every variant on the stack
+today carries the thing itself, and a move only needs the coordinates it came from.
 
 ## Related user stories
 

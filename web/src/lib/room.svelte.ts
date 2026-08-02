@@ -161,6 +161,10 @@ interface DrawingDeletedPayload {
 	drawingId: string;
 }
 
+interface TokenDeletedPayload {
+	tokenId: string;
+}
+
 interface PingPayload {
 	sceneId: string;
 	x: number;
@@ -172,20 +176,28 @@ interface MeasureEndedPayload {
 	participantId: string;
 }
 
-// One reversible thing this session did to the map. Both directions
-// carry the whole drawing, because undoing an erase has to put it back
-// exactly as it was, and redoing a drawing has to recreate it under the
-// same id.
+// One reversible thing this session did to the map. Every variant
+// carries the whole object rather than just its id, because undoing a
+// removal has to put it back exactly as it was — same id, same place,
+// same properties — and redoing has to recreate it the same way.
+//
+// Deleting a token rides the same stack as drawing and erasing rather
+// than getting a mechanism of its own: undoing a delete is a
+// `token.create` under the same id, exactly as undoing an erase is a
+// `draw.create` under the same id. Note the *other* token case, moving
+// one, is still not here — it needs a position to restore rather than an
+// object to recreate, which is a different shape of entry.
 //
 // A caveat that comes with restoring: the server takes a drawing's
 // author from the connection that sent it and ignores anything claimed
 // in the payload, so a GM who erases a Player's stroke and then undoes
 // gets the stroke back under their own name. It looks identical, but
-// the Player can no longer erase it themselves.
-interface DrawingAction {
-	kind: 'create' | 'erase';
-	drawing: Drawing;
-}
+// the Player can no longer erase it themselves. Tokens are unaffected —
+// they have no author, and their owner travels in the payload.
+type HistoryAction =
+	| { kind: 'create'; drawing: Drawing }
+	| { kind: 'erase'; drawing: Drawing }
+	| { kind: 'deleteToken'; token: Token };
 
 interface ErrorPayload {
 	message: string;
@@ -230,10 +242,10 @@ export class RoomClient {
 	private unsentMeasure: Measurement | null = null;
 	private measureTimer: ReturnType<typeof setTimeout> | null = null;
 
-	// This session's own drawing actions, oldest first. Reactive so the
+	// This session's own reversible actions, oldest first. Reactive so the
 	// toolbar can tell whether there is anything left to undo or redo.
-	private undoable = $state<DrawingAction[]>([]);
-	private redoable = $state<DrawingAction[]>([]);
+	private undoable = $state<HistoryAction[]>([]);
+	private redoable = $state<HistoryAction[]>([]);
 
 	connect(slug: string, sessionToken: string) {
 		this.disconnect();
@@ -402,6 +414,44 @@ export class RoomClient {
 		if (drawing) this.record({ kind: 'erase', drawing });
 	}
 
+	// Deliberately *not* optimistic, unlike the eraser. A token is deleted
+	// from a button rather than a gesture, so there is no preview shape
+	// that would blink off and back on while the round trip happens —
+	// which is the whole reason drawings render ahead of the server.
+	// token.move already waits for its broadcast the same way. Returns
+	// what was on the map so an undo entry can hold the whole token.
+	private sendDeleteToken(tokenId: string): Token | null {
+		const token = this.tokens.find((t) => t.id === tokenId);
+		if (!token) return null;
+		if (!this.send('token.delete', { tokenId })) return null;
+		return token;
+	}
+
+	// Puts a deleted token back under its own id, so it returns as the
+	// same token to everyone who still has it rather than as a new one
+	// that merely looks the same. Every property goes back on the wire:
+	// the server rebuilds the row from this payload alone.
+	private sendCreateToken(token: Token): boolean {
+		if (this.tokens.some((t) => t.id === token.id)) return false;
+		return this.send('token.create', {
+			tokenId: token.id,
+			sceneId: token.sceneId,
+			name: token.name,
+			imageAssetId: token.imageAssetId,
+			x: token.x,
+			y: token.y,
+			width: token.width,
+			height: token.height,
+			ownerParticipantId: token.ownerParticipantId,
+			visibility: token.visibility
+		});
+	}
+
+	deleteToken(tokenId: string) {
+		const token = this.sendDeleteToken(tokenId);
+		if (token) this.record({ kind: 'deleteToken', token });
+	}
+
 	// --- undo/redo ---
 	//
 	// The history is this session's own actions and nothing else, which
@@ -444,10 +494,10 @@ export class RoomClient {
 	// longer hold it — and the useful behaviour there is to skip it and
 	// undo the next thing you did, not to fail on the whole gesture.
 	private step(
-		read: () => DrawingAction[],
-		write: (next: DrawingAction[]) => void,
-		push: (action: DrawingAction) => void,
-		attempt: (action: DrawingAction) => boolean
+		read: () => HistoryAction[],
+		write: (next: HistoryAction[]) => void,
+		push: (action: HistoryAction) => void,
+		attempt: (action: HistoryAction) => boolean
 	) {
 		while (read().length > 0) {
 			const stack = read();
@@ -461,21 +511,31 @@ export class RoomClient {
 		}
 	}
 
-	private reverse(action: DrawingAction): boolean {
-		return action.kind === 'create'
-			? this.sendErase(action.drawing.id) !== null
-			: this.sendCreate(action.drawing);
+	private reverse(action: HistoryAction): boolean {
+		switch (action.kind) {
+			case 'create':
+				return this.sendErase(action.drawing.id) !== null;
+			case 'erase':
+				return this.sendCreate(action.drawing);
+			case 'deleteToken':
+				return this.sendCreateToken(action.token);
+		}
 	}
 
-	private apply(action: DrawingAction): boolean {
-		return action.kind === 'create'
-			? this.sendCreate(action.drawing)
-			: this.sendErase(action.drawing.id) !== null;
+	private apply(action: HistoryAction): boolean {
+		switch (action.kind) {
+			case 'create':
+				return this.sendCreate(action.drawing);
+			case 'erase':
+				return this.sendErase(action.drawing.id) !== null;
+			case 'deleteToken':
+				return this.sendDeleteToken(action.token.id) !== null;
+		}
 	}
 
 	// Doing something new abandons the branch you had undone your way
 	// out of, so there is nothing left to redo.
-	private record(action: DrawingAction) {
+	private record(action: HistoryAction) {
 		this.undoable = [...this.undoable, action];
 		this.redoable = [];
 	}
@@ -621,6 +681,12 @@ export class RoomClient {
 			case 'token.created':
 				this.tokens = [...this.tokens, env.payload as Token];
 				break;
+
+			case 'token.deleted': {
+				const payload = env.payload as TokenDeletedPayload;
+				this.tokens = this.tokens.filter((t) => t.id !== payload.tokenId);
+				break;
+			}
 
 			case 'token.moved': {
 				const payload = env.payload as TokenMovedPayload;

@@ -30,6 +30,7 @@
 	import Cone from '@lucide/svelte/icons/cone';
 	import Minus from '@lucide/svelte/icons/minus';
 	import Square from '@lucide/svelte/icons/square';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
 
 	const slug = $derived(page.params.slug ?? '');
 
@@ -247,8 +248,8 @@
 
 	<!-- Fixed above the message list in both layouts — the desktop sidebar
 	     and the mobile sheet — rather than scrolling away with the chat.
-	     The row is deliberately roomy on the right: Edit (token detail
-	     panel) and Delete (delete-token) both land there. -->
+	     Still room on the right for Edit, which is the token detail
+	     panel's to add. -->
 	{#snippet tokenDetails(token: Token | null)}
 		<section aria-label="Selected token" class="flex items-center gap-2 rounded-md border p-2">
 			{#if token}
@@ -260,6 +261,20 @@
 							: ''}
 					</p>
 				</div>
+				{#if isGM}
+					<!-- Not behind a confirmation, unlike deleting a scene: the
+					     deletion is undoable, which is the cheaper answer to a
+					     misclick than a dialog on every deliberate one. -->
+					<Button
+						variant="outline"
+						size="sm"
+						aria-label="Delete token"
+						title="Delete this token (Ctrl+Z to bring it back)"
+						onclick={() => client?.deleteToken(token.id)}
+					>
+						<Trash2 class="h-4 w-4" />
+					</Button>
+				{/if}
 			{:else}
 				<p class="text-sm text-muted-foreground">No token selected — click one on the map.</p>
 			{/if}
@@ -476,7 +491,7 @@
 								variant="outline"
 								size="sm"
 								disabled={!client.canUndo}
-								title="Undo your last drawing or erase (Ctrl+Z)"
+								title="Undo your last drawing, erase or token deletion (Ctrl+Z)"
 								aria-label="Undo"
 								onclick={() => client?.undo()}
 							>
