@@ -23,6 +23,7 @@ Envelope both ways:
 | `chat.send` | anyone | yes | `chat.posted` |
 | `token.create` | GM only | yes | `token.created` (GM-only if hidden) |
 | `token.move` | anyone | yes | `token.moved` |
+| `token.update` | GM only | yes | `token.updated` (+ `token.deleted` to Players on hiding) |
 | `token.delete` | GM only | yes | `token.deleted` (GM-only if hidden) |
 | `fog.reveal` | GM only | yes | `fog.revealed` |
 | `fog.hide` | GM only | yes | `fog.hidden` |
@@ -74,12 +75,37 @@ the token was hidden, exactly as its creation was; an id they were never told ab
 a deletion is itself the leak. Undoing a deletion is a `token.create` carrying the original id,
 so the token returns as the same token to everyone still holding it.
 
+`token.update` carries *every* editable field each time (name, image, size, visibility) rather
+than only the changed ones — a `*string` can't tell "left alone" from "cleared", and clearing a
+token's art is a real edit. It deliberately doesn't carry position: that's `token.move`'s, so an
+edit dialog opened before a drag can't undo the drag when it's submitted after one. The handler
+loads the token and edits it in place, which is what keeps a field the command doesn't mention
+(an owner today, an HP later) from being nulled by a form that predates it.
+
+Its broadcast is the only one that depends on what the token *used to be*, because crossing the
+hidden line has to say something different in each direction:
+
+| Was | Now | GM gets | Player gets |
+| --- | --- | --- | --- |
+| visible | visible | `token.updated` | `token.updated` |
+| hidden | visible | `token.updated` | `token.updated` (the whole token — they never had it) |
+| visible | hidden | `token.updated` | `token.deleted` |
+| hidden | hidden | `token.updated` | nothing |
+
+Which is why **`token.updated` is an upsert on the client**, not a replace: a revealed token
+reaches someone who has never held it. And why hiding sends Players a *deletion* of a row that
+still exists — from their side that is exactly what happened, since a hidden token has never been
+something a Player is told about. A dedicated `token.hidden` event would be more precise and buy
+the client nothing.
+
 Notable gaps as of the last pass: there is no way to move a token with an ownership lock, and no
-way to edit a token's properties after creation. See `planning/backlog/in-progress/`.
+way to assign a token's owner (blocked on listing a room's participants). See
+`planning/backlog/in-progress/`.
 
 ## Events (server → client)
 
-`state.sync`, `chat.posted`, `token.created`, `token.moved`, `token.deleted`, `fog.revealed`, `fog.hidden`,
+`state.sync`, `chat.posted`, `token.created`, `token.moved`, `token.updated`, `token.deleted`,
+`fog.revealed`, `fog.hidden`,
 `fog.reset`, `scene.activated`, `scene.created`, `scene.updated`, `scene.deleted`,
 `drawing.created`, `drawing.deleted`, `ping`, `measure.updated`, `measure.ended`, `error`.
 

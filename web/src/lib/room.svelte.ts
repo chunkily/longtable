@@ -447,6 +447,23 @@ export class RoomClient {
 		});
 	}
 
+	// Every editable field goes every time, not only the changed ones: the
+	// wire can't tell "left alone" from "cleared", and clearing a token's
+	// art is a real edit. Position isn't here — that's moveToken's, so an
+	// edit dialog opened before a drag can't undo the drag on submit.
+	updateToken(
+		tokenId: string,
+		fields: {
+			name: string;
+			imageAssetId: string | null;
+			width: number;
+			height: number;
+			visibility: 'visible' | 'hidden';
+		}
+	) {
+		this.send('token.update', { tokenId, ...fields });
+	}
+
 	deleteToken(tokenId: string) {
 		const token = this.sendDeleteToken(tokenId);
 		if (token) this.record({ kind: 'deleteToken', token });
@@ -681,6 +698,22 @@ export class RoomClient {
 			case 'token.created':
 				this.tokens = [...this.tokens, env.payload as Token];
 				break;
+
+			// An upsert, not a replace. A token that was hidden and has just
+			// been revealed arrives here at a client that has never held it —
+			// the server sends the whole token precisely so this case needs
+			// no separate event. Going the other way (revealed to hidden) a
+			// Player gets token.deleted instead, since an event withheld from
+			// them can't tell them to stop looking at something.
+			case 'token.updated': {
+				const token = env.payload as Token;
+				const existing = this.tokens.findIndex((t) => t.id === token.id);
+				this.tokens =
+					existing === -1
+						? [...this.tokens, token]
+						: this.tokens.map((t) => (t.id === token.id ? token : t));
+				break;
+			}
 
 			case 'token.deleted': {
 				const payload = env.payload as TokenDeletedPayload;

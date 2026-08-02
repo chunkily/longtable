@@ -858,6 +858,34 @@ describe('RoomClient', () => {
 		visibility: 'visible'
 	};
 
+	it('replaces a token it already holds on token.updated', () => {
+		const { client, socket } = roomWithTokens([goblin, { ...goblin, id: 't2' }]);
+
+		socket.emit({ type: 'token.updated', payload: { ...goblin, name: 'Hobgoblin', width: 2 } });
+
+		expect(client.tokens.map((t) => t.id)).toEqual(['t1', 't2']);
+		expect(client.tokens[0].name).toBe('Hobgoblin');
+		expect(client.tokens[0].width).toBe(2);
+	});
+
+	// A hidden token being revealed reaches a Player who has never held
+	// it, because they were never told it existed. The server sends the
+	// whole token for exactly this case rather than a separate event, so
+	// an update for an unknown id has to add it rather than be dropped.
+	it('adds a token it has never seen on token.updated', () => {
+		const { client, socket } = roomWithTokens([goblin]);
+
+		socket.emit({
+			type: 'token.updated',
+			payload: { ...goblin, id: 'revealed', name: 'Ambusher' }
+		});
+
+		expect(client.tokens.map((t) => t.id)).toEqual(['t1', 'revealed']);
+	});
+
+	// The other direction: a Player watching a token get hidden is told
+	// it was deleted, since an event withheld from them can't tell them
+	// to stop looking at it.
 	it('removes a token on token.deleted', () => {
 		const { client, socket } = roomWithTokens([goblin, { ...goblin, id: 't2' }]);
 
@@ -928,6 +956,33 @@ describe('RoomClient', () => {
 
 		expect(sentTypes(socket)).toEqual(['token.delete']);
 		expect(client.canUndo).toBe(false);
+	});
+
+	it('sends every editable field on token.update, so a cleared image stays cleared', () => {
+		const { client, socket } = roomWithTokens([{ ...goblin, imageAssetId: 'art' }]);
+
+		client.updateToken('t1', {
+			name: 'Hobgoblin',
+			imageAssetId: null,
+			width: 2,
+			height: 2,
+			visibility: 'hidden'
+		});
+
+		expect(JSON.parse(socket.sent[0])).toEqual({
+			type: 'token.update',
+			payload: {
+				tokenId: 't1',
+				name: 'Hobgoblin',
+				imageAssetId: null,
+				width: 2,
+				height: 2,
+				visibility: 'hidden'
+			}
+		});
+		// Nothing changes locally: unlike a drawing there is no preview
+		// shape to blink, so this waits for the broadcast like token.move.
+		expect(client.tokens[0].name).toBe('Goblin');
 	});
 
 	it('records nothing for a token deletion that could not be sent', () => {

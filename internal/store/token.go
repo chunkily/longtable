@@ -54,6 +54,24 @@ func (s *Store) MoveToken(id string, x, y float64) error {
 	return err
 }
 
+// UpdateToken rewrites a token's editable properties from t, keyed by
+// t.ID. Position is deliberately not among them: moving is token.move's
+// job, and folding it in here would let an edit dialog opened before a
+// drag undo the drag when it was submitted after one.
+//
+// Every column it touches is written, so callers pass a whole token
+// rather than a patch — load it, change what changed, hand it back. That
+// is what keeps a field nobody's editing yet (an owner, one day an HP)
+// from being quietly nulled by a form that didn't know about it.
+func (s *Store) UpdateToken(t Token) error {
+	_, err := s.db.Exec(
+		`UPDATE token SET name = ?, image_asset_id = ?, width = ?, height = ?, owner_participant_id = ?, visibility = ?
+		 WHERE id = ?`,
+		t.Name, t.ImageAssetID, t.Width, t.Height, t.OwnerParticipantID, string(t.Visibility), t.ID,
+	)
+	return err
+}
+
 // GetToken loads a single token by ID. The WS hub needs its scene before
 // it can decide whether the caller is allowed to touch it, and its
 // visibility before it can decide who is even told it's gone.

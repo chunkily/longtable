@@ -216,6 +216,8 @@ func (h *Hub) handleMessage(ctx context.Context, c *client, data []byte) {
 		h.handleTokenMove(ctx, c, env.Payload)
 	case "token.create":
 		h.handleTokenCreate(ctx, c, env.Payload)
+	case "token.update":
+		h.handleTokenUpdate(ctx, c, env.Payload)
 	case "token.delete":
 		h.handleTokenDelete(ctx, c, env.Payload)
 	case "fog.reveal":
@@ -442,6 +444,119 @@ func (h *Hub) handleTokenCreate(ctx context.Context, c *client, raw json.RawMess
 		}
 		return payload
 	})
+}
+
+// tokenUpdateRequest is token.create's payload minus the things an edit
+// can't change: which scene it's on, and where it stands. Every editable
+// field is sent every time rather than only the changed ones — a *string
+// can't tell "left alone" from "cleared", and clearing a token's art is
+// a real edit someone will want.
+type tokenUpdateRequest struct {
+	TokenID      string  `json:"tokenId"`
+	Name         string  `json:"name"`
+	ImageAssetID *string `json:"imageAssetId"`
+	Width        float64 `json:"width"`
+	Height       float64 `json:"height"`
+	Visibility   string  `json:"visibility"`
+}
+
+// handleTokenUpdate edits a token in place. GM-only, like creating and
+// deleting one.
+//
+// When ownership-based permissions arrive this is where they split: a
+// Player who owns a token should be able to change its HP without being
+// able to touch its visibility, so the role check will have to become
+// per-field rather than the single gate it is here.
+func (h *Hub) handleTokenUpdate(ctx context.Context, c *client, raw json.RawMessage) {
+	if !h.requireGM(ctx, c) {
+		return
+	}
+
+	var req tokenUpdateRequest
+	if err := decodePayload(raw, &req); err != nil || req.TokenID == "" || req.Name == "" {
+		h.sendError(ctx, c, "invalid token.update payload")
+		return
+	}
+
+	// Loaded before anything is changed, for three things: the scene that
+	// scopes the permission check, the visibility it's coming *from*, and
+	// the fields this command doesn't carry — which are preserved by
+	// editing the loaded token rather than building a fresh one.
+	token, err := h.store.GetToken(req.TokenID)
+	if err != nil {
+		if !errors.Is(err, store.ErrNotFound) {
+			slog.Error("ws: lookup token failed", "error", err)
+		}
+		h.sendError(ctx, c, "token not found")
+		return
+	}
+	if !h.sceneInRoom(c, token.SceneID) {
+		h.sendError(ctx, c, "token not found")
+		return
+	}
+	if !h.requireAssetInRoom(ctx, c, req.ImageAssetID) {
+		return
+	}
+
+	visibility := store.Visibility(req.Visibility)
+	if visibility == "" {
+		visibility = store.VisibilityVisible
+	}
+	if visibility != store.VisibilityVisible && visibility != store.VisibilityHidden {
+		h.sendError(ctx, c, "visibility must be \"visible\" or \"hidden\"")
+		return
+	}
+
+	width, height := req.Width, req.Height
+	if width == 0 {
+		width = 1
+	}
+	if height == 0 {
+		height = 1
+	}
+
+	wasHidden := token.Visibility == store.VisibilityHidden
+
+	token.Name = req.Name
+	token.ImageAssetID = req.ImageAssetID
+	token.Width = width
+	token.Height = height
+	token.Visibility = visibility
+
+	if err := h.store.UpdateToken(token); err != nil {
+		slog.Error("ws: update token failed", "error", err)
+		h.sendError(ctx, c, "failed to update token")
+		return
+	}
+
+	// Withheld from Players while the token is hidden, as ever. A Player
+	// who *can* see it gets the whole token rather than a diff, so the
+	// same event serves the token they already had and one that has just
+	// become visible to them — their client upserts on id.
+	payload := tokenPayload(token)
+	nowHidden := token.Visibility == store.VisibilityHidden
+	h.broadcastPerClient(ctx, c.roomID, "token.updated", func(recipient *client) any {
+		if nowHidden && recipient.participant.Role != store.RoleGM {
+			return nil
+		}
+		return payload
+	})
+
+	// Going visible -> hidden is the one transition the update alone
+	// can't express: Players are holding a token they must now stop
+	// seeing, and the event that withheld itself from them told them
+	// nothing. They get a deletion instead, which is exactly what has
+	// happened as far as their map is concerned — the row lives on, but
+	// hidden tokens have never been something a Player is told exists.
+	if nowHidden && !wasHidden {
+		gone := map[string]any{"tokenId": token.ID}
+		h.broadcastPerClient(ctx, c.roomID, "token.deleted", func(recipient *client) any {
+			if recipient.participant.Role == store.RoleGM {
+				return nil
+			}
+			return gone
+		})
+	}
 }
 
 type tokenDeleteRequest struct {

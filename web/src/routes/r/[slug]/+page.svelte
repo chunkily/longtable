@@ -16,6 +16,7 @@
 	import CreateSceneDialog from '$lib/components/create-scene-dialog.svelte';
 	import SceneManagerDialog from '$lib/components/scene-manager-dialog.svelte';
 	import CreateTokenDialog from '$lib/components/create-token-dialog.svelte';
+	import TokenDetailDialog from '$lib/components/token-detail-dialog.svelte';
 	import Pen from '@lucide/svelte/icons/pen';
 	import Slash from '@lucide/svelte/icons/slash';
 	import RectangleHorizontal from '@lucide/svelte/icons/rectangle-horizontal';
@@ -247,10 +248,8 @@
 	{/snippet}
 
 	<!-- Fixed above the message list in both layouts — the desktop sidebar
-	     and the mobile sheet — rather than scrolling away with the chat.
-	     Still room on the right for Edit, which is the token detail
-	     panel's to add. -->
-	{#snippet tokenDetails(token: Token | null)}
+	     and the mobile sheet — rather than scrolling away with the chat. -->
+	{#snippet tokenDetails(room: RoomClient, token: Token | null)}
 		<section aria-label="Selected token" class="flex items-center gap-2 rounded-md border p-2">
 			{#if token}
 				<div class="min-w-0 flex-1">
@@ -261,7 +260,13 @@
 							: ''}
 					</p>
 				</div>
-				{#if isGM}
+				{#if isGM && session}
+					<TokenDetailDialog
+						{room}
+						{token}
+						roomSlug={session.roomSlug}
+						sessionToken={session.sessionToken}
+					/>
 					<!-- Not behind a confirmation, unlike deleting a scene: the
 					     deletion is undoable, which is the cheaper answer to a
 					     misclick than a dialog on every deliberate one. -->
@@ -270,7 +275,7 @@
 						size="sm"
 						aria-label="Delete token"
 						title="Delete this token (Ctrl+Z to bring it back)"
-						onclick={() => client?.deleteToken(token.id)}
+						onclick={() => room.deleteToken(token.id)}
 					>
 						<Trash2 class="h-4 w-4" />
 					</Button>
@@ -574,7 +579,7 @@
 
 			<Card.Root class="hidden w-full lg:flex lg:max-w-sm">
 				<Card.Content class="flex flex-col gap-3">
-					{@render tokenDetails(selectedToken)}
+					{@render tokenDetails(client, selectedToken)}
 					{@render chatMessages(client, 'max-h-96')}
 					{@render chatForm()}
 				</Card.Content>
@@ -585,7 +590,7 @@
 	<div class="fixed inset-x-0 bottom-0 lg:hidden">
 		{#if mobileChatOpen}
 			<div class="flex max-h-[60vh] flex-col gap-3 border-t bg-background p-4 shadow-lg">
-				{@render tokenDetails(selectedToken)}
+				{@render tokenDetails(client, selectedToken)}
 				{@render chatMessages(client, 'flex-1')}
 				{@render chatForm()}
 			</div>
