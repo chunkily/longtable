@@ -5,6 +5,8 @@ import {
 	cubePolygon,
 	cubeSide,
 	linePolygon,
+	quantiseFeet,
+	quantiseTemplateEnd,
 	snapPoint,
 	templateFeet,
 	templateLabel,
@@ -57,12 +59,14 @@ describe('sizes and labels', () => {
 	});
 
 	// A cube is named by its side, but dragged by its diagonal — so an
-	// axis-aligned drag of 2 squares is a 7 ft cube standing on a corner,
-	// not a 10 ft one.
+	// axis-aligned drag of 2 squares is a cube standing on a corner whose
+	// side is 2/√2 squares, not a 10 ft one. That works out at 7.07 ft,
+	// which is where the sizes no spell has used to come from; it now
+	// reports the nearest real one.
 	it('measures a cube by its side, not the diagonal that was dragged', () => {
 		expect(cubeSide(ORIGIN, { x: 2 * GRID, y: 2 * GRID })).toBeCloseTo(2 * GRID);
 		expect(templateFeet('cube', ORIGIN, { x: 2 * GRID, y: 2 * GRID }, GRID)).toBe(10);
-		expect(templateFeet('cube', ORIGIN, { x: 2 * GRID, y: 0 }, GRID)).toBe(7);
+		expect(templateFeet('cube', ORIGIN, { x: 2 * GRID, y: 0 }, GRID)).toBe(5);
 	});
 
 	it('names the shape, since the same number reads differently per shape', () => {
@@ -71,6 +75,63 @@ describe('sizes and labels', () => {
 		expect(templateLabel('cone', ORIGIN, to, GRID)).toBe('15 ft cone');
 		expect(templateLabel('line', ORIGIN, to, GRID, 10)).toBe('15 ft line, 10 ft wide');
 		expect(templateLabel('cube', ORIGIN, { x: 2 * GRID, y: 2 * GRID }, GRID)).toBe('10 ft cube');
+	});
+});
+
+describe('quantising to whole area sizes', () => {
+	it('rounds to the nearest 5 ft, which is every size the rules use', () => {
+		expect(quantiseFeet(7)).toBe(5);
+		expect(quantiseFeet(8)).toBe(10);
+		expect(quantiseFeet(20)).toBe(20);
+		expect(quantiseFeet(22.4)).toBe(20);
+	});
+
+	// Rounding to nearest alone sends anything under half a step to zero,
+	// which would make a template vanish for the first few pixels of every
+	// drag. A drag of nothing is still nothing, though — that is what
+	// keeps a shape off the map on mousedown.
+	it('never rounds a real drag away to nothing, but leaves a still pointer alone', () => {
+		expect(quantiseFeet(1)).toBe(5);
+		expect(quantiseFeet(2.4)).toBe(5);
+		expect(quantiseFeet(0)).toBe(0);
+	});
+
+	// The case that started this: two grid corners one square apart
+	// diagonally are 5·√2 ≈ 7.07 ft, so snapping the origin was never
+	// going to be enough on its own.
+	it('takes the diagonal between two snapped corners to a real size', () => {
+		const end = quantiseTemplateEnd('circle', ORIGIN, { x: GRID, y: GRID }, GRID);
+
+		expect(templateFeet('circle', ORIGIN, end, GRID)).toBe(5);
+		expect(circleRadius(ORIGIN, end)).toBeCloseTo(GRID);
+	});
+
+	it('keeps the direction the drag gave it, and only changes the length', () => {
+		const to = { x: 123, y: 47 };
+		const end = quantiseTemplateEnd('circle', ORIGIN, to, GRID);
+
+		// Same bearing to well past the precision anyone could point at.
+		expect(Math.atan2(end.y, end.x)).toBeCloseTo(Math.atan2(to.y, to.x), 10);
+		// 131.7 world units is 9.4 ft, which rounds up to 10.
+		expect(templateFeet('circle', ORIGIN, end, GRID)).toBe(10);
+	});
+
+	// A cube is dragged along its diagonal and named by its side, so the
+	// quantised side has to be stretched back out before it can say where
+	// the pointer's corner belongs.
+	it('quantises a cube by its side and returns the matching diagonal', () => {
+		const end = quantiseTemplateEnd('cube', ORIGIN, { x: 2 * GRID, y: 0 }, GRID);
+
+		expect(templateFeet('cube', ORIGIN, end, GRID)).toBe(5);
+		expect(cubeSide(ORIGIN, end)).toBeCloseTo(GRID);
+		expect(sideLengths(cubePolygon(ORIGIN, end)).every((s) => Math.abs(s - GRID) < 1e-9)).toBe(
+			true
+		);
+	});
+
+	it('leaves a drag that has not moved, and a scene with no grid, alone', () => {
+		expect(quantiseTemplateEnd('circle', ORIGIN, ORIGIN, GRID)).toEqual(ORIGIN);
+		expect(quantiseTemplateEnd('circle', ORIGIN, { x: 33, y: 47 }, 0)).toEqual({ x: 33, y: 47 });
 	});
 });
 

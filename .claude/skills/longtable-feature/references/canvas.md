@@ -41,7 +41,9 @@ they all interpret a left-drag differently. The toolbar lives in
 `web/src/routes/r/[slug]/+page.svelte` and toggles — clicking the active tool returns to `'none'`.
 
 The two fog tools share one branch in `attachToolHandlers`: same sweep over the same cells,
-differing only in which command the gesture ends with and the colour it previews in. The
+differing only in which command the gesture ends with and the colour it previews in. Only
+templates snap or quantise — the distance line already reports whole squares from the cells its
+ends fall in, and is a ruler rather than a spell. The
 whole-scene fog actions (`Reveal all`, `Reset fog`) are plain buttons rather than tools —
 neither has a gesture to make, and making them modes would arm something that fires on the next
 click anywhere on the map.
@@ -49,7 +51,14 @@ click anywhere on the map.
 The four area templates share the *measuring tool's* branch, since they are the same gesture with
 a different shape on the wire (see `$lib/aoe`, and its header comment on why nothing highlights
 the squares a template covers). Their options — snap mode, and a Line's width — live in a row
-that only appears while a template tool is active. Note that row changes the page height, which
+that only appears while a template tool is active.
+
+The two ends of a template drag are treated differently, and only for templates. The **origin**
+obeys the snap mode; the **far end** is not snapped but quantised — its direction is taken as
+dragged and its length rounded to the nearest 5 ft, because every printed area is a multiple of
+5. Snapping the far end as well would only coarsen the direction, and the quantise would move it
+off the grid regardless. Note snapping the origin alone never fixed this: a one-square diagonal
+between two corners is 5·√2 ≈ 7.07 ft. Note that row changes the page height, which
 moves the canvas: an e2e spec must re-read `canvasOrigin` after selecting a template tool, or
 every drag it makes is silently offset.
 

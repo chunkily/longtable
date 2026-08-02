@@ -44,7 +44,8 @@ browser, never synced),
 fog the GM paints on and off a square at a time (plus reveal-all and reset for the whole scene),
 drawings (freehand/line/rect/ellipse) with an eraser, and per-session undo/redo covering
 drawing, erasing and token deletion,
-pings, distance measuring, area-of-effect templates (circle/cone/line/cube, with a snap mode),
+pings, distance measuring, area-of-effect templates (circle/cone/line/cube, origin on a snap
+mode and size in whole 5 ft steps),
 chat with `/roll`. Every upload is decoded and re-encoded to WebP and
 joins the uploading room's library — content-addressed globally so identical uploads share one
 file, but a room only ever sees what it added itself. All of it syncs live; everything but pings

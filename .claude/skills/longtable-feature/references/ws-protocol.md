@@ -45,9 +45,10 @@ feet rather than world units so it means the same on a scene with a different gr
 templates share the distance line's whole lifecycle — one per participant, replaced on each
 update, cleaned up on disconnect — so nothing else about the relay changes.
 
-Neither the distance nor a template's outline is computed server-side, and snapping is applied on
-the client *before* sending. The points that arrive are final: a recipient renders what it's
-given and never has to know which snap convention produced them.
+Neither the distance nor a template's outline is computed server-side, and both snapping (of the
+origin) and 5 ft quantising (of the far end) are applied on the client *before* sending. The
+points that arrive are final: a recipient renders what it's given and never has to know which
+snap convention produced them, or that the length was rounded at all.
 
 Unknown command types get an `error` back naming the type. `chat.send` text starting with `/` is
 routed to `handleSlashCommand` (only `/roll` and `/r` today; unknown commands error back to the

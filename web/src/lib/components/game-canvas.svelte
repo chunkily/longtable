@@ -6,6 +6,7 @@
 	import {
 		DEFAULT_LINE_WIDTH_FEET,
 		circleRadius,
+		quantiseTemplateEnd,
 		snapPoint,
 		templateLabel,
 		templatePolygon,
@@ -700,20 +701,28 @@
 			// the tool was reselected.
 			const snap = snapMode;
 			const width = templateKind === 'line' ? lineWidthFeet : undefined;
-			const place = (point: DrawingPoint) =>
+			// The two ends are treated differently, and only for templates.
+			// The origin obeys the snap setting; the far end is left where
+			// the pointer put it and then pulled to the nearest whole area
+			// size, so the drag sets direction and the rules set length.
+			// Snapping the far end too would only coarsen the direction, and
+			// the quantise would move it off the grid regardless.
+			const placeOrigin = (point: DrawingPoint) =>
 				templateKind ? snapPoint(point, gridSize, snap) : point;
+			const placeEnd = (start: DrawingPoint, point: DrawingPoint) =>
+				templateKind ? quantiseTemplateEnd(templateKind, start, point, gridSize) : point;
 
 			stage.on('mousedown.tool touchstart.tool', (e) => {
 				if (!isPrimaryPointer(e)) return;
 				const pos = stage!.getRelativePointerPosition();
 				if (!pos) return;
-				measureStart = place(pos);
+				measureStart = placeOrigin(pos);
 				room.updateMeasure(sceneId, measureStart, measureStart, kind, width);
 			});
 			stage.on('mousemove.tool touchmove.tool', () => {
 				const pos = stage!.getRelativePointerPosition();
 				if (!measureStart || !pos) return;
-				room.updateMeasure(sceneId, measureStart, place(pos), kind, width);
+				room.updateMeasure(sceneId, measureStart, placeEnd(measureStart, pos), kind, width);
 			});
 			stage.on('mouseup.tool touchend.tool', (e) => {
 				if (!isPrimaryPointer(e)) return;

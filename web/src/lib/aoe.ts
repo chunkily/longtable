@@ -27,6 +27,13 @@
 //     to be supplied.
 //   Cube   -> a square, taken from two opposite corners so one drag
 //     gives size and rotation together.
+//
+// Sizes are quantised to 5 ft, which is a different question from the
+// one above and answered the other way. Refusing to say which squares an
+// area catches is refusing to adjudicate a disagreement; rounding a size
+// to 5 ft is repeating something the rules already settled, since no
+// printed area is anything else. A drag that produced a 7 ft cone wasn't
+// offering a choice, it was offering a spell nobody has.
 
 import { FEET_PER_SQUARE } from './measure';
 import type { DrawingPoint } from './room.svelte';
@@ -35,13 +42,31 @@ import type { DrawingPoint } from './room.svelte';
 export type TemplateKind = 'circle' | 'cone' | 'line' | 'cube';
 
 /**
- * Where a template's points are allowed to land. Tables genuinely
- * disagree here — some place a burst on a cell centre, some on an
- * intersection, some eyeball it — so this is a setting rather than a
- * rule, and it only ever affects the person dragging: the points that
- * go on the wire are already snapped.
+ * Where a template's **point of origin** is allowed to land. Tables
+ * genuinely disagree here — some place a burst on a cell centre, some on
+ * an intersection, some eyeball it — so this is a setting rather than a
+ * rule, and it only ever affects the person dragging: the points that go
+ * on the wire are already snapped.
+ *
+ * It governs the origin alone. The far end of the drag isn't snapped,
+ * because quantiseTemplateEnd moves it anyway — the drag's *direction*
+ * is taken as given and its *length* is rounded to a whole area size.
+ * Snapping it first would only coarsen the direction, which is the one
+ * thing a drag is genuinely good at expressing.
  */
 export type SnapMode = 'free' | 'centres' | 'intersections';
+
+/**
+ * The increment every area size is rounded to. Every area in the 2024
+ * PHB is a multiple of 5 ft — there is no 7 ft cone — so a drag landing
+ * between increments describes a spell nobody has.
+ *
+ * Kept separate from FEET_PER_SQUARE despite both being 5 today. That
+ * one is how much ground a square covers; this one is the increment the
+ * rules are written in. A scene that one day records its own scale
+ * should change the first without touching the second.
+ */
+export const TEMPLATE_STEP_FEET = 5;
 
 /** Default line width in feet, the narrowest a Line ever gets. */
 export const DEFAULT_LINE_WIDTH_FEET = 5;
@@ -104,7 +129,56 @@ export function templateFeet(
 	gridSize: number
 ): number {
 	const length = kind === 'cube' ? cubeSide(from, to) : distanceBetween(from, to);
-	return worldToFeet(length, gridSize);
+	return quantiseFeet(worldToFeet(length, gridSize));
+}
+
+/**
+ * A size in feet rounded to the increment the rules use, and never less
+ * than one step once a drag has started. The clamp matters: rounding to
+ * nearest alone sends anything under half a step to zero, so a template
+ * would wink out of existence for the first few pixels of every drag.
+ * A drag of nothing at all is still nothing — that's what keeps a shape
+ * from appearing on mousedown, before there's a direction to give it.
+ */
+export function quantiseFeet(feet: number): number {
+	if (feet <= 0) return 0;
+	return Math.max(TEMPLATE_STEP_FEET, Math.round(feet / TEMPLATE_STEP_FEET) * TEMPLATE_STEP_FEET);
+}
+
+/**
+ * The drag's far end moved to the nearest whole area size, keeping the
+ * direction the drag gave it.
+ *
+ * This is what stops a 7 ft cone existing. Snapping the origin doesn't
+ * achieve it on its own — a one-square *diagonal* between two corners is
+ * 5·√2 ≈ 7.07 ft, so the tidiest possible drag still produced a size no
+ * spell has. Quantising the length is the only thing that fixes it, and
+ * it has to move the point rather than only the label, or the outline
+ * goes on drawing a size it isn't claiming to be.
+ *
+ * Applied on the client before anything goes on the wire, exactly as
+ * snapping is: what other people receive is already final.
+ */
+export function quantiseTemplateEnd(
+	kind: TemplateKind,
+	from: DrawingPoint,
+	to: DrawingPoint,
+	gridSize: number
+): DrawingPoint {
+	const dragged = distanceBetween(from, to);
+	if (dragged === 0 || gridSize <= 0) return to;
+
+	const feet = templateFeet(kind, from, to, gridSize);
+	// A cube is dragged along its diagonal but named by its side, so the
+	// quantised side has to be stretched back out to a diagonal before it
+	// can say where the pointer's corner belongs.
+	const side = feetToWorld(feet, gridSize);
+	const length = kind === 'cube' ? side * Math.SQRT2 : side;
+
+	return {
+		x: from.x + ((to.x - from.x) / dragged) * length,
+		y: from.y + ((to.y - from.y) / dragged) * length
+	};
 }
 
 /** The floating label: the size, and which shape is being measured. */

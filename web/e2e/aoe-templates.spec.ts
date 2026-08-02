@@ -173,31 +173,68 @@ test('a line template redraws wider when its width is changed', async ({ browser
 test('snapping moves where a template lands without changing the drag', async ({ browser }) => {
 	const gm = await openRoomAsGM(browser, 'Template Snap');
 
-	// A drag deliberately ending off both a corner and a centre, and long
-	// enough that snapping can't collapse it to nothing.
+	// A point of origin deliberately off both a corner and a centre: at a
+	// 70px grid this snaps to (280, 210), a good 28px away.
 	const offGrid = { x: 263, y: 187 };
 
-	async function inkAfterDrag(): Promise<number> {
+	// The origin dot, in a small box around the raw pointer position. This
+	// asks "did the origin land where I pointed, or somewhere else" —
+	// which is the only thing snapping still decides. Whole-layer ink
+	// can't answer it any more: snapping moves the origin without changing
+	// the radius, and a circle of the same size translated a few pixels
+	// covers the same count.
+	//
+	// Counting *opaque* pixels rather than any ink is what makes it work
+	// at all. A template is filled at 0.18 alpha, so the probe sits inside
+	// the circle either way and "is there anything here" answers yes in
+	// both. The origin dot is solid, so a threshold well above 46 sees the
+	// dot and ignores the fill it is sitting on.
+	async function originDotInk(): Promise<number> {
+		return gm.page.evaluate(
+			({ layer, x, y }) => {
+				const canvas = document.querySelectorAll('canvas')[layer] as HTMLCanvasElement;
+				const context = canvas.getContext('2d')!;
+				const dpr = window.devicePixelRatio || 1;
+				const radius = 8;
+				const data = context.getImageData(
+					(x - radius) * dpr,
+					(y - radius) * dpr,
+					radius * 2 * dpr,
+					radius * 2 * dpr
+				).data;
+
+				let opaque = 0;
+				for (let i = 3; i < data.length; i += 4) if (data[i] > 200) opaque++;
+				return opaque;
+			},
+			{ layer: MEASURE_LAYER, x: offGrid.x, y: offGrid.y }
+		);
+	}
+
+	async function dragFromOffGrid(): Promise<number> {
 		const origin = await canvasOrigin(gm.page);
-		await gm.page.mouse.move(origin.x + FROM.x, origin.y + FROM.y);
+		await gm.page.mouse.move(origin.x + offGrid.x, origin.y + offGrid.y);
 		await gm.page.mouse.down();
-		await gm.page.mouse.move(origin.x + offGrid.x, origin.y + offGrid.y, { steps: 6 });
+		await gm.page.mouse.move(origin.x + TO.x, origin.y + TO.y, { steps: 6 });
 		await expect.poll(() => measureInk(gm.page)).toBeGreaterThan(0);
-		const ink = await measureInk(gm.page);
+		const ink = await originDotInk();
 		await gm.page.mouse.up();
 		await expect.poll(() => measureInk(gm.page)).toBe(0);
 		return ink;
 	}
 
 	await selectTool(gm.page, 'Circle template');
-	const snappedToCorners = await inkAfterDrag();
+	const snappedToCorners = await dragFromOffGrid();
 
 	await gm.page.getByRole('button', { name: 'Free', exact: true }).click();
-	const unsnapped = await inkAfterDrag();
+	const unsnapped = await dragFromOffGrid();
 
-	// Snapping rounds the radius to whole squares, so the same pointer
-	// path gives a different circle once it's off.
-	expect(unsnapped).not.toBe(snappedToCorners);
+	// Left free, the origin dot sits under the pointer. Snapped to
+	// corners it has moved off to an intersection, taking the dot with it
+	// and leaving nothing behind — the circle's outline is a whole radius
+	// away, so it can't wander into the probe either.
+	expect(unsnapped).toBeGreaterThan(0);
+	expect(snappedToCorners).toBe(0);
 
 	await gm.context.close();
 });
