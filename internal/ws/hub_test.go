@@ -77,7 +77,18 @@ func (c *testClient) send(t *testing.T, typ string, payload any) {
 	}
 }
 
-func (c *testClient) readEnvelope(t *testing.T) envelope {
+// isPresence reports whether an event is someone arriving or leaving.
+// Presence is broadcast to everyone already in the room whenever anyone
+// opens or closes a connection, so for every test that isn't *about*
+// presence it is background noise landing at an unhelpful moment — a
+// second client connecting shifts the first client's stream by one.
+func isPresence(eventType string) bool {
+	return eventType == "participant.connected" || eventType == "participant.disconnected"
+}
+
+// readAnyEnvelope reads exactly the next envelope, whatever it is. Only
+// the presence tests want this; everything else wants readEnvelope.
+func (c *testClient) readAnyEnvelope(t *testing.T) envelope {
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -94,17 +105,99 @@ func (c *testClient) readEnvelope(t *testing.T) envelope {
 	return env
 }
 
+// readEnvelope reads the next envelope that isn't presence chatter. A
+// test about fog or tokens shouldn't have to know that a second client
+// connecting announces itself to the first — that would make every
+// multi-client test here a statement about presence as well as about
+// its own feature, and it would break again the next time the connect
+// sequence changed.
+func (c *testClient) readEnvelope(t *testing.T) envelope {
+	t.Helper()
+
+	for {
+		if env := c.readAnyEnvelope(t); !isPresence(env.Type) {
+			return env
+		}
+	}
+}
+
+// readPresence is readEnvelope's mirror: the next arrival or departure,
+// skipping everything else — notably the measure.ended that every
+// disconnect also broadcasts.
+func (c *testClient) readPresence(t *testing.T) envelope {
+	t.Helper()
+
+	for {
+		if env := c.readAnyEnvelope(t); isPresence(env.Type) {
+			return env
+		}
+	}
+}
+
 // expectNoMessage confirms nothing arrives within d — used to prove a
 // recipient was deliberately skipped (e.g. a hidden token broadcast),
-// not just that we haven't read far enough yet.
+// not just that we haven't read far enough yet. Presence is ignored for
+// the same reason readEnvelope ignores it; use expectNoPresence to
+// assert on its absence.
+//
+// **This leaves the connection unusable.** coder/websocket tears down a
+// connection whose read context is cancelled, so the deadline expiring
+// — the success case here — closes it. Anything this is called on has
+// to be finished with; for a "nothing happened" check in the middle of
+// a test, send something and assert it comes straight back instead
+// (assertNextIs in presence_test.go).
 func (c *testClient) expectNoMessage(t *testing.T, d time.Duration) {
 	t.Helper()
 
-	ctx, cancel := context.WithTimeout(context.Background(), d)
-	defer cancel()
+	deadline := time.Now().Add(d)
+	for {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), remaining)
+		_, data, err := c.conn.Read(ctx)
+		cancel()
+		if err != nil {
+			return // nothing arrived before the deadline, which is the point
+		}
 
-	if _, _, err := c.conn.Read(ctx); err == nil {
-		t.Fatal("expected no message, but received one")
+		var env envelope
+		if err := json.Unmarshal(data, &env); err != nil {
+			t.Fatalf("unmarshal envelope: %v", err)
+		}
+		if !isPresence(env.Type) {
+			t.Fatalf("expected no message, but received %q", env.Type)
+		}
+	}
+}
+
+// expectNoPresence is the opposite assertion, for the presence tests
+// themselves: nothing about anyone arriving or leaving may turn up,
+// whatever else does.
+func (c *testClient) expectNoPresence(t *testing.T, d time.Duration) {
+	t.Helper()
+
+	deadline := time.Now().Add(d)
+	for {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), remaining)
+		_, data, err := c.conn.Read(ctx)
+		cancel()
+		if err != nil {
+			return
+		}
+
+		var env envelope
+		if err := json.Unmarshal(data, &env); err != nil {
+			t.Fatalf("unmarshal envelope: %v", err)
+		}
+		if isPresence(env.Type) {
+			t.Fatalf("expected no presence event, but received %q", env.Type)
+		}
 	}
 }
 

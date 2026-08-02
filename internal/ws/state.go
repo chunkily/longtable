@@ -24,6 +24,19 @@ func (h *Hub) sendStateSync(ctx context.Context, c *client, room store.Room) {
 		},
 	}
 
+	// The roster and the live subset are sent separately and come from
+	// different places on purpose: the roster is a table, connectivity is
+	// the hub's memory. Conflating them into one "is online" flag per row
+	// would make the offline half unrepresentable, and the offline half is
+	// exactly who a GM is assigning tokens to before a session.
+	participants, err := h.store.ListParticipantsForRoom(room.ID)
+	if err != nil {
+		slog.Error("ws: list participants failed", "error", err)
+	} else {
+		payload["participants"] = participantPayloads(participants)
+	}
+	payload["connectedParticipantIds"] = h.connectedParticipantIDs(room.ID)
+
 	messages, err := h.store.ListRecentMessages(room.ID, 50)
 	if err != nil {
 		slog.Error("ws: list recent messages failed", "error", err)
@@ -99,6 +112,28 @@ func visibleTokensOnly(tokens []store.Token) []store.Token {
 		if t.Visibility != store.VisibilityHidden {
 			out = append(out, t)
 		}
+	}
+	return out
+}
+
+// participantPayload is deliberately three fields. store.Participant
+// also carries SessionToken, which is a credential and must never reach
+// another client — ListParticipantsForRoom doesn't even load it, and
+// this is the second half of that: an exhaustive struct-to-map here
+// rather than marshalling the struct, so a field added to the model
+// can't silently start being broadcast.
+func participantPayload(p store.Participant) map[string]any {
+	return map[string]any{
+		"id":          p.ID,
+		"displayName": p.DisplayName,
+		"role":        string(p.Role),
+	}
+}
+
+func participantPayloads(participants []store.Participant) []map[string]any {
+	out := make([]map[string]any, len(participants))
+	for i, p := range participants {
+		out[i] = participantPayload(p)
 	}
 	return out
 }

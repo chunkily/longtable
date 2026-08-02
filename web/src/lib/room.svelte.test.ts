@@ -829,6 +829,72 @@ describe('RoomClient', () => {
 		expect(client.canUndo).toBe(false);
 	});
 
+	// --- presence ---
+
+	function roomWithParticipants() {
+		const { client, socket } = connectedClient();
+		socket.emit({
+			type: 'state.sync',
+			payload: {
+				room: { slug: 'abc123', name: 'Room' },
+				you: { participantId: 'p1', displayName: 'Alice', role: 'gm' },
+				participants: [
+					{ id: 'p1', displayName: 'Alice', role: 'gm' },
+					{ id: 'p2', displayName: 'Bob', role: 'player' },
+					{ id: 'p3', displayName: 'Carol', role: 'player' }
+				],
+				connectedParticipantIds: ['p1', 'p2']
+			}
+		});
+		return { client, socket };
+	}
+
+	// The roster and the connected list are separate on purpose: someone
+	// who joined last week and isn't online is still a person a GM can
+	// hand a token to, and would be unrepresentable as an "online" flag.
+	it('keeps the roster and the connected subset apart', () => {
+		const { client } = roomWithParticipants();
+
+		expect(client.participants.map((p) => p.id)).toEqual(['p1', 'p2', 'p3']);
+		expect(client.connectedParticipants.map((p) => p.displayName)).toEqual(['Alice', 'Bob']);
+	});
+
+	it('adds someone to both lists when they arrive for the first time', () => {
+		const { client, socket } = roomWithParticipants();
+
+		socket.emit({
+			type: 'participant.connected',
+			payload: { id: 'p4', displayName: 'Dave', role: 'player' }
+		});
+
+		expect(client.participants.map((p) => p.id)).toEqual(['p1', 'p2', 'p3', 'p4']);
+		expect(client.connectedParticipants.map((p) => p.id)).toEqual(['p1', 'p2', 'p4']);
+	});
+
+	it('does not duplicate someone already on the roster who reconnects', () => {
+		const { client, socket } = roomWithParticipants();
+
+		socket.emit({
+			type: 'participant.connected',
+			payload: { id: 'p3', displayName: 'Carol', role: 'player' }
+		});
+
+		expect(client.participants).toHaveLength(3);
+		expect(client.connectedParticipants.map((p) => p.id)).toEqual(['p1', 'p2', 'p3']);
+	});
+
+	// Leaving the table isn't leaving the room. Dropping them from the
+	// roster would take away the owner picker's candidates the moment
+	// someone closed a laptop.
+	it('takes someone out of the connected list on disconnect but leaves the roster alone', () => {
+		const { client, socket } = roomWithParticipants();
+
+		socket.emit({ type: 'participant.disconnected', payload: { participantId: 'p2' } });
+
+		expect(client.connectedParticipants.map((p) => p.id)).toEqual(['p1']);
+		expect(client.participants.map((p) => p.id)).toEqual(['p1', 'p2', 'p3']);
+	});
+
 	// --- deleting tokens ---
 
 	function roomWithTokens(tokens: unknown[] = []) {

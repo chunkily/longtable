@@ -102,10 +102,45 @@ Notable gaps as of the last pass: there is no way to move a token with an owners
 way to assign a token's owner (blocked on listing a room's participants). See
 `planning/backlog/in-progress/`.
 
+## Presence
+
+Two different questions, kept apart on purpose:
+
+- **The roster** — everyone who has *ever* joined, from the `participant` table. Arrives in
+  `state.sync` as `participants`. This is what an owner picker offers, including the Player who
+  joined last week and isn't online now.
+- **Who's connected** — live, in `Hub.rooms` and nowhere else. Arrives as
+  `connectedParticipantIds`, then stays current through `participant.connected` /
+  `participant.disconnected`.
+
+Folding them into one "online" flag per row would make the offline half unrepresentable, which is
+exactly the half a GM prepping tokens needs.
+
+Three things worth knowing before touching it:
+
+- **A person is not a connection.** Two browser tabs are two clients and one participant, so
+  `register`/`unregister` return whether this was the *first* or *last* connection that
+  participant had open, and only those broadcast. Otherwise opening a tab announces someone who
+  was already here.
+- **`participant.connected` is the one broadcast that skips its own sender.** Every other one
+  echoes back because the sender has something optimistic to reconcile; here the arriving client's
+  `state.sync` already lists it among the connected, so an echo would be a second copy of
+  something it acted on a moment ago.
+- **It carries the whole participant**, so a first-time joiner — who is on nobody else's roster
+  yet — can be upserted. `participant.disconnected` carries only an id: they stay on the roster,
+  because leaving the table isn't leaving the room.
+
+`participant.disconnected` is sent from a fresh context, like the measurement cleanup, since the
+request context is already cancelled by the time a connection drops.
+
+The roster query deliberately never loads `session_token`, and `participantPayload` is an
+exhaustive struct-to-map rather than a marshalled struct — two lines of defence against a
+credential reaching every client in the room.
+
 ## Events (server → client)
 
 `state.sync`, `chat.posted`, `token.created`, `token.moved`, `token.updated`, `token.deleted`,
-`fog.revealed`, `fog.hidden`,
+`participant.connected`, `participant.disconnected`, `fog.revealed`, `fog.hidden`,
 `fog.reset`, `scene.activated`, `scene.created`, `scene.updated`, `scene.deleted`,
 `drawing.created`, `drawing.deleted`, `ping`, `measure.updated`, `measure.ended`, `error`.
 

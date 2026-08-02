@@ -100,6 +100,17 @@ export interface Measurement {
 	widthFeet?: number;
 }
 
+// Someone who has joined the room at some point. The roster is everyone
+// who ever has; whether they're *connected* is a separate list, because
+// it has no row behind it — it lives in the server's memory only. Never
+// carries a session token: that's a credential, and this is broadcast to
+// the whole room.
+export interface Participant {
+	id: string;
+	displayName: string;
+	role: 'gm' | 'player';
+}
+
 export interface You {
 	participantId: string;
 	displayName: string;
@@ -122,6 +133,8 @@ interface StateSyncPayload {
 	tokens?: Token[];
 	fogCells?: FogCell[];
 	drawings?: Drawing[];
+	participants?: Participant[];
+	connectedParticipantIds?: string[];
 }
 
 interface TokenMovedPayload {
@@ -163,6 +176,10 @@ interface DrawingDeletedPayload {
 
 interface TokenDeletedPayload {
 	tokenId: string;
+}
+
+interface ParticipantDisconnectedPayload {
+	participantId: string;
 }
 
 interface PingPayload {
@@ -212,6 +229,14 @@ export class RoomClient {
 
 	roomName = $state('');
 	you = $state<You | null>(null);
+
+	// Two lists rather than an "online" flag per row, because they come
+	// from different places: the roster is a table, and who is connected
+	// is the server's memory. Folding them together would make the
+	// offline half unrepresentable — and the offline half is exactly who
+	// a GM assigns tokens to while prepping before a session.
+	participants = $state<Participant[]>([]);
+	connectedParticipantIds = $state<string[]>([]);
 
 	messages = $state<ChatMessage[]>([]);
 	// Every scene in the room, for the scene picker. `scene` below is the
@@ -479,6 +504,17 @@ export class RoomClient {
 	// both of which already exist, already check permission, and already
 	// render optimistically.
 
+	/** Who's at the table right now, in the order they first joined. */
+	get connectedParticipants(): Participant[] {
+		// Thrown away before this getter returns, and rebuilt from $state
+		// each time the getter runs — so a plain Set is right here, not a
+		// SvelteSet. Nothing ever reads it reactively; it exists to make
+		// the filter below a lookup rather than a scan.
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity
+		const connected = new Set(this.connectedParticipantIds);
+		return this.participants.filter((p) => connected.has(p.id));
+	}
+
 	get canUndo(): boolean {
 		return this.undoable.length > 0;
 	}
@@ -687,7 +723,37 @@ export class RoomClient {
 				this.tokens = payload.tokens ?? [];
 				this.fogCells = payload.fogCells ?? [];
 				this.drawings = payload.drawings ?? [];
+				this.participants = payload.participants ?? [];
+				this.connectedParticipantIds = payload.connectedParticipantIds ?? [];
 				this.resetAfterSync();
+				break;
+			}
+
+			// Carries the whole participant, not just an id: someone joining
+			// for the first time isn't on anyone else's roster yet, so this
+			// upserts. There is no echo of your own arrival — your state.sync
+			// already listed you among the connected.
+			case 'participant.connected': {
+				const participant = env.payload as Participant;
+				const existing = this.participants.findIndex((p) => p.id === participant.id);
+				this.participants =
+					existing === -1
+						? [...this.participants, participant]
+						: this.participants.map((p) => (p.id === participant.id ? participant : p));
+				if (!this.connectedParticipantIds.includes(participant.id)) {
+					this.connectedParticipantIds = [...this.connectedParticipantIds, participant.id];
+				}
+				break;
+			}
+
+			// Only the connected list. They stay on the roster, which is
+			// everyone who has ever joined — what changed is whether they're
+			// at the table, not whether they exist.
+			case 'participant.disconnected': {
+				const payload = env.payload as ParticipantDisconnectedPayload;
+				this.connectedParticipantIds = this.connectedParticipantIds.filter(
+					(id) => id !== payload.participantId
+				);
 				break;
 			}
 

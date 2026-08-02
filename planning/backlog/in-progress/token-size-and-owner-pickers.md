@@ -17,10 +17,14 @@ library, and visibility), likely to ship in the same pass.
   options rather than six: Tiny, Small and Medium are all 1×1, and three options meaning the same
   thing can't round-trip when a token is read back, so they share one option carrying all three
   names.
-- **Owner**: the backend already has an `OwnerParticipantID` field on `Token`
-  (`internal/store/token.go:24`) and `handleTokenCreate` already accepts it, but there's no UI
-  control to set it, and no way to list who it could even be set to yet — this one is blocked on
-  [list-room-participants](../open/list-room-participants.md) landing first.
+- **Owner**: **no longer blocked.** `handleTokenCreate` has always accepted
+  `ownerParticipantId`, and [list-room-participants](../done/list-room-participants.md) has since
+  shipped the candidates: `client.participants` is the whole roster — everyone who has ever
+  joined, which is the right list here rather than `connectedParticipants`, since a GM prepping
+  tokens before a session is assigning them to people who aren't online yet. All that's missing
+  is the control. `token.update` will take an owner the same way once it has a field for it (a
+  line in the request struct and a line in the assignment block — see
+  [token-detail-panel](../done/token-detail-panel.md)).
 
 ## Related user stories
 

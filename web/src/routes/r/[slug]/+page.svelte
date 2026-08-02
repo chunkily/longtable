@@ -247,6 +247,24 @@
 		</ul>
 	{/snippet}
 
+	<!-- Who is actually at the table right now, which is a different list
+	     from everyone who has ever joined: someone who played last week
+	     and isn't online doesn't appear. Fixed above the chat in both
+	     layouts, so it stays put when the panel grows tabs. -->
+	{#snippet whoIsHere(room: RoomClient)}
+		<section aria-label="Who's connected" class="flex flex-wrap items-center gap-1">
+			{#each room.connectedParticipants as participant (participant.id)}
+				<Badge variant={participant.role === 'gm' ? 'default' : 'secondary'}>
+					{participant.displayName}{participant.role === 'gm' ? ' (GM)' : ''}
+				</Badge>
+			{:else}
+				<!-- Only reachable before the first sync lands: you are always
+				     connected to your own room. -->
+				<span class="text-xs text-muted-foreground">Nobody connected.</span>
+			{/each}
+		</section>
+	{/snippet}
+
 	<!-- Fixed above the message list in both layouts — the desktop sidebar
 	     and the mobile sheet — rather than scrolling away with the chat. -->
 	{#snippet tokenDetails(room: RoomClient, token: Token | null)}
@@ -579,6 +597,7 @@
 
 			<Card.Root class="hidden w-full lg:flex lg:max-w-sm">
 				<Card.Content class="flex flex-col gap-3">
+					{@render whoIsHere(client)}
 					{@render tokenDetails(client, selectedToken)}
 					{@render chatMessages(client, 'max-h-96')}
 					{@render chatForm()}
@@ -590,6 +609,7 @@
 	<div class="fixed inset-x-0 bottom-0 lg:hidden">
 		{#if mobileChatOpen}
 			<div class="flex max-h-[60vh] flex-col gap-3 border-t bg-background p-4 shadow-lg">
+				{@render whoIsHere(client)}
 				{@render tokenDetails(client, selectedToken)}
 				{@render chatMessages(client, 'flex-1')}
 				{@render chatForm()}

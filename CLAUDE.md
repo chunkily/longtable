@@ -47,13 +47,16 @@ drawings (freehand/line/rect/ellipse) with an eraser, and per-session undo/redo 
 drawing, erasing and token deletion,
 pings, distance measuring, area-of-effect templates (circle/cone/line/cube, origin on a snap
 mode and size in whole 5 ft steps),
-chat with `/roll`. Every upload is decoded and re-encoded to WebP and
+chat with `/roll`, and a live list of who's connected (distinct from the room's roster of
+everyone who has ever joined, which `state.sync` also carries). Every upload is decoded and
+re-encoded to WebP and
 joins the uploading room's library — content-addressed globally so identical uploads share one
 file, but a room only ever sees what it added itself. All of it syncs live; everything but pings
 and measurements persists.
 
 Known gaps, which is also roughly the queue: no initiative tracker, no HP or conditions on a
-token, no way to assign a token's owner (nothing can list a room's participants yet), fog has no
+token, no way to assign a token's owner (the roster is on the wire now, but nothing offers it as
+a picker), fog has no
 automatic vision from tokens, the asset library is an unfiltered grid with
 no search, no WebSocket reconnect, no prebuilt releases, no way for a Host to remove a moderated
 asset or cap upload sizes per room.

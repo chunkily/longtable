@@ -89,15 +89,37 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer conn.CloseNow()
 
 	c := &client{conn: conn, roomID: room.ID, participant: participant}
-	h.register(c)
-	// Declared before the unregister defer so it runs after it (defers
-	// run last-in-first-out): the leaving client shouldn't be among the
-	// recipients of its own cleanup.
+	arrived := h.register(c)
+	// Both of these are declared before the unregister defer so they run
+	// after it (defers run last-in-first-out): the leaving client
+	// shouldn't be among the recipients of its own cleanup.
+	var departed bool
+	defer func() {
+		if departed {
+			h.announceDeparture(c)
+		}
+	}()
 	defer h.endMeasurementOnDisconnect(c)
-	defer h.unregister(c)
+	defer func() { departed = h.unregister(c) }()
 
 	ctx := r.Context()
 	h.sendStateSync(ctx, c, room)
+	if arrived {
+		// Everyone *except* the arrival, which is the one broadcast in the
+		// protocol that deliberately skips its own sender. Every other one
+		// echoes back because the sender has something optimistic to
+		// reconcile; here it has nothing — the state.sync just sent already
+		// lists this participant among the connected, so an echo would say
+		// something the client acted on a moment ago, and every test that
+		// opens a connection would have to read past it.
+		payload := participantPayload(participant)
+		h.broadcastPerClient(ctx, room.ID, "participant.connected", func(recipient *client) any {
+			if recipient == c {
+				return nil
+			}
+			return payload
+		})
+	}
 
 	for {
 		_, data, err := conn.Read(ctx)
@@ -108,22 +130,66 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *Hub) register(c *client) {
+// register adds c to its room and reports whether this is the first
+// connection its *participant* has open.
+//
+// Connections and people aren't the same thing: a second browser tab is
+// a second client but the same person at the table, so only the first
+// arriving and the last leaving are presence changes. Without that,
+// opening a tab announces someone who was already here and closing it
+// announces them gone while they're still looking at the map.
+func (h *Hub) register(c *client) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.rooms[c.roomID] == nil {
 		h.rooms[c.roomID] = make(map[*client]struct{})
 	}
+	alreadyHere := h.participantConnectedLocked(c.roomID, c.participant.ID)
 	h.rooms[c.roomID][c] = struct{}{}
+	return !alreadyHere
 }
 
-func (h *Hub) unregister(c *client) {
+// unregister removes c and reports whether that was the last connection
+// its participant had open — see register for why that isn't the same
+// question as whether a client went away.
+func (h *Hub) unregister(c *client) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	delete(h.rooms[c.roomID], c)
+	stillHere := h.participantConnectedLocked(c.roomID, c.participant.ID)
 	if len(h.rooms[c.roomID]) == 0 {
 		delete(h.rooms, c.roomID)
 	}
+	return !stillHere
+}
+
+// participantConnectedLocked reports whether any connection in the room
+// belongs to participantID. Caller holds h.mu.
+func (h *Hub) participantConnectedLocked(roomID, participantID string) bool {
+	for other := range h.rooms[roomID] {
+		if other.participant.ID == participantID {
+			return true
+		}
+	}
+	return false
+}
+
+// connectedParticipantIDs lists who is connected to roomID right now,
+// one entry per person however many tabs they have open.
+func (h *Hub) connectedParticipantIDs(roomID string) []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	seen := make(map[string]struct{}, len(h.rooms[roomID]))
+	ids := make([]string, 0, len(h.rooms[roomID]))
+	for c := range h.rooms[roomID] {
+		if _, dup := seen[c.participant.ID]; dup {
+			continue
+		}
+		seen[c.participant.ID] = struct{}{}
+		ids = append(ids, c.participant.ID)
+	}
+	return ids
 }
 
 // broadcast sends an event to every client connected to roomID.
@@ -1069,6 +1135,21 @@ func (h *Hub) endMeasurementOnDisconnect(c *client) {
 	ctx, cancel := context.WithTimeout(context.Background(), measureCleanupTimeout)
 	defer cancel()
 	h.broadcastMeasureEnded(ctx, c)
+}
+
+// announceDeparture tells the room someone has gone. Only the id: they
+// stay on the roster, which is everyone who has *ever* joined — what
+// changed is whether they're at the table, not whether they exist.
+//
+// Needs a fresh context for the same reason the measurement cleanup
+// above does: the request context is already canceled by the time a
+// connection drops, so writing on it would go nowhere.
+func (h *Hub) announceDeparture(c *client) {
+	ctx, cancel := context.WithTimeout(context.Background(), measureCleanupTimeout)
+	defer cancel()
+	h.broadcast(ctx, c.roomID, "participant.disconnected", map[string]any{
+		"participantId": c.participant.ID,
+	})
 }
 
 type sceneCreateRequest struct {

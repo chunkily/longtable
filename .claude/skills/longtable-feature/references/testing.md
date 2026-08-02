@@ -19,9 +19,19 @@ client.readEnvelope(t) // state.sync always arrives first
 client.send(t, "measure.update", map[string]any{ /* … */ })
 ```
 
-- `readEnvelope(t)` reads one envelope with a 2s timeout and fails the test on error.
+- `readEnvelope(t)` reads one envelope with a 2s timeout and fails the test on error. It **skips
+  presence chatter**: a second client connecting announces itself to the first, and a test about
+  fog or tokens shouldn't have to know that. `readAnyEnvelope` is the unfiltered primitive and
+  `readPresence` its mirror, for the presence tests themselves.
 - `expectNoMessage(t, d)` proves a recipient was *deliberately* skipped — the assertion for hidden
-  tokens, where "nothing arrived" is the whole point.
+  tokens, where "nothing arrived" is the whole point. It ignores presence for the same reason;
+  `expectNoPresence` is the opposite assertion.
+
+  **Both leave the connection unusable.** coder/websocket tears down a connection whose read
+  context is cancelled, so the deadline expiring — the success case — closes it. Anything they're
+  called on has to be finished with. For a "nothing happened" check *mid-test*, send something and
+  assert it comes straight back instead (`assertNoPresenceYet` in `presence_test.go`): whatever
+  the server wrongly broadcast is queued ahead of the echo, so it's caught without a timeout.
 - The sender gets its own broadcast echo, so read it off the sender before asserting on another
   client's copy.
 - Group per-feature setup in a small struct with a constructor (`newDrawTestRoom`,
