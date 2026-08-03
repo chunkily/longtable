@@ -89,6 +89,7 @@
 					{roomSlug}
 					{sessionToken}
 					idPrefix="scene"
+					kind="map"
 					bind:selectedId={mapAssetId}
 					onpick={adoptGridSize}
 					emptyHint="Nothing in the library yet — add a map on the assets page."

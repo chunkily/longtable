@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"longtable/internal/store"
+
 	"github.com/gen2brain/webp"
 )
 
@@ -66,6 +68,40 @@ func TestUploadAsset_DefaultsNameFromFilename(t *testing.T) {
 	if uploaded.GridSize != nil {
 		t.Fatalf("gridSize = %d, want null for an unaligned upload", *uploaded.GridSize)
 	}
+}
+
+// The kind is what sorts the library into its two tabs, so it travels
+// with the upload like everything else the assets page collects.
+func TestUploadAsset_RecordsTheKind(t *testing.T) {
+	srv, _ := newTestServer(t)
+	created := createTestRoom(t, srv)
+
+	var asMap assetPayloadT
+	decodeJSONBody(t, uploadWithFields(t, srv, created.RoomSlug, created.SessionToken, "keep.png",
+		testPNG(t, 32, 32, color.RGBA{R: 30, G: 90, B: 30, A: 255}),
+		map[string]string{"kind": "map"}), &asMap)
+	if asMap.Kind != store.AssetKindMap {
+		t.Fatalf("kind = %q, want map", asMap.Kind)
+	}
+
+	// Silence is a token: it's what most art is, and a client that predates
+	// the split has to keep working.
+	var unstated assetPayloadT
+	decodeJSONBody(t, uploadTestAsset(t, srv, created.RoomSlug, created.SessionToken, "goblin.png",
+		testPNG(t, 16, 16, color.RGBA{R: 180, G: 40, B: 40, A: 255})), &unstated)
+	if unstated.Kind != store.AssetKindToken {
+		t.Fatalf("kind = %q for an upload that didn't say, want token", unstated.Kind)
+	}
+
+	// Anything else is a client bug, and filing the art under a kind nobody
+	// asked for would hide it in the wrong tab.
+	resp := uploadWithFields(t, srv, created.RoomSlug, created.SessionToken, "what.png",
+		testPNG(t, 8, 8, color.RGBA{R: 1, G: 1, B: 1, A: 255}),
+		map[string]string{"kind": "portrait"})
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d for an unknown kind, want 400", resp.StatusCode)
+	}
+	resp.Body.Close()
 }
 
 func TestUploadAsset_RejectsNonsenseGridFigures(t *testing.T) {
@@ -181,6 +217,43 @@ func TestUpdateRoomAsset_ClearsAttributionWhenAsked(t *testing.T) {
 	}
 }
 
+// Whether a picture is a token or a map is this room's opinion of it,
+// not a fact about the pixels — so unlike the image and the measured
+// grid, it can be changed afterwards. It's also the only way to fix what
+// the migration guessed for a library that predates the split.
+func TestUpdateRoomAsset_ReclassifiesAndLeavesTheKindAloneWhenUnstated(t *testing.T) {
+	srv, _ := newTestServer(t)
+	created := createTestRoom(t, srv)
+
+	var uploaded assetPayloadT
+	decodeJSONBody(t, uploadTestAsset(t, srv, created.RoomSlug, created.SessionToken, "tavern.png",
+		testPNG(t, 40, 40, color.RGBA{R: 120, G: 80, B: 20, A: 255})), &uploaded)
+
+	var reclassified assetPayloadT
+	decodeJSONBody(t, patchRoomAsset(t, srv, created.RoomSlug, created.SessionToken, uploaded.ID,
+		`{"name":"Tavern","attribution":"","kind":"map"}`), &reclassified)
+	if reclassified.Kind != store.AssetKindMap {
+		t.Fatalf("kind = %q, want map", reclassified.Kind)
+	}
+
+	// An older client's PATCH carries no kind. An empty credit means
+	// "clear it", but there is no third kind for an empty one to mean, so
+	// silence there can only leave the asset where it is.
+	var renamed assetPayloadT
+	decodeJSONBody(t, patchRoomAsset(t, srv, created.RoomSlug, created.SessionToken, uploaded.ID,
+		`{"name":"The tavern","attribution":""}`), &renamed)
+	if renamed.Kind != store.AssetKindMap {
+		t.Fatalf("kind = %q after a patch that omitted it, want map", renamed.Kind)
+	}
+
+	resp := patchRoomAsset(t, srv, created.RoomSlug, created.SessionToken, uploaded.ID,
+		`{"name":"The tavern","kind":"scenery"}`)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d for an unknown kind, want 400", resp.StatusCode)
+	}
+	resp.Body.Close()
+}
+
 func TestUpdateRoomAsset_RejectsAnEmptyName(t *testing.T) {
 	srv, _ := newTestServer(t)
 	created := createTestRoom(t, srv)
@@ -228,6 +301,91 @@ func TestUpdateRoomAsset_WontReachIntoAnotherRoomsLibrary(t *testing.T) {
 	decodeJSONBody(t, listRoomAssets(t, srv, roomA.RoomSlug, roomA.SessionToken), &library)
 	if library[0].Name != "m" {
 		t.Fatalf("room A name = %q, want it unchanged", library[0].Name)
+	}
+}
+
+func deleteRoomAsset(t *testing.T, srv *httptest.Server, slug, token, assetID string) *http.Response {
+	t.Helper()
+
+	req, err := http.NewRequest(http.MethodDelete, srv.URL+"/api/rooms/"+slug+"/assets/"+assetID, nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("do request: %v", err)
+	}
+	return resp
+}
+
+// Taking a picture off this room's shelf leaves the file alone: it's
+// content-addressed and shared, the room can put it back by adding it
+// again, and the bytes stay servable for anything already using them.
+func TestRemoveRoomAsset_ClearsTheShelfButNotTheFile(t *testing.T) {
+	srv, _ := newTestServer(t)
+	created := createTestRoom(t, srv)
+
+	var uploaded assetPayloadT
+	decodeJSONBody(t, uploadTestAsset(t, srv, created.RoomSlug, created.SessionToken, "keep.png",
+		testPNG(t, 20, 20, color.RGBA{R: 80, G: 20, B: 90, A: 255})), &uploaded)
+
+	resp := deleteRoomAsset(t, srv, created.RoomSlug, created.SessionToken, uploaded.ID)
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	var library []assetPayloadT
+	decodeJSONBody(t, listRoomAssets(t, srv, created.RoomSlug, created.SessionToken), &library)
+	if len(library) != 0 {
+		t.Fatalf("library = %+v, want it empty", library)
+	}
+
+	// Still served by ID, which is what keeps a scene or token that was
+	// already using it from turning into a broken image.
+	if got := len(getAssetBytes(t, srv, uploaded.ID)); got == 0 {
+		t.Fatal("asset bytes are gone, want them still served")
+	}
+
+	// Removing it twice is a 404, not a silent success — the same answer
+	// another room's asset gets.
+	again := deleteRoomAsset(t, srv, created.RoomSlug, created.SessionToken, uploaded.ID)
+	if again.StatusCode != http.StatusNotFound {
+		t.Fatalf("second removal: status = %d, want 404", again.StatusCode)
+	}
+	again.Body.Close()
+}
+
+func TestRemoveRoomAsset_WontReachIntoAnotherRoomsLibrary(t *testing.T) {
+	srv, _ := newTestServer(t)
+	roomA := createTestRoom(t, srv)
+	roomB := createTestRoom(t, srv)
+
+	var inA assetPayloadT
+	decodeJSONBody(t, uploadTestAsset(t, srv, roomA.RoomSlug, roomA.SessionToken, "m.png",
+		testPNG(t, 12, 12, color.RGBA{R: 5, G: 90, B: 5, A: 255})), &inA)
+
+	resp := deleteRoomAsset(t, srv, roomB.RoomSlug, roomB.SessionToken, inA.ID)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("foreign asset: status = %d, want 404", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	unauthenticated := deleteRoomAsset(t, srv, roomA.RoomSlug, "", inA.ID)
+	if unauthenticated.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("no session: status = %d, want 401", unauthenticated.StatusCode)
+	}
+	unauthenticated.Body.Close()
+
+	// A's copy survived both attempts.
+	var library []assetPayloadT
+	decodeJSONBody(t, listRoomAssets(t, srv, roomA.RoomSlug, roomA.SessionToken), &library)
+	if len(library) != 1 {
+		t.Fatalf("room A library has %d entries, want 1", len(library))
 	}
 }
 

@@ -53,6 +53,9 @@ type assetPayloadT struct {
 	// licence for this room's copy of the asset. Empty when none was
 	// given, which is the common case.
 	Attribution string `json:"attribution"`
+	// Kind is "token" or "map" — which half of the library this belongs
+	// to, and which pickers offer it first.
+	Kind store.AssetKind `json:"kind"`
 	// GridSize is the map's pixels per square, measured when it was
 	// aligned on the assets page, so creating a scene from it can default
 	// to the right number instead of asking someone to guess it again.
@@ -78,6 +81,7 @@ func libraryAssetPayload(a store.LibraryAsset) assetPayloadT {
 	payload := assetPayload(a.Asset)
 	payload.Name = a.Name
 	payload.Attribution = a.Attribution
+	payload.Kind = a.Kind
 	payload.GridSize = a.GridSize
 	return payload
 }
@@ -163,7 +167,11 @@ func (srv *Server) uploadAsset(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := srv.store.AddAssetToRoom(room.ID, asset.ID, name, attribution, gridSize); err != nil {
+	kind, ok := parseAssetKind(w, r.FormValue("kind"))
+	if !ok {
+		return
+	}
+	if err := srv.store.AddAssetToRoom(room.ID, asset.ID, name, attribution, kind, gridSize); err != nil {
 		slog.Error("api: add asset to room library failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "stored the image, but failed to add it to the library")
 		return
@@ -185,10 +193,12 @@ func (srv *Server) uploadAsset(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, payload)
 }
 
-// updateRoomAsset renames and re-credits a room's copy of an asset. It
-// deliberately can't touch the image or its grid size: both live in the
-// stored pixels, and pixels are what an asset's identity is made of, so
-// "edit" there would mean making a different asset.
+// updateRoomAsset renames, re-credits and reclassifies a room's copy of
+// an asset. It deliberately can't touch the image or its grid size: both
+// live in the stored pixels, and pixels are what an asset's identity is
+// made of, so "edit" there would mean making a different asset. The
+// kind isn't in the pixels — it's what this room decided the picture is
+// for — so that one moves.
 func (srv *Server) updateRoomAsset(w http.ResponseWriter, r *http.Request) {
 	room, ok := srv.lookupRoom(w, r.PathValue("slug"))
 	if !ok {
@@ -201,6 +211,7 @@ func (srv *Server) updateRoomAsset(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Name        string `json:"name"`
 		Attribution string `json:"attribution"`
+		Kind        string `json:"kind"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -212,9 +223,14 @@ func (srv *Server) updateRoomAsset(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "a name is required")
 		return
 	}
+	kind, ok := parseAssetKind(w, body.Kind)
+	if !ok {
+		return
+	}
 
 	assetID := r.PathValue("id")
-	err := srv.store.UpdateRoomAsset(room.ID, assetID, name, clampText(body.Attribution, maxAttributionLength))
+	err := srv.store.UpdateRoomAsset(
+		room.ID, assetID, name, clampText(body.Attribution, maxAttributionLength), kind)
 	if errors.Is(err, store.ErrNotFound) {
 		// Same answer for "no such asset" and "that asset belongs to
 		// another room", so the failure can't be used to probe what exists
@@ -237,6 +253,36 @@ func (srv *Server) updateRoomAsset(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, libraryAssetPayload(entry))
 }
 
+// removeRoomAsset takes an asset off this room's shelf.
+//
+// Open to any room member, like uploading and renaming: a room's library
+// is shared workspace rather than one person's, and the damage is
+// bounded — the file itself is untouched, anything already on the table
+// keeps working, and adding the image again puts it straight back. That
+// last part is what makes this different from deleting a scene, which is
+// GM-only and unrecoverable.
+func (srv *Server) removeRoomAsset(w http.ResponseWriter, r *http.Request) {
+	room, ok := srv.lookupRoom(w, r.PathValue("slug"))
+	if !ok {
+		return
+	}
+	if !srv.requireParticipant(w, r, room) {
+		return
+	}
+
+	err := srv.store.RemoveAssetFromRoom(room.ID, r.PathValue("id"))
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "no such asset in this room's library")
+		return
+	}
+	if err != nil {
+		slog.Error("api: remove room asset failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to remove the asset")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // clampText trims a free-text field and cuts it to length. Truncated
 // rather than rejected, since losing the tail of a credit is a smaller
 // harm than losing the upload it came with.
@@ -246,6 +292,22 @@ func clampText(s string, max int) string {
 		s = s[:max]
 	}
 	return s
+}
+
+// parseAssetKind reads a "token"/"map" field. Absent stays absent
+// rather than becoming a default here: the store reads the empty string
+// as "not supplied" and keeps whatever a room already decided, which is
+// what stops an old client's silent upload from reclassifying a map it
+// knew nothing about. Anything else is a client bug, and answering it
+// with a 400 is kinder than filing the art under a kind nobody asked
+// for.
+func parseAssetKind(w http.ResponseWriter, raw string) (store.AssetKind, bool) {
+	kind := store.AssetKind(strings.TrimSpace(raw))
+	if kind == "" || kind.Valid() {
+		return kind, true
+	}
+	writeError(w, http.StatusBadRequest, `an asset is either a "token" or a "map"`)
+	return "", false
 }
 
 // parseGridSize reads the measured pixels-per-square off an upload.

@@ -18,6 +18,13 @@ export interface Session {
 	sessionToken: string;
 }
 
+/**
+ * What a room keeps a picture for. It's the room's opinion rather than a
+ * property of the file, so the same image can be a token here and a map
+ * next door — and so it can be corrected later, unlike the pixels.
+ */
+export type AssetKind = 'token' | 'map';
+
 export interface Asset {
 	id: string;
 	/**
@@ -31,6 +38,8 @@ export interface Asset {
 	byteSize: number;
 	/** Free-text credit or licence for this room's copy, '' when none was given. */
 	attribution: string;
+	/** Which half of the library this sits in. */
+	kind: AssetKind;
 	/**
 	 * Pixels per grid square, measured when the map was aligned on the
 	 * assets page, so a scene made from it can default to the right
@@ -50,6 +59,7 @@ export interface Asset {
 export interface AssetDetails {
 	name: string;
 	attribution: string;
+	kind: AssetKind;
 	/** Measured pixels per square, for a map that was aligned. */
 	gridSize: number | null;
 	/**
@@ -124,6 +134,10 @@ export async function uploadAsset(
 	form.append('file', file);
 	if (details.name?.trim()) form.append('name', details.name.trim());
 	if (details.attribution?.trim()) form.append('attribution', details.attribution.trim());
+	// Left off rather than defaulted client-side when absent: the server
+	// reads a missing kind as "not supplied" and keeps whatever this room
+	// already decided, which is what makes re-adding a map safe.
+	if (details.kind) form.append('kind', details.kind);
 	if (details.gridSize) form.append('gridSize', String(details.gridSize));
 	// Sent only when non-zero: an offset of 0 is the overwhelmingly common
 	// case, and leaving the field off keeps the server on the path where
@@ -144,21 +158,47 @@ export async function uploadAsset(
 }
 
 /**
- * Renames and re-credits a room's copy of an asset. The image and its
- * measured grid can't be edited: both live in the stored pixels, and
- * changing those would make a different asset.
+ * Renames, re-credits and reclassifies a room's copy of an asset. The
+ * image and its measured grid can't be edited: both live in the stored
+ * pixels, and changing those would make a different asset. The kind
+ * isn't in the pixels, so that one moves.
  */
 export function updateAsset(
 	slug: string,
 	sessionToken: string,
 	assetId: string,
-	details: { name: string; attribution: string }
+	details: { name: string; attribution: string; kind: AssetKind }
 ): Promise<Asset> {
 	return apiFetch(`/api/rooms/${encodeURIComponent(slug)}/assets/${encodeURIComponent(assetId)}`, {
 		method: 'PATCH',
 		headers: { Authorization: `Bearer ${sessionToken}` },
 		body: JSON.stringify(details)
 	});
+}
+
+/**
+ * Takes an asset off this room's shelf.
+ *
+ * The picture itself isn't deleted — it's content-addressed and shared,
+ * so another room that added the same file keeps it, and adding it here
+ * again brings it back. Nor does this reach onto the table: a scene or
+ * token already using the image goes on using it.
+ */
+export async function removeAsset(
+	slug: string,
+	sessionToken: string,
+	assetId: string
+): Promise<void> {
+	const res = await fetch(
+		`/api/rooms/${encodeURIComponent(slug)}/assets/${encodeURIComponent(assetId)}`,
+		{ method: 'DELETE', headers: { Authorization: `Bearer ${sessionToken}` } }
+	);
+	// 204 and an empty body, so this can't go through apiFetch — that one
+	// parses JSON out of every response.
+	if (!res.ok) {
+		const body = await res.json().catch(() => ({}));
+		throw new ApiError(body.error ?? `removal failed with status ${res.status}`);
+	}
 }
 
 /** The room's asset library, newest first. Requires a session for that room. */

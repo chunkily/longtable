@@ -138,6 +138,10 @@ test('replacing a map keeps the tokens already standing on the scene', async ({ 
 	// Art is added on the assets page and only picked here — the replace
 	// dialog has no upload of its own any more.
 	await gm.page.getByRole('link', { name: 'Assets' }).click();
+	// The tab is chosen before the file is, and it decides what the upload
+	// is filed as — which has to be a map, since that's the half of the
+	// library the replace-map picker opens on.
+	await gm.page.getByRole('tab', { name: /^Maps/ }).click();
 	await gm.page.getByLabel('Choose images to add').setInputFiles(fixture('swamp.png'));
 	await gm.page.getByRole('button', { name: 'Add to library' }).click();
 	await expect(gm.page.getByText('swamp', { exact: true })).toBeVisible();

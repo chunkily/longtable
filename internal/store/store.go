@@ -30,14 +30,17 @@ func (s *Store) migrate() error {
 	// Columns added to a table after its first release need an explicit
 	// ALTER TABLE — the CREATE TABLE statements above only take effect
 	// on a database file that doesn't exist yet.
-	if err := s.addColumnIfMissing("drawing", "created_by_participant_id",
+	if _, err := s.addColumnIfMissing("drawing", "created_by_participant_id",
 		`TEXT REFERENCES participant(id) ON DELETE SET NULL`); err != nil {
 		return err
 	}
-	if err := s.addColumnIfMissing("room_asset", "name", `TEXT NOT NULL DEFAULT ''`); err != nil {
+	if _, err := s.addColumnIfMissing("room_asset", "name", `TEXT NOT NULL DEFAULT ''`); err != nil {
 		return err
 	}
-	if err := s.addColumnIfMissing("room_asset", "grid_size", `INTEGER`); err != nil {
+	if _, err := s.addColumnIfMissing("room_asset", "grid_size", `INTEGER`); err != nil {
+		return err
+	}
+	if err := s.addAssetKindColumn(); err != nil {
 		return err
 	}
 	return s.migrateCircleDrawingsToEllipse()
@@ -138,6 +141,11 @@ func (s *Store) createTables() error {
 			-- another room reads, and every rule for resolving that conflict
 			-- is worse than measuring it twice.
 			grid_size    INTEGER,
+			-- What the room keeps this picture for: art that goes on a token,
+			-- or a map that goes under one. Per-room for the same reason the
+			-- name is — one group's boss portrait is another group's battle
+			-- map, and the shared asset row can't hold both answers.
+			kind         TEXT NOT NULL DEFAULT 'token' CHECK (kind IN ('token', 'map')),
 			added_at     TEXT NOT NULL,
 			PRIMARY KEY (room_id, asset_id)
 		);
@@ -158,6 +166,30 @@ func (s *Store) createTables() error {
 		CREATE INDEX IF NOT EXISTS idx_message_room ON message(room_id);
 	`)
 	return err
+}
+
+// addAssetKindColumn adds room_asset.kind and sorts the rows that
+// predate it into the two kinds.
+//
+// The backfill runs only on the boot that adds the column, which is why
+// this can't just be an addColumnIfMissing call. Whether a map was
+// aligned is the only signal an old row carries about what it is, and
+// it's a decent one — the assets page only ever offered alignment for
+// maps — but it's a guess, and someone who corrects it afterwards must
+// not have that correction re-guessed away on the next restart.
+func (s *Store) addAssetKindColumn() error {
+	added, err := s.addColumnIfMissing("room_asset", "kind",
+		`TEXT NOT NULL DEFAULT 'token' CHECK (kind IN ('token', 'map'))`)
+	if err != nil {
+		return err
+	}
+	if !added {
+		return nil
+	}
+	if _, err := s.db.Exec(`UPDATE room_asset SET kind = 'map' WHERE grid_size IS NOT NULL`); err != nil {
+		return fmt.Errorf("classify pre-existing library assets: %w", err)
+	}
+	return nil
 }
 
 // migrateCircleDrawingsToEllipse replaces the old 'circle' drawing kind
@@ -278,23 +310,28 @@ func convertCirclePoints(tx *sql.Tx) error {
 // the schema to an already-migrated database is a no-op. definition is
 // the column type and constraints — everything the ALTER TABLE
 // statement needs after the column name.
-func (s *Store) addColumnIfMissing(table, column, definition string) error {
+//
+// Reports whether it actually added the column, which is what a caller
+// with rows to backfill needs: "the column is there" and "the column is
+// there because I just made it" are different facts, and only the second
+// one licenses rewriting existing rows.
+func (s *Store) addColumnIfMissing(table, column, definition string) (bool, error) {
 	var exists int
 	err := s.db.QueryRow(
 		`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?`, table, column,
 	).Scan(&exists)
 	if err != nil {
-		return fmt.Errorf("inspect %s columns: %w", table, err)
+		return false, fmt.Errorf("inspect %s columns: %w", table, err)
 	}
 	if exists > 0 {
-		return nil
+		return false, nil
 	}
 
 	// Table and column names can't be bound as parameters, so they're
 	// interpolated — every caller is a compile-time constant in this
 	// file, never user input.
 	if _, err := s.db.Exec(fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, table, column, definition)); err != nil {
-		return fmt.Errorf("add %s.%s column: %w", table, column, err)
+		return false, fmt.Errorf("add %s.%s column: %w", table, column, err)
 	}
-	return nil
+	return true, nil
 }

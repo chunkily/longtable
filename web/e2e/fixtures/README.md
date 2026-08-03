@@ -1,7 +1,12 @@
 # E2E image fixtures
 
-Real 8x8 PNGs for the specs that upload something. Load them with the `fixture()` helper in
+Real, small PNGs for the specs that upload something. Load them with the `fixture()` helper in
 `../fixtures.ts`, which resolves paths against the module rather than the working directory.
+
+All 8x8 except `wide-map.png`, which is 40x12 because its *shape* is what it's for: the assets
+page reads a staged file's dimensions and questions whether it's really the kind the open tab
+says, and only a decidedly non-square image exercises that. `gen-wide-map.go` is the program that
+produced it, kept beside it so the next odd-shaped fixture doesn't start from scratch.
 
 Two rules, both of which have already cost someone an afternoon:
 

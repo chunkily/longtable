@@ -132,7 +132,14 @@ anything else — don't start editing the spec.
 `Assets` link in the room header. The pickers in the scene and token dialogs only *pick*; nothing
 uploads from inside a dialog any more. The gesture is
 `page.getByLabel('Choose images to add').setInputFiles(fixture('goblin.png'))`, then filling
-`Name` if the default matters, then `Add to library`. `fixture()` comes from `e2e/fixtures.ts`
+`Name` if the default matters, then `Add to library`. **A spec whose upload is a map has to switch
+tabs first** — `getByRole('tab', { name: /^Maps/ }).click()` *before* `setInputFiles`, because the
+page's tab is what decides the kind and it's read when the file is staged, not when it's added.
+Clicking it afterwards moves the grid, not the staged file. This matters even when the spec
+doesn't care about tabs: the scene and replace-map pickers open on Maps, so a map filed as token
+art simply isn't in the grid the spec then clicks in. The regex anchor is worth copying — the tab
+is named `Maps 1`, counts included, and Playwright matches names by substring unless told
+otherwise. `fixture()` comes from `e2e/fixtures.ts`
 and the images live in `e2e/fixtures/` (see its README). It works on a hidden
 `<input type="file">` — visibility doesn't matter to Playwright the way it does to a real click —
 so there's no need for a visible-input workaround.

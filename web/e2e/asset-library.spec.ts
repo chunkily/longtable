@@ -45,6 +45,23 @@ test('an asset added on the assets page is named, searchable, and offered in bot
 	await expect(pageA.getByRole('button', { name: 'Add to library' })).toHaveCount(0);
 	await expect(pageA.getByText('Goblin archer')).toBeVisible();
 
+	// A map as well, since the two dialogs now ask for different halves of
+	// the library and one asset can't prove both. The tab is picked first
+	// and decides what the upload is — there is no per-file control to
+	// forget about afterwards.
+	await pageA.getByRole('tab', { name: /^Maps/ }).click();
+	// The upload card follows the tab, so what's about to happen is stated
+	// before a file is chosen rather than after.
+	await expect(pageA.getByText('Add maps')).toBeVisible();
+	await expect(pageA.getByRole('button', { name: 'Choose maps' })).toBeVisible();
+	await pageA.getByLabel('Choose images to add').setInputFiles(fixture('swamp.png'));
+	await pageA.getByLabel('Name').fill('Swamp road');
+	await pageA.getByRole('button', { name: 'Add to library' }).click();
+	await expect(pageA.getByText('Swamp road')).toBeVisible();
+
+	await pageA.getByRole('tab', { name: 'Tokens 1' }).click();
+	await expect(pageA.getByText('Goblin archer')).toBeVisible();
+
 	// Search narrows live, over the name and the credit both.
 	const search = pageA.getByLabel('Search the library');
 	await search.fill('archer');
@@ -56,26 +73,42 @@ test('an asset added on the assets page is named, searchable, and offered in bot
 	// "you have nothing" and "none of your things are this" need different
 	// next steps.
 	await search.fill('tavern');
-	await expect(pageA.getByText(/Nothing matches/)).toBeVisible();
+	await expect(pageA.getByText(/Nothing here matches/)).toBeVisible();
+
+	// And when the thing being searched for is sitting in the other tab,
+	// the empty state points at it rather than reading as "this room
+	// doesn't have that", which is the one way a split library can lose
+	// something.
+	await search.fill('swamp');
+	await pageA.getByRole('button', { name: /match(es)? in Maps/ }).click();
+	await expect(pageA.getByText('Swamp road')).toBeVisible();
+
 	await search.fill('');
+	await pageA.getByRole('tab', { name: 'Tokens 1' }).click();
 	await expect(pageA.getByText('Goblin archer')).toBeVisible();
 
-	// Back at the table, both dialogs offer it — different components with
-	// their own pickers, both backed by the room's real library.
+	// Back at the table, each dialog offers the half of the library it's
+	// asking for — different components with their own pickers, both
+	// backed by the room's real library.
 	await pageA.getByRole('link', { name: 'Back to the table' }).click();
 	await pageA.getByRole('button', { name: 'New scene' }).click();
-	await expect(pageA.getByRole('button', { name: 'Goblin archer' })).toBeVisible();
+	await expect(pageA.getByRole('button', { name: 'Swamp road' })).toBeVisible();
+	await expect(pageA.getByRole('button', { name: 'Goblin archer' })).toHaveCount(0);
 	// The picker no longer uploads: adding art is the assets page's job, so
 	// there's no longer a path here that can produce an unnamed asset.
 	await expect(pageA.getByLabel('Upload an image')).toHaveCount(0);
 
 	await pageA.getByLabel('Name').fill('Tavern');
-	await pageA.getByRole('button', { name: 'Goblin archer' }).click();
+	await pageA.getByRole('button', { name: 'Swamp road' }).click();
 	await pageA.getByRole('button', { name: 'Create scene' }).click();
 	await expect(pageA.getByRole('button', { name: 'New token' })).toBeVisible();
 
 	await pageA.getByRole('button', { name: 'New token' }).click();
 	await expect(pageA.getByRole('button', { name: 'Goblin archer' })).toBeVisible();
+	// Opening on the right tab is a default, not a wall: art someone filed
+	// under the other kind is still one click away.
+	await pageA.getByRole('tab', { name: 'Maps 1' }).click();
+	await expect(pageA.getByRole('button', { name: 'Swamp road' })).toBeVisible();
 	await pageA.getByRole('button', { name: 'Close' }).click();
 
 	// A second, unrelated room must not see it at all — the scoping the hub
@@ -85,7 +118,7 @@ test('an asset added on the assets page is named, searchable, and offered in bot
 	await createRoomAsGM(pageB, 'Library B');
 	await pageB.getByRole('button', { name: 'New scene' }).click();
 	await expect(pageB.getByText('Nothing in the library yet')).toBeVisible();
-	await expect(pageB.getByRole('button', { name: 'Goblin archer' })).toHaveCount(0);
+	await expect(pageB.getByRole('button', { name: 'Swamp road' })).toHaveCount(0);
 
 	await roomA.close();
 	await roomB.close();
@@ -97,6 +130,10 @@ test('aligning a map bakes the offset into the image and pre-fills the scene gri
 	await createRoomAsGM(page, 'Grid Alignment');
 	await page.getByRole('link', { name: 'Assets' }).click();
 
+	// Alignment belongs to maps, so it's the Maps tab that offers it — it
+	// used to be the other way round, with aligning the thing that made
+	// something a map.
+	await page.getByRole('tab', { name: /^Maps/ }).click();
 	await page.getByLabel('Choose images to add').setInputFiles(fixture('swamp.png'));
 	await page.getByLabel('Name').fill('Swamp');
 	await page.getByRole('button', { name: 'Align to grid' }).click();
@@ -185,4 +222,127 @@ test('a library entry can be renamed afterwards, and identical content is never 
 	// The earlier name survives, because an add that didn't set out to
 	// rename anything shouldn't.
 	await expect(page.getByText('map-again')).toHaveCount(0);
+});
+
+test('the library keeps tokens and maps apart, shows token art whole, and can be corrected', async ({
+	page
+}) => {
+	await createRoomAsGM(page, 'Two Tabs');
+	await page.getByRole('link', { name: 'Assets' }).click();
+
+	await page.getByLabel('Choose images to add').setInputFiles(fixture('goblin.png'));
+	await page.getByLabel('Name').fill('Goblin archer');
+	await page.getByRole('button', { name: 'Add to library' }).click();
+	await expect(page.getByText('Goblin archer')).toBeVisible();
+
+	await page.getByRole('tab', { name: /^Maps/ }).click();
+	await page.getByLabel('Choose images to add').setInputFiles(fixture('map.png'));
+	await page.getByLabel('Name').fill('Ruined keep');
+	await page.getByRole('button', { name: 'Add to library' }).click();
+
+	// The Maps tab is open because that's what was just added — a library
+	// that stayed on the other tab would look like the upload did nothing —
+	// and it holds the map alone.
+	await expect(page.getByText('Ruined keep')).toBeVisible();
+	await expect(page.getByText('Goblin archer')).toHaveCount(0);
+
+	// A map keeps the wide crop: it's never square and never legible at
+	// thumbnail size anyway, so the tile buys screen space instead.
+	const mapArt = (await page.getByRole('img', { name: 'Ruined keep' }).boundingBox())!;
+	expect(mapArt.height).toBeLessThan(mapArt.width);
+
+	await page.getByRole('tab', { name: 'Tokens 1' }).click();
+	await expect(page.getByText('Ruined keep')).toHaveCount(0);
+	// Token art is square and uncropped, because a token *is* square on the
+	// table and a crop hides the thing being chosen. Measured rather than
+	// asserted on a class name, since what matters is the box on screen.
+	const tokenArt = (await page.getByRole('img', { name: 'Goblin archer' }).boundingBox())!;
+	expect(Math.abs(tokenArt.width - tokenArt.height)).toBeLessThan(1);
+
+	// Which kind a picture is filed under is this room's opinion of it, not
+	// a fact about the pixels, so it can be corrected without re-uploading.
+	// This is also the only repair for whatever the migration guessed about
+	// a library added before the split existed.
+	await page.getByRole('button', { name: 'Edit' }).click();
+	await page.getByRole('button', { name: 'Maps', exact: true }).click();
+	await page.getByRole('button', { name: 'Save' }).click();
+
+	await expect(page.getByRole('tab', { name: 'Maps 2' })).toBeVisible();
+	await expect(page.getByText('Goblin archer')).toBeVisible();
+	await page.getByRole('tab', { name: 'Tokens 0' }).click();
+	await expect(page.getByText('Nothing filed as token art yet')).toBeVisible();
+
+	// And the split survives a reload, because it's a column on the room's
+	// copy of the asset rather than something the page worked out.
+	await page.reload();
+	await expect(page.getByRole('tab', { name: 'Maps 2' })).toBeVisible();
+});
+
+test('a staged file whose shape disagrees with the open tab says so, and can be moved', async ({
+	page
+}) => {
+	await createRoomAsGM(page, 'Shape Guess');
+	await page.getByRole('link', { name: 'Assets' }).click();
+
+	// Staged on the Tokens tab, so that's what it would be filed as — but
+	// it's 40x12, which is not a shape token art comes in.
+	await page.getByLabel('Choose images to add').setInputFiles(fixture('wide-map.png'));
+	await expect(page.getByText('Adding as token art')).toBeVisible();
+	await expect(page.getByText('40×12 is shaped more like a map')).toBeVisible();
+
+	// The guess only ever asks. Taking it up is one click, and it carries
+	// the alignment step over with it, since that belongs to maps.
+	await page.getByRole('button', { name: 'File it as a map' }).click();
+	await expect(page.getByText('Adding as a map')).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Align to grid' })).toBeVisible();
+
+	await page.getByLabel('Name').fill('Long hall');
+	await page.getByRole('button', { name: 'Add to library' }).click();
+	await expect(page.getByRole('tab', { name: 'Maps 1' })).toBeVisible();
+	await expect(page.getByText('Long hall')).toBeVisible();
+
+	// A square image on the Tokens tab is what the tab said it would be,
+	// and gets asked nothing.
+	await page.getByRole('tab', { name: /^Tokens/ }).click();
+	await page.getByLabel('Choose images to add').setInputFiles(fixture('goblin.png'));
+	await expect(page.getByText('Adding as token art')).toBeVisible();
+	await expect(page.getByText(/shaped more like/)).toHaveCount(0);
+});
+
+test('an asset can be taken off the room shelf without deleting the picture', async ({ page }) => {
+	await createRoomAsGM(page, 'Asset Removal');
+	await page.getByRole('link', { name: 'Assets' }).click();
+
+	await page.getByLabel('Choose images to add').setInputFiles(fixture('goblin.png'));
+	await page.getByLabel('Name').fill('Goblin archer');
+	await page.getByRole('button', { name: 'Add to library' }).click();
+	await expect(page.getByText('Goblin archer')).toBeVisible();
+
+	// The image's own URL, checked afterwards: removal is about this
+	// room's shelf, and the file is content-addressed and shared with
+	// every other room that has it.
+	const assetSrc = await page.getByRole('img', { name: 'Goblin archer' }).getAttribute('src');
+
+	// Two clicks, so a stray one can't empty a library.
+	await page.getByRole('button', { name: 'Remove Goblin archer' }).click();
+	await expect(page.getByRole('button', { name: 'Remove Goblin archer' })).toHaveCount(0);
+	await page.getByRole('button', { name: 'Confirm removing Goblin archer' }).click();
+
+	await expect(page.getByText('Goblin archer')).toHaveCount(0);
+	await expect(page.getByRole('tab', { name: 'Tokens 0' })).toBeVisible();
+
+	// Gone from the server, not just from this page's state.
+	await page.reload();
+	await expect(page.getByText('Goblin archer')).toHaveCount(0);
+
+	// The picture is still served, which is what keeps a scene or token
+	// that was already using it from turning into a broken image.
+	const stillServed = await page.evaluate(async (src) => (await fetch(src!)).status, assetSrc);
+	expect(stillServed).toBe(200);
+
+	// And it's gone from the pickers in the room too — the same library,
+	// fetched fresh.
+	await page.getByRole('link', { name: 'Back to the table' }).click();
+	await page.getByRole('button', { name: 'New scene' }).click();
+	await expect(page.getByText('Nothing in the library yet')).toBeVisible();
 });

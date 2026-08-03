@@ -10,6 +10,12 @@ Support blocking re-uploads of content a Host has removed. Today, dedup only che
 hash goes with it, and a byte-identical re-upload would look like a brand-new file and get
 accepted again.
 
+Note that a *room* can now take an asset off its own library — see
+[remove-asset-from-room-library](../done/remove-asset-from-room-library.md). That deletes a
+`room_asset` row and nothing else: the `asset` row, its content hash and the blob all survive, so
+it lays no groundwork here and must not be mistaken for it. This item is still about a Host
+deleting the file itself, which is where the hash goes missing.
+
 Needs a record that survives asset removal (e.g. a separate `blocked_content_hash` table, or a
 "removed" flag/tombstone on the asset row instead of a hard delete) containing at least: the
 content hash, removal timestamp, and the Host's optional reason. The upload path needs to check

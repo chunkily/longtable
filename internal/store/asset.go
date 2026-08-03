@@ -48,6 +48,24 @@ func (s *Store) scanAsset(row *sql.Row) (Asset, error) {
 	return a, nil
 }
 
+// AssetKind is what a room keeps a picture for: art to put on a token,
+// or a map to put under one. Per-room like the name and the credit,
+// since the same picture can be one group's boss portrait and another's
+// battle map.
+type AssetKind string
+
+const (
+	AssetKindToken AssetKind = "token"
+	AssetKindMap   AssetKind = "map"
+)
+
+// Valid reports whether k is one of the two kinds. The empty string is
+// not: callers use it as "not supplied", which is a different thing from
+// a kind and must not reach the database as one.
+func (k AssetKind) Valid() bool {
+	return k == AssetKindToken || k == AssetKindMap
+}
+
 // LibraryAsset is an asset as it appears in one room's library: the
 // asset itself plus the things that belong to the room's copy of it
 // rather than to the file. Name and Attribution are per-room because two
@@ -57,6 +75,10 @@ type LibraryAsset struct {
 	Asset
 	Name        string
 	Attribution string
+	// Kind sorts the library into its two tabs, and decides which pickers
+	// offer this asset first. Never empty on a row that came back from the
+	// database — the column defaults to 'token'.
+	Kind AssetKind
 	// GridSize is the map's pixels per square, measured when it was
 	// aligned. Nil for anything nobody aligned — every token, and any map
 	// added before the assets page existed.
@@ -69,10 +91,16 @@ type LibraryAsset struct {
 // file someone already added is a normal thing to do (it's how you
 // discover it was already there), and it should read as a no-op rather
 // than an error.
-func (s *Store) AddAssetToRoom(roomID, assetID, name, attribution string, gridSize *int) error {
+// An empty kind means "not supplied", the same sentinel name and
+// attribution use.
+func (s *Store) AddAssetToRoom(roomID, assetID, name, attribution string, kind AssetKind, gridSize *int) error {
+	// kind is bound three times rather than read off `excluded` like its
+	// neighbours, because the row ON CONFLICT sees has already had the
+	// column default applied — by then "not supplied" and "token" are the
+	// same value, and an old client's silence would overwrite a map.
 	_, err := s.db.Exec(`
-		INSERT INTO room_asset (room_id, asset_id, name, attribution, grid_size, added_at)
-		VALUES (?, ?, ?, ?, ?, ?)
+		INSERT INTO room_asset (room_id, asset_id, name, attribution, kind, grid_size, added_at)
+		VALUES (?, ?, ?, ?, COALESCE(NULLIF(?, ''), 'token'), ?, ?)
 		ON CONFLICT (room_id, asset_id) DO UPDATE SET
 			-- Each field only overwrites when something was actually
 			-- supplied, so a later upload that skipped the name, the credit
@@ -85,25 +113,72 @@ func (s *Store) AddAssetToRoom(roomID, assetID, name, attribution string, gridSi
 				WHEN excluded.attribution != '' THEN excluded.attribution
 				ELSE room_asset.attribution
 			END,
+			kind = CASE
+				WHEN ? != '' THEN ?
+				ELSE room_asset.kind
+			END,
 			grid_size = COALESCE(excluded.grid_size, room_asset.grid_size)`,
-		roomID, assetID, name, attribution, gridSize, time.Now().UTC().Format(time.RFC3339Nano),
+		roomID, assetID, name, attribution, string(kind), gridSize,
+		time.Now().UTC().Format(time.RFC3339Nano), string(kind), string(kind),
 	)
 	return err
 }
 
-// UpdateRoomAsset renames and re-credits a room's copy of an asset,
-// leaving the stored image alone. Both fields are written as given,
-// including empty — this is someone editing a form, so clearing the
-// credit has to be possible, unlike the upload path where an absent
-// field means "not supplied" rather than "make it blank".
+// UpdateRoomAsset renames, re-credits and reclassifies a room's copy of
+// an asset, leaving the stored image alone. Name and attribution are
+// written as given, including an empty credit — this is someone editing
+// a form, so clearing the credit has to be possible, unlike the upload
+// path where an absent field means "not supplied" rather than "make it
+// blank". Kind is the exception and keeps the upload path's rule, an
+// empty one leaving the asset where it is: there is no third kind for
+// "cleared" to mean, so silence can only be silence.
+//
+// Reclassifying is possible at all because the migration that first
+// sorted a library into tokens and maps could only guess, and a guess
+// with no way to correct it is worse than no guess.
 //
 // Returns ErrNotFound when the asset isn't in this room's library, which
 // is also the answer for an asset that belongs to some other room: the
 // caller can't tell those apart, and shouldn't be able to.
-func (s *Store) UpdateRoomAsset(roomID, assetID, name, attribution string) error {
+func (s *Store) UpdateRoomAsset(roomID, assetID, name, attribution string, kind AssetKind) error {
+	res, err := s.db.Exec(`
+		UPDATE room_asset
+		SET name = ?, attribution = ?, kind = CASE WHEN ? != '' THEN ? ELSE kind END
+		WHERE room_id = ? AND asset_id = ?`,
+		name, attribution, string(kind), string(kind), roomID, assetID,
+	)
+	if err != nil {
+		return err
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// RemoveAssetFromRoom takes an asset off one room's shelf. It deletes
+// the library row and nothing else: the asset row and the file behind it
+// are global and content-addressed, so any other room that added the
+// same picture keeps it, and this room can get it back by adding the
+// file again.
+//
+// It also doesn't reach onto the table. A scene or token already using
+// the image goes on using it — those hold the asset ID, which is still
+// good, and yanking the art out from under a scene mid-session is not
+// what "remove it from the library" asks for. Erasing a file everywhere
+// is a Host's job and a different feature; see the host-moderate-assets
+// story.
+//
+// Returns ErrNotFound when the asset isn't in this room's library, which
+// is also the answer for another room's asset — the same blind spot
+// UpdateRoomAsset keeps, for the same reason.
+func (s *Store) RemoveAssetFromRoom(roomID, assetID string) error {
 	res, err := s.db.Exec(
-		`UPDATE room_asset SET name = ?, attribution = ? WHERE room_id = ? AND asset_id = ?`,
-		name, attribution, roomID, assetID,
+		`DELETE FROM room_asset WHERE room_id = ? AND asset_id = ?`, roomID, assetID,
 	)
 	if err != nil {
 		return err
@@ -124,7 +199,7 @@ func (s *Store) UpdateRoomAsset(roomID, assetID, name, attribution string) error
 func (s *Store) ListRoomAssets(roomID string) ([]LibraryAsset, error) {
 	rows, err := s.db.Query(`
 		SELECT a.id, a.content_hash, a.filename, a.mime_type, a.byte_size, a.created_at,
-		       ra.name, ra.attribution, ra.grid_size, ra.added_at
+		       ra.name, ra.attribution, ra.kind, ra.grid_size, ra.added_at
 		FROM room_asset ra
 		JOIN asset a ON a.id = ra.asset_id
 		WHERE ra.room_id = ?
@@ -150,7 +225,7 @@ func (s *Store) ListRoomAssets(roomID string) ([]LibraryAsset, error) {
 func (s *Store) GetRoomAsset(roomID, assetID string) (LibraryAsset, error) {
 	la, err := scanLibraryAsset(s.db.QueryRow(`
 		SELECT a.id, a.content_hash, a.filename, a.mime_type, a.byte_size, a.created_at,
-		       ra.name, ra.attribution, ra.grid_size, ra.added_at
+		       ra.name, ra.attribution, ra.kind, ra.grid_size, ra.added_at
 		FROM room_asset ra
 		JOIN asset a ON a.id = ra.asset_id
 		WHERE ra.room_id = ? AND ra.asset_id = ?`, roomID, assetID))
@@ -169,12 +244,16 @@ type rowScanner interface {
 
 func scanLibraryAsset(row rowScanner) (LibraryAsset, error) {
 	var la LibraryAsset
+	// kind lands in a plain string first, the way Visibility does in
+	// token.go — the driver has no reason to know about our named types.
+	var kind string
 	if err := row.Scan(
 		&la.ID, &la.ContentHash, &la.Filename, &la.MimeType, &la.ByteSize, &la.CreatedAt,
-		&la.Name, &la.Attribution, &la.GridSize, &la.AddedAt,
+		&la.Name, &la.Attribution, &kind, &la.GridSize, &la.AddedAt,
 	); err != nil {
 		return LibraryAsset{}, err
 	}
+	la.Kind = AssetKind(kind)
 	// Rows added before names existed have none, and a nameless entry in
 	// a grid you search by name is one you can't find. The filename is
 	// what the library used to show, so it stays the fallback.

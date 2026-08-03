@@ -107,6 +107,7 @@
 						{roomSlug}
 						{sessionToken}
 						idPrefix="replace-map"
+						kind="map"
 						bind:selectedId={replacementAssetId}
 						emptyHint="Nothing in the library yet — add a map on the assets page."
 					/>
