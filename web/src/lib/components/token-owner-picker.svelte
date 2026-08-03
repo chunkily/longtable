@@ -8,9 +8,9 @@
 	// as many members as it has people. A button per player is fine at
 	// four and unusable at twelve.
 	//
-	// The list is whoever is connected — see `ownerOptions`. You're always
-	// on it yourself, since the hub registers a connection before it sends
-	// the state that lists them, so it is never empty.
+	// The list is the connected Players — see `ownerOptions` for both
+	// halves of why. It can legitimately be empty, which is a GM setting
+	// up before anyone arrives.
 	import type { OwnerOption } from '$lib/token-owner';
 	import { Label } from '$lib/components/ui/label';
 
@@ -22,8 +22,8 @@
 		/** The owner's participant id, or null for nobody. Bindable so a dialog can read it on submit. */
 		ownerId?: string | null;
 		/**
-		 * Who may be picked, from `ownerOptions` — the people connected
-		 * right now, plus this token's owner if they've since left. The
+		 * Who may be picked, from `ownerOptions` — the Players connected
+		 * right now, plus this token's current owner whoever that is. The
 		 * rule lives there rather than here so it can be tested and so both
 		 * dialogs get the same answer.
 		 */
@@ -60,4 +60,12 @@
 			</option>
 		{/each}
 	</select>
+	{#if options.length === 0}
+		<!-- Said out loud, because a select holding only "Nobody" reads as a
+		     broken control. The ordinary way to see this is a GM setting up
+		     an encounter before anyone else has arrived. -->
+		<p class="text-xs text-muted-foreground">
+			No players are connected — a token can be handed over once they join.
+		</p>
+	{/if}
 </div>

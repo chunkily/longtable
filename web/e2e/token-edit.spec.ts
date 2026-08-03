@@ -161,6 +161,16 @@ test('the owner picker offers who is connected, and keeps an owner who leaves', 
 	browser
 }) => {
 	const gm = await openRoomAsGM(browser, 'Token Owner Presence');
+
+	// Alone in the room, and a GM is never offered: owning a token would
+	// grant them nothing they can't already do to every token. So there is
+	// nobody to hand this one to, which the picker says rather than
+	// showing a control with one dead option in it.
+	await gm.page.getByRole('button', { name: 'New token' }).click();
+	await expect(gm.page.getByText('No players are connected')).toBeVisible();
+	await expect(gm.page.getByLabel('Owner')).not.toContainText('Alice');
+	await gm.page.getByRole('button', { name: 'Close' }).click();
+
 	const player = await joinRoomAsPlayer(browser, gm.slug);
 
 	await gm.page.getByRole('button', { name: 'New token' }).click();

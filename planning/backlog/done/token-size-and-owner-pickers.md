@@ -65,12 +65,22 @@ The size picker went in as-is, as the item predicted. Three things it didn't:
   The prepping-the-night-before case is real but rarer, and the answer to it is to hand the token
   over when people arrive — which the edit dialog already does.
 
-  **`ownerOptions` keeps a token's current owner on the list when they've gone offline, and that
-  is not a nicety.** Since `token.update` sends every editable field every time, a list that
-  dropped an absent owner would leave the select with no matching option, the browser would fall
-  back to the first one — "Nobody" — and a GM renaming the token would silently take it off them.
-  The offline owner is labelled "— not connected" so the list stays honest about it. An e2e case
-  closes a player's browser and renames their token specifically to catch a regression here.
+  **GMs aren't offered either**, settled in the same review. A GM owning a token would grant them
+  nothing: they may move any token whatever [the ownership
+  lock](../open/token-move-ownership-lock.md) ends up saying, and may already edit any token's HP.
+  The only thing it could express is "this is my character", and an option that looks like a
+  permission but confers none is worse than no option. That makes the empty list reachable — a GM
+  setting up before anyone arrives — so the picker says "No players are connected" rather than
+  showing a control whose only entry is "Nobody".
+
+  **`ownerOptions` keeps a token's current owner on the list whoever they are, and that is not a
+  nicety.** Since `token.update` sends every editable field every time, a list that dropped the
+  current owner would leave the select with no matching option, the browser would fall back to
+  the first one — "Nobody" — and a GM renaming the token would silently take it off them. It
+  catches both ways of falling off the list: a Player who went offline, and a GM holding a token
+  from before GMs stopped being offered. The `online` flag means *connected*, not *offered*, so a
+  kept GM sitting right there isn't labelled absent. An e2e case closes a player's browser and
+  renames their token specifically to catch a regression here.
 
   **The server still validates room membership, not connection**, and deliberately: being offline
   isn't being gone, and a rule keyed on presence would refuse an assignment the moment someone's
