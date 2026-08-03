@@ -1,0 +1,21 @@
+---
+title: Room Member picks an identity color
+created: 2026-08-03
+---
+
+As a Room Member
+I want to choose a color from a preset list for my identity in the room
+So that my pings and chat messages are recognizably mine to everyone else at the table
+
+## Acceptance criteria
+
+- [ ] The color is chosen from a fixed preset list, not a free color picker
+- [ ] The color applies to at least my pings and my name in chat
+- [ ] Before choosing, I can see which colors other currently-connected Room Members have already
+      picked
+- [ ] Two Room Members can pick the same color — nothing blocks or warns against a duplicate, the
+      visible list is only there so I can avoid one if I want to
+- [ ] My color is tied to my participant record in this room, not to my device — it doesn't carry
+      over to another room, or in from one, regardless of how display name ends up working
+- [ ] My color persists for the rest of my time in the room, including across a dropped and
+      restored connection
