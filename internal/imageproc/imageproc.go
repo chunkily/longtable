@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"image/draw"
 	"image/gif"
 	"image/jpeg"
 	"image/png"
@@ -58,6 +59,10 @@ var (
 	// file.
 	ErrUnsupportedFormat = errors.New("unsupported image format")
 	ErrTooLarge          = errors.New("image dimensions too large")
+	// ErrBadOffset is a crop that would take the whole image with it.
+	// Padding has no equivalent failure — it only ever grows the canvas,
+	// and growing it too far is ErrTooLarge.
+	ErrBadOffset = errors.New("offset would crop the entire image")
 )
 
 // Result is a re-encoded image, ready to store.
@@ -84,9 +89,31 @@ type Result struct {
 	Animated bool
 }
 
+// Offset shifts where an image's content starts, in pixels. Positive
+// values pad the top-left with transparency; negative values crop that
+// much off it. The zero value leaves the image alone.
+//
+// This is how a map's grid gets aligned. A map whose squares start 12px
+// in from the left is stored padded (or cropped) so they start on a
+// multiple of the square size instead, which means the canvas can go on
+// drawing its grid from the origin and no offset needs storing, applying
+// or getting wrong later. See the room-member-align-map-grid-offset
+// story: the alignment lives in the pixels, exactly once, or it lives in
+// every renderer forever.
+type Offset struct {
+	X, Y int
+}
+
+func (o Offset) zero() bool { return o.X == 0 && o.Y == 0 }
+
 // Reencode decodes r and returns its first frame as WebP. Everything
 // that isn't pixels is dropped in the process.
 func Reencode(r io.Reader) (Result, error) {
+	return ReencodeOffset(r, Offset{})
+}
+
+// ReencodeOffset is Reencode with the image shifted by offset first.
+func ReencodeOffset(r io.Reader, offset Offset) (Result, error) {
 	data, err := io.ReadAll(r)
 	if err != nil {
 		return Result{}, err
@@ -110,6 +137,13 @@ func Reencode(r io.Reader) (Result, error) {
 		// A file that sniffed as an image but won't decode is either
 		// corrupt or crafted; either way it isn't something to store.
 		return Result{}, fmt.Errorf("%w: %v", ErrUnsupportedFormat, err)
+	}
+
+	if !offset.zero() {
+		first, err = applyOffset(first, offset)
+		if err != nil {
+			return Result{}, err
+		}
 	}
 
 	var out bytes.Buffer
@@ -209,6 +243,39 @@ func decodeFirstFrame(data []byte, format string) (image.Image, int, error) {
 	default:
 		return nil, 0, ErrUnsupportedFormat
 	}
+}
+
+// applyOffset returns img shifted by offset: padded with transparency
+// where the offset is positive, cropped where it's negative.
+//
+// The dimension check runs again here rather than relying on the header
+// check at the top of the decode. That one bounded the *upload*; padding
+// happens afterwards and makes the image bigger, so an 8000×8000 map
+// that passed on the way in can still be pushed past MaxPixels by a
+// large enough pad.
+func applyOffset(img image.Image, offset Offset) (image.Image, error) {
+	bounds := img.Bounds()
+	width := bounds.Dx() + offset.X
+	height := bounds.Dy() + offset.Y
+	if width <= 0 || height <= 0 {
+		return nil, fmt.Errorf("%w: %d,%d against a %dx%d image",
+			ErrBadOffset, offset.X, offset.Y, bounds.Dx(), bounds.Dy())
+	}
+	if int64(width)*int64(height) > MaxPixels {
+		return nil, fmt.Errorf("%w: %dx%d after offset exceeds %d pixels",
+			ErrTooLarge, width, height, MaxPixels)
+	}
+
+	// NRGBA so the padding is genuinely transparent rather than black:
+	// the zero value of an NRGBA pixel is a transparent one, and WebP
+	// keeps alpha losslessly. A map padded to the left shows the table's
+	// background there, not a bar.
+	out := image.NewNRGBA(image.Rect(0, 0, width, height))
+	// A negative offset puts the destination rectangle partly outside
+	// out's bounds, and draw.Draw clips it — which is exactly the crop.
+	draw.Draw(out, image.Rect(offset.X, offset.Y, offset.X+bounds.Dx(), offset.Y+bounds.Dy()),
+		img, bounds.Min, draw.Src)
+	return out, nil
 }
 
 // expandVideoRange converts a WebP-decoded YCbCr image to NRGBA using

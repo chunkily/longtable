@@ -36,6 +36,7 @@ func NewRouter(s *store.Store, hub *ws.Hub, blobs *blobstore.Store, frontend fs.
 	mux.HandleFunc("GET /api/rooms/{slug}/session", srv.checkSession)
 	mux.HandleFunc("GET /api/rooms/{slug}/assets", srv.listRoomAssets)
 	mux.HandleFunc("POST /api/rooms/{slug}/assets", srv.uploadAsset)
+	mux.HandleFunc("PATCH /api/rooms/{slug}/assets/{id}", srv.updateRoomAsset)
 	mux.HandleFunc("GET /api/assets/{id}", srv.serveAsset)
 
 	mux.HandleFunc("GET /ws", hub.ServeHTTP)

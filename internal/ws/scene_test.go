@@ -271,7 +271,7 @@ func TestSceneSetMap_SwapsTheArtWithoutDisturbingTheScene(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAsset: %v", err)
 	}
-	if err := s.ts.store.AddAssetToRoom(s.room.ID, asset.ID, ""); err != nil {
+	if err := s.ts.store.AddAssetToRoom(s.room.ID, asset.ID, "", "", nil); err != nil {
 		t.Fatalf("AddAssetToRoom: %v", err)
 	}
 
@@ -320,7 +320,7 @@ func TestSceneSetMap_RejectsAssetFromAnotherRoom(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAsset: %v", err)
 	}
-	if err := s.ts.store.AddAssetToRoom(otherRoom.ID, asset.ID, ""); err != nil {
+	if err := s.ts.store.AddAssetToRoom(otherRoom.ID, asset.ID, "", "", nil); err != nil {
 		t.Fatalf("AddAssetToRoom: %v", err)
 	}
 

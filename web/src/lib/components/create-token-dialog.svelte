@@ -72,7 +72,7 @@
 					{sessionToken}
 					idPrefix="token"
 					bind:selectedId={imageAssetId}
-					emptyHint="Nothing in the library yet — upload an image, or leave blank for a plain marker."
+					emptyHint="Nothing in the library yet — add art on the assets page, or leave blank for a plain marker."
 				/>
 			</div>
 			<div class="flex flex-col gap-2">

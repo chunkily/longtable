@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
 	import { page } from '$app/state';
+	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
 	import { gmLogin, joinRoom, type Session } from '$lib/api';
 	import { loadSession, saveSession } from '$lib/session';
@@ -330,6 +331,12 @@
 			<span class="text-sm text-muted-foreground">
 				playing as <strong>{client.you?.displayName}</strong>
 			</span>
+			<span class="flex-1"></span>
+			<!-- Anyone in the room, not just the GM: players bring their own
+			     token art, and the library is shared. -->
+			<a class="text-sm underline underline-offset-2" href={resolve('/r/[slug]/assets', { slug })}>
+				Assets
+			</a>
 		</header>
 
 		{#if showConnectionBanner}

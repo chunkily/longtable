@@ -272,6 +272,14 @@ func listRoomAssets(t *testing.T, srv *httptest.Server, slug, token string) *htt
 
 func uploadWithAttribution(t *testing.T, srv *httptest.Server, slug, token, filename string, content []byte, attribution string) *http.Response {
 	t.Helper()
+	return uploadWithFields(t, srv, slug, token, filename, content,
+		map[string]string{"attribution": attribution})
+}
+
+// uploadWithFields is the upload the assets page makes: a file plus
+// whatever of the name, credit and grid figures were filled in.
+func uploadWithFields(t *testing.T, srv *httptest.Server, slug, token, filename string, content []byte, fields map[string]string) *http.Response {
+	t.Helper()
 
 	var buf bytes.Buffer
 	writer := multipart.NewWriter(&buf)
@@ -282,8 +290,10 @@ func uploadWithAttribution(t *testing.T, srv *httptest.Server, slug, token, file
 	if _, err := part.Write(content); err != nil {
 		t.Fatalf("write content: %v", err)
 	}
-	if err := writer.WriteField("attribution", attribution); err != nil {
-		t.Fatalf("write field: %v", err)
+	for name, value := range fields {
+		if err := writer.WriteField(name, value); err != nil {
+			t.Fatalf("write field %s: %v", name, err)
+		}
 	}
 	if err := writer.Close(); err != nil {
 		t.Fatalf("close writer: %v", err)

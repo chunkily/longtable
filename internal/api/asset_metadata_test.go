@@ -1,0 +1,247 @@
+package api
+
+import (
+	"bytes"
+	"image/color"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/gen2brain/webp"
+)
+
+// What a room's copy of an asset carries beyond the pixels: the name it
+// goes by, the credit, and — for a map — the square size measured when
+// it was aligned. Helpers live in assets_test.go.
+
+// The assets page sends all of an asset's details with the file, because
+// nothing is stored until it does — there is no half-finished library
+// entry to go back and fill in.
+func TestUploadAsset_RecordsNameAndGridSize(t *testing.T) {
+	srv, _ := newTestServer(t)
+	created := createTestRoom(t, srv)
+
+	resp := uploadWithFields(t, srv, created.RoomSlug, created.SessionToken, "dungeon_final_v2.png",
+		testPNG(t, 64, 64, color.RGBA{R: 40, G: 40, B: 40, A: 255}),
+		map[string]string{"name": "  Sunless citadel  ", "gridSize": "70"})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want 201", resp.StatusCode)
+	}
+
+	var uploaded assetPayloadT
+	decodeJSONBody(t, resp, &uploaded)
+	if uploaded.Name != "Sunless citadel" {
+		t.Fatalf("name = %q, want it trimmed to %q", uploaded.Name, "Sunless citadel")
+	}
+	if uploaded.GridSize == nil || *uploaded.GridSize != 70 {
+		t.Fatalf("gridSize = %v, want 70", uploaded.GridSize)
+	}
+
+	var library []assetPayloadT
+	decodeJSONBody(t, listRoomAssets(t, srv, created.RoomSlug, created.SessionToken), &library)
+	if len(library) != 1 || library[0].Name != "Sunless citadel" {
+		t.Fatalf("library = %+v, want the named asset", library)
+	}
+	if library[0].GridSize == nil || *library[0].GridSize != 70 {
+		t.Fatalf("library gridSize = %v, want 70", library[0].GridSize)
+	}
+}
+
+// Tokens have no grid, and a map can be added without aligning it, so an
+// upload carrying neither name nor grid size is the ordinary case rather
+// than an error. The name still has to come out non-empty: an entry with
+// nothing to search on is one nobody finds.
+func TestUploadAsset_DefaultsNameFromFilename(t *testing.T) {
+	srv, _ := newTestServer(t)
+	created := createTestRoom(t, srv)
+
+	var uploaded assetPayloadT
+	decodeJSONBody(t, uploadTestAsset(t, srv, created.RoomSlug, created.SessionToken, "goblin archer.png",
+		testPNG(t, 16, 16, color.RGBA{R: 200, G: 30, B: 30, A: 255})), &uploaded)
+
+	if uploaded.Name != "goblin archer" {
+		t.Fatalf("name = %q, want the filename without its extension", uploaded.Name)
+	}
+	if uploaded.GridSize != nil {
+		t.Fatalf("gridSize = %d, want null for an unaligned upload", *uploaded.GridSize)
+	}
+}
+
+func TestUploadAsset_RejectsNonsenseGridFigures(t *testing.T) {
+	srv, _ := newTestServer(t)
+	created := createTestRoom(t, srv)
+	content := testPNG(t, 16, 16, color.RGBA{R: 1, G: 2, B: 3, A: 255})
+
+	for _, tc := range []struct {
+		name   string
+		fields map[string]string
+	}{
+		{"non-numeric size", map[string]string{"gridSize": "seventy"}},
+		{"size below the floor", map[string]string{"gridSize": "2"}},
+		{"size past the ceiling", map[string]string{"gridSize": "9000"}},
+		{"offset past the ceiling", map[string]string{"gridOffsetX": "100000"}},
+	} {
+		resp := uploadWithFields(t, srv, created.RoomSlug, created.SessionToken, "m.png", content, tc.fields)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("%s: status = %d, want 400", tc.name, resp.StatusCode)
+		}
+		resp.Body.Close()
+	}
+}
+
+// The alignment lives in the pixels: a map padded on upload is served
+// already aligned, so nothing downstream has to know an offset ever
+// existed. That is the whole argument of the grid-offset story.
+func TestUploadAsset_BakesGridOffsetIntoTheStoredImage(t *testing.T) {
+	srv, _ := newTestServer(t)
+	created := createTestRoom(t, srv)
+
+	var uploaded assetPayloadT
+	decodeJSONBody(t, uploadWithFields(t, srv, created.RoomSlug, created.SessionToken, "map.png",
+		testPNG(t, 100, 80, color.RGBA{R: 20, G: 120, B: 20, A: 255}),
+		map[string]string{"gridOffsetX": "12", "gridOffsetY": "-5"}), &uploaded)
+
+	served := getAssetBytes(t, srv, uploaded.ID)
+	cfg, err := webp.DecodeConfig(bytes.NewReader(served))
+	if err != nil {
+		t.Fatalf("served bytes are not webp: %v", err)
+	}
+	// Padded 12px on the left, cropped 5px off the top.
+	if cfg.Width != 112 || cfg.Height != 75 {
+		t.Fatalf("served image is %dx%d, want 112x75", cfg.Width, cfg.Height)
+	}
+}
+
+func patchRoomAsset(t *testing.T, srv *httptest.Server, slug, token, assetID, body string) *http.Response {
+	t.Helper()
+
+	req, err := http.NewRequest(http.MethodPatch,
+		srv.URL+"/api/rooms/"+slug+"/assets/"+assetID, strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("do request: %v", err)
+	}
+	return resp
+}
+
+// Names default from filenames, so a first pass through a library is
+// full of things nobody would search for. Renaming has to work without
+// re-uploading the file.
+func TestUpdateRoomAsset_RenamesAndRecredits(t *testing.T) {
+	srv, _ := newTestServer(t)
+	created := createTestRoom(t, srv)
+
+	var uploaded assetPayloadT
+	decodeJSONBody(t, uploadWithFields(t, srv, created.RoomSlug, created.SessionToken, "img_4471.png",
+		testPNG(t, 24, 24, color.RGBA{R: 60, G: 60, B: 160, A: 255}),
+		map[string]string{"attribution": "by Alice"}), &uploaded)
+
+	resp := patchRoomAsset(t, srv, created.RoomSlug, created.SessionToken, uploaded.ID,
+		`{"name":"Ruined keep","attribution":"by Alice, CC-BY"}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var updated assetPayloadT
+	decodeJSONBody(t, resp, &updated)
+	if updated.Name != "Ruined keep" || updated.Attribution != "by Alice, CC-BY" {
+		t.Fatalf("updated = %+v, want the new name and credit", updated)
+	}
+
+	var library []assetPayloadT
+	decodeJSONBody(t, listRoomAssets(t, srv, created.RoomSlug, created.SessionToken), &library)
+	if library[0].Name != "Ruined keep" {
+		t.Fatalf("library name = %q, want the rename to have stuck", library[0].Name)
+	}
+}
+
+// Unlike an upload, where an absent credit means "I had nothing to add",
+// a form submission with an empty credit means "clear it".
+func TestUpdateRoomAsset_ClearsAttributionWhenAsked(t *testing.T) {
+	srv, _ := newTestServer(t)
+	created := createTestRoom(t, srv)
+
+	var uploaded assetPayloadT
+	decodeJSONBody(t, uploadWithAttribution(t, srv, created.RoomSlug, created.SessionToken, "m.png",
+		testPNG(t, 8, 8, color.RGBA{R: 9, G: 9, B: 9, A: 255}), "by Bob"), &uploaded)
+
+	var updated assetPayloadT
+	decodeJSONBody(t, patchRoomAsset(t, srv, created.RoomSlug, created.SessionToken, uploaded.ID,
+		`{"name":"Map","attribution":""}`), &updated)
+	if updated.Attribution != "" {
+		t.Fatalf("attribution = %q, want it cleared", updated.Attribution)
+	}
+}
+
+func TestUpdateRoomAsset_RejectsAnEmptyName(t *testing.T) {
+	srv, _ := newTestServer(t)
+	created := createTestRoom(t, srv)
+
+	var uploaded assetPayloadT
+	decodeJSONBody(t, uploadTestAsset(t, srv, created.RoomSlug, created.SessionToken, "m.png",
+		testPNG(t, 8, 8, color.RGBA{R: 7, G: 7, B: 7, A: 255})), &uploaded)
+
+	resp := patchRoomAsset(t, srv, created.RoomSlug, created.SessionToken, uploaded.ID,
+		`{"name":"   ","attribution":""}`)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", resp.StatusCode)
+	}
+	resp.Body.Close()
+}
+
+// An asset in another room and an asset that doesn't exist give the same
+// answer, so a 404 can't be used to probe what exists elsewhere.
+func TestUpdateRoomAsset_WontReachIntoAnotherRoomsLibrary(t *testing.T) {
+	srv, _ := newTestServer(t)
+	roomA := createTestRoom(t, srv)
+	roomB := createTestRoom(t, srv)
+
+	var inA assetPayloadT
+	decodeJSONBody(t, uploadTestAsset(t, srv, roomA.RoomSlug, roomA.SessionToken, "m.png",
+		testPNG(t, 12, 12, color.RGBA{R: 5, G: 90, B: 5, A: 255})), &inA)
+
+	// Room B holds a valid session and a real asset ID — just not one of
+	// theirs.
+	resp := patchRoomAsset(t, srv, roomB.RoomSlug, roomB.SessionToken, inA.ID, `{"name":"Mine now"}`)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("foreign asset: status = %d, want 404", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	missing := patchRoomAsset(t, srv, roomB.RoomSlug, roomB.SessionToken,
+		"11111111-1111-1111-1111-111111111111", `{"name":"Ghost"}`)
+	if missing.StatusCode != http.StatusNotFound {
+		t.Fatalf("missing asset: status = %d, want 404", missing.StatusCode)
+	}
+	missing.Body.Close()
+
+	// A's own copy is untouched.
+	var library []assetPayloadT
+	decodeJSONBody(t, listRoomAssets(t, srv, roomA.RoomSlug, roomA.SessionToken), &library)
+	if library[0].Name != "m" {
+		t.Fatalf("room A name = %q, want it unchanged", library[0].Name)
+	}
+}
+
+func TestUpdateRoomAsset_RequiresASessionForThatRoom(t *testing.T) {
+	srv, _ := newTestServer(t)
+	created := createTestRoom(t, srv)
+
+	var uploaded assetPayloadT
+	decodeJSONBody(t, uploadTestAsset(t, srv, created.RoomSlug, created.SessionToken, "m.png",
+		testPNG(t, 8, 8, color.RGBA{R: 3, G: 3, B: 3, A: 255})), &uploaded)
+
+	resp := patchRoomAsset(t, srv, created.RoomSlug, "", uploaded.ID, `{"name":"Anon"}`)
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", resp.StatusCode)
+	}
+	resp.Body.Close()
+}

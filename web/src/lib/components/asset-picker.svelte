@@ -1,20 +1,23 @@
 <script lang="ts">
-	// Picking art for a scene or a token: the room's library to choose
-	// from, with uploading as one option among them rather than the only
-	// way in. An upload joins the library on the way past, so the second
-	// time you need the same goblin it's already here.
+	// Choosing art for a scene or a token, from what the room already has.
+	//
+	// This used to upload as well. It doesn't any more: an upload made from
+	// inside a form about something else had nowhere to put a name or a grid
+	// alignment, so it quietly produced assets that search couldn't find and
+	// maps whose squares didn't line up. Adding to the library happens on
+	// the assets page, which is linked from here.
 	import { toast } from 'svelte-sonner';
-	import { assetUrl, listRoomAssets, uploadAsset, type Asset } from '$lib/api';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
+	import { resolve } from '$app/paths';
+	import { listRoomAssets, type Asset } from '$lib/api';
+	import AssetLibrary from '$lib/components/asset-library.svelte';
 
 	let {
 		roomSlug,
 		sessionToken,
 		selectedId = $bindable(null),
 		idPrefix = 'asset',
-		emptyHint = 'Nothing in the library yet — upload an image to get started.'
+		emptyHint = 'Nothing in the library yet — add an image on the assets page.',
+		onpick
 	}: {
 		roomSlug: string;
 		sessionToken: string;
@@ -26,19 +29,26 @@
 		/** Distinguishes the input ids when two pickers share a page. */
 		idPrefix?: string;
 		emptyHint?: string;
+		/**
+		 * The whole chosen asset, for callers that want more than its id —
+		 * the scene dialog defaults its grid size from the map's measured
+		 * squares this way.
+		 */
+		onpick?: (asset: Asset | null) => void;
 	} = $props();
 
 	let library = $state<Asset[]>([]);
 	let loading = $state(true);
-	let uploading = $state(false);
-	let attribution = $state('');
-	let fileInput = $state<HTMLInputElement | null>(null);
 
-	// Loaded once when the picker mounts rather than on every open: the
-	// library changes when someone uploads, and an upload goes through
-	// this component, so it can keep its own list current.
+	// Loaded when the picker mounts. Uploads no longer come through here, so
+	// this list can go stale if someone adds to the library in another tab —
+	// which is what the "add images" link warns about by opening in one.
 	$effect(() => {
 		void refresh();
+	});
+
+	$effect(() => {
+		onpick?.(library.find((a) => a.id === selectedId) ?? null);
 	});
 
 	async function refresh() {
@@ -51,111 +61,28 @@
 			loading = false;
 		}
 	}
-
-	async function handleUpload(event: Event) {
-		const input = event.currentTarget as HTMLInputElement;
-		const file = input.files?.[0];
-		if (!file) return;
-
-		uploading = true;
-		try {
-			const asset = await uploadAsset(roomSlug, sessionToken, file, attribution);
-			// Selecting it immediately is the point of uploading, and putting
-			// it at the front matches the server's newest-first order without
-			// a second round trip.
-			library = [asset, ...library.filter((a) => a.id !== asset.id)];
-			selectedId = asset.id;
-			attribution = '';
-			if (asset.flattened) {
-				toast.info('Animated images are stored as a still picture — kept the first frame.');
-			}
-		} catch (err) {
-			toast.error(err instanceof Error ? err.message : 'upload failed');
-		} finally {
-			uploading = false;
-			// Clearing the input means picking the same file again still
-			// fires a change event, which matters after a failed upload.
-			input.value = '';
-		}
-	}
-
-	function toggle(id: string) {
-		selectedId = selectedId === id ? null : id;
-	}
 </script>
 
-<div class="flex flex-col gap-3">
-	<div class="flex flex-col gap-2">
-		<Label for="{idPrefix}-attribution">Attribution or licence (optional)</Label>
-		<Input
-			id="{idPrefix}-attribution"
-			bind:value={attribution}
-			placeholder="e.g. by Alice, CC-BY"
-			autocomplete="off"
-		/>
-		<p class="text-xs text-muted-foreground">
-			Applied to the next image you upload, and shown to everyone in the room.
-		</p>
-	</div>
+<div class="flex flex-col gap-2">
+	<AssetLibrary assets={library} {loading} {idPrefix} {emptyHint} bind:selectedId />
 
-	<div class="flex items-center gap-2">
-		<Button
-			type="button"
-			variant="outline"
-			size="sm"
-			disabled={uploading}
-			onclick={() => fileInput?.click()}
+	<div class="flex items-center gap-3 text-xs text-muted-foreground">
+		<a
+			class="underline underline-offset-2"
+			href={resolve('/r/[slug]/assets', { slug: roomSlug })}
+			target="_blank"
+			rel="noopener"
 		>
-			{uploading ? 'Uploading…' : 'Upload new image'}
-		</Button>
+			Add images
+		</a>
 		{#if selectedId}
-			<Button type="button" variant="ghost" size="sm" onclick={() => (selectedId = null)}>
+			<button
+				type="button"
+				class="underline underline-offset-2"
+				onclick={() => (selectedId = null)}
+			>
 				Clear selection
-			</Button>
+			</button>
 		{/if}
 	</div>
-	<!-- Hidden because the native control can't be styled to match, and
-	     it's driven by the button above. -->
-	<input
-		bind:this={fileInput}
-		type="file"
-		accept="image/png,image/jpeg,image/webp,image/gif"
-		class="hidden"
-		aria-label="Upload an image"
-		onchange={handleUpload}
-	/>
-
-	{#if loading}
-		<p class="text-sm text-muted-foreground">Loading library…</p>
-	{:else if library.length === 0}
-		<p class="text-sm text-muted-foreground">{emptyHint}</p>
-	{:else}
-		<ul class="grid max-h-64 grid-cols-3 gap-2 overflow-y-auto sm:grid-cols-4">
-			{#each library as asset (asset.id)}
-				<li>
-					<button
-						type="button"
-						aria-pressed={selectedId === asset.id}
-						title={asset.attribution ? `${asset.filename} — ${asset.attribution}` : asset.filename}
-						class={[
-							'flex w-full flex-col gap-1 rounded-md border p-1 text-left',
-							selectedId === asset.id && 'outline-2 outline-offset-2 outline-sky-400'
-						]}
-						onclick={() => toggle(asset.id)}
-					>
-						<img
-							src={assetUrl(asset.id)}
-							alt={asset.filename}
-							loading="lazy"
-							class="h-16 w-full rounded object-cover"
-						/>
-						<span class="truncate text-xs">{asset.filename}</span>
-						{#if asset.attribution}
-							<span class="truncate text-[10px] text-muted-foreground">{asset.attribution}</span>
-						{/if}
-					</button>
-				</li>
-			{/each}
-		</ul>
-	{/if}
 </div>

@@ -29,7 +29,7 @@ func TestSceneCreate_RejectsAssetFromAnotherRoom(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAsset: %v", err)
 	}
-	if err := ts.store.AddAssetToRoom(roomA.ID, asset.ID, ""); err != nil {
+	if err := ts.store.AddAssetToRoom(roomA.ID, asset.ID, "", "", nil); err != nil {
 		t.Fatalf("AddAssetToRoom: %v", err)
 	}
 
@@ -83,7 +83,7 @@ func TestTokenCreate_RejectsAssetFromAnotherRoom(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAsset: %v", err)
 	}
-	if err := ts.store.AddAssetToRoom(roomA.ID, asset.ID, ""); err != nil {
+	if err := ts.store.AddAssetToRoom(roomA.ID, asset.ID, "", "", nil); err != nil {
 		t.Fatalf("AddAssetToRoom: %v", err)
 	}
 
@@ -102,7 +102,7 @@ func TestTokenCreate_RejectsAssetFromAnotherRoom(t *testing.T) {
 
 	// Once it's in their library, the same command works — so this is
 	// scoping, not a blanket refusal.
-	if err := ts.store.AddAssetToRoom(roomB.ID, asset.ID, ""); err != nil {
+	if err := ts.store.AddAssetToRoom(roomB.ID, asset.ID, "", "", nil); err != nil {
 		t.Fatalf("AddAssetToRoom: %v", err)
 	}
 	client.send(t, "token.create", map[string]any{
@@ -135,7 +135,7 @@ func TestAssetScope_UnknownAndForeignAssetsFailAlike(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAsset: %v", err)
 	}
-	if err := ts.store.AddAssetToRoom(roomA.ID, asset.ID, ""); err != nil {
+	if err := ts.store.AddAssetToRoom(roomA.ID, asset.ID, "", "", nil); err != nil {
 		t.Fatalf("AddAssetToRoom: %v", err)
 	}
 

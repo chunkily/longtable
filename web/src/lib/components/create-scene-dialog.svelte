@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import { assetUrl } from '$lib/api';
+	import { assetUrl, type Asset } from '$lib/api';
 	import type { RoomClient } from '$lib/room.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -22,11 +22,10 @@
 	let mapAssetId = $state<string | null>(null);
 	let submitting = $state(false);
 
-	// Width/height default to the chosen map's real dimensions, whichever
-	// way it was chosen — freshly uploaded or picked from the library.
-	// Loading it as a plain Image rather than trusting anything cached
-	// from the picker's thumbnail keeps this the actual asset dimensions,
-	// not a guess from a clipped 64px preview.
+	// Width/height default to the chosen map's real dimensions. Loading it
+	// as a plain Image rather than trusting anything cached from the
+	// picker's thumbnail keeps this the actual asset dimensions, not a
+	// guess from a clipped 64px preview.
 	$effect(() => {
 		const id = mapAssetId;
 		if (!id) return;
@@ -38,6 +37,15 @@
 		};
 		img.src = assetUrl(id);
 	});
+
+	// A map aligned on the assets page carries the square size that was
+	// measured while aligning it. Defaulting to it is what makes the
+	// alignment worth doing — the offset is already baked into the pixels,
+	// but a scene created at the wrong grid size undoes it just as
+	// thoroughly as a wrong offset would.
+	function adoptGridSize(asset: Asset | null) {
+		if (asset?.gridSize) gridSize = asset.gridSize;
+	}
 
 	async function handleSubmit(event: SubmitEvent) {
 		event.preventDefault();
@@ -82,7 +90,8 @@
 					{sessionToken}
 					idPrefix="scene"
 					bind:selectedId={mapAssetId}
-					emptyHint="Nothing in the library yet — upload a map to get started."
+					onpick={adoptGridSize}
+					emptyHint="Nothing in the library yet — add a map on the assets page."
 				/>
 			</div>
 			<div class="grid grid-cols-3 gap-2">

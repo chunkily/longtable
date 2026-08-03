@@ -26,6 +26,7 @@ architecture and current state live here instead**, and keeping them true is par
 | `web/src/lib/room.svelte.ts` | `RoomClient`: the WS protocol wrapped in Svelte 5 runes state |
 | `web/src/lib/components/game-canvas.svelte` | the whole Konva map: layers, tools, rendering |
 | `web/src/routes/r/[slug]/+page.svelte` | the room page — join form, toolbar, chat |
+| `web/src/routes/r/[slug]/assets/+page.svelte` | the assets page — the only way art enters a room's library: name, credit, grid alignment, search |
 | `web/e2e/` | Playwright specs; several read canvas pixels because Konva has no DOM |
 | `planning/` | backlog, user stories, ADRs (`decisions/`), role glossary |
 
@@ -51,17 +52,19 @@ pings, distance measuring, area-of-effect templates (circle/cone/line/cube, orig
 mode and size in whole 5 ft steps),
 chat with `/roll`, and a live list of who's connected (distinct from the room's roster of
 everyone who has ever joined, which `state.sync` also carries). A dropped socket reconnects on
-its own with backoff, and says so on screen while it's down. Every upload is decoded and
-re-encoded to WebP and
-joins the uploading room's library — content-addressed globally so identical uploads share one
-file, but a room only ever sees what it added itself. All of it syncs live; everything but pings
-and measurements persists.
+its own with backoff, and says so on screen while it's down. Art enters a room only through the
+assets page at `/r/{slug}/assets`, where it's named (defaulting to the filename minus its
+extension), credited, and — for a map — aligned to the grid before it's added; the library there
+and the pickers in the room share one searchable component, and the pickers only pick. Every
+upload is decoded and re-encoded to WebP, with any grid offset padded into the pixels on the way
+through, and joins the uploading room's library — content-addressed globally so identical uploads
+share one file, but a room only ever sees what it added itself, under its own name and credit.
+All of it syncs live; everything but pings and measurements persists.
 
 Known gaps, which is also roughly the queue: no initiative tracker, no HP or conditions on a
 token, no way to assign a token's owner (the roster is on the wire now, but nothing offers it as
-a picker), fog has no automatic vision from tokens, the asset library is an unfiltered grid with
-no search, no prebuilt releases, no way for a Host to remove a moderated asset or cap upload
-sizes per room.
+a picker), fog has no automatic vision from tokens, no prebuilt releases, no way for a Host to
+remove a moderated asset or cap upload sizes per room.
 
 `planning/backlog/` is the authority on all of this and goes into far more detail: `done/`
 records what shipped and why, `in-progress/` and `open/` are the queue. Items cite paths and line

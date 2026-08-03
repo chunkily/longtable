@@ -27,6 +27,19 @@ later.
 - [ ] An empty state for "no matches" distinct from the existing "library is empty" hint
 - [ ] Clearing the search restores the full list
 
+## What shipped
+
+Shipped as part of [asset-library-page](asset-library-page.md), which is where the reasoning
+lives. The warning in this item — don't bolt a filter onto a grid built without one — is what
+produced `AssetLibrary`: the search field and the list it narrows are one component, embedded by
+both the assets page and every picker, so neither can have search without the other.
+
+One change of substance from what's written above: matching is over the asset's **name**, not its
+filename. Names didn't exist when this was written; they do now, they default from the filename,
+and they're what the grid displays — searching a field nobody can see would have been the wrong
+half of the pair. `filterAssets` requires every word of the query, in any order, so "archer
+goblin" finds the goblin archer.
+
 ## Related user stories
 
 - [room-member-search-asset-library](../../user-stories/room-member-search-asset-library.md)

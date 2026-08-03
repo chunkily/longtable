@@ -44,9 +44,18 @@ Two things worth knowing if this area gets touched again:
   thumbnail is `object-cover`ed and would give the wrong aspect ratio for anything not already
   square.
 - The library is an unfiltered grid. Search was scoped into this item in parallel on another
-  machine and didn't ship with it — it's [asset-library-search](../open/asset-library-search.md)
+  machine and didn't ship with it — it's [asset-library-search](asset-library-search.md)
   now. The picker holding the whole library in memory is what makes that a client-side filter
   rather than a new endpoint.
+
+**Superseded in part by [asset-library-page](asset-library-page.md).** Two things above are no
+longer true, and the reasoning is left standing because it's why the code moved. Uploading no
+longer happens in the picker — the "upload joins the library on the way past" gesture was the
+problem, since a form about a scene had nowhere to put a name or a grid alignment, so it quietly
+produced assets search couldn't find and maps whose squares didn't line up. Art is added on
+`/r/{slug}/assets` and the pickers only pick. Search did ship. The staleness note still holds and
+matters more now: the picker loads once on mount and nothing tells it about art added in another
+tab, which is why the link to the assets page opens in one.
 
 ## Related user stories
 

@@ -79,7 +79,7 @@ func TestRoomLibrary_ScopedPerRoomOverOneSharedAsset(t *testing.T) {
 		t.Fatalf("CreateAsset: %v", err)
 	}
 
-	if err := s.AddAssetToRoom(roomA.ID, asset.ID, "by Alice, CC-BY"); err != nil {
+	if err := s.AddAssetToRoom(roomA.ID, asset.ID, "", "by Alice, CC-BY", nil); err != nil {
 		t.Fatalf("AddAssetToRoom: %v", err)
 	}
 
@@ -123,7 +123,7 @@ func TestRoomLibrary_ScopedPerRoomOverOneSharedAsset(t *testing.T) {
 
 	// Room B adding the same file shares the asset row rather than
 	// duplicating it — that's the whole point of hashing content.
-	if err := s.AddAssetToRoom(roomB.ID, asset.ID, "found on the internet"); err != nil {
+	if err := s.AddAssetToRoom(roomB.ID, asset.ID, "", "found on the internet", nil); err != nil {
 		t.Fatalf("AddAssetToRoom: %v", err)
 	}
 	inB, err = s.ListRoomAssets(roomB.ID)
@@ -161,10 +161,10 @@ func TestAddAssetToRoom_IsIdempotent(t *testing.T) {
 		t.Fatalf("CreateAsset: %v", err)
 	}
 
-	if err := s.AddAssetToRoom(room.ID, asset.ID, "original credit"); err != nil {
+	if err := s.AddAssetToRoom(room.ID, asset.ID, "", "original credit", nil); err != nil {
 		t.Fatalf("first add: %v", err)
 	}
-	if err := s.AddAssetToRoom(room.ID, asset.ID, "original credit"); err != nil {
+	if err := s.AddAssetToRoom(room.ID, asset.ID, "", "original credit", nil); err != nil {
 		t.Fatalf("second add: %v", err)
 	}
 
@@ -192,10 +192,10 @@ func TestAddAssetToRoom_KeepsExistingAttributionWhenNoneGiven(t *testing.T) {
 		t.Fatalf("CreateAsset: %v", err)
 	}
 
-	if err := s.AddAssetToRoom(room.ID, asset.ID, "art by Bob"); err != nil {
+	if err := s.AddAssetToRoom(room.ID, asset.ID, "", "art by Bob", nil); err != nil {
 		t.Fatalf("AddAssetToRoom: %v", err)
 	}
-	if err := s.AddAssetToRoom(room.ID, asset.ID, ""); err != nil {
+	if err := s.AddAssetToRoom(room.ID, asset.ID, "", "", nil); err != nil {
 		t.Fatalf("AddAssetToRoom: %v", err)
 	}
 
@@ -208,7 +208,7 @@ func TestAddAssetToRoom_KeepsExistingAttributionWhenNoneGiven(t *testing.T) {
 	}
 
 	// But a real correction does land.
-	if err := s.AddAssetToRoom(room.ID, asset.ID, "actually by Carol"); err != nil {
+	if err := s.AddAssetToRoom(room.ID, asset.ID, "", "actually by Carol", nil); err != nil {
 		t.Fatalf("AddAssetToRoom: %v", err)
 	}
 	library, err = s.ListRoomAssets(room.ID)
@@ -234,7 +234,7 @@ func TestListRoomAssets_NewestFirst(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateAsset: %v", err)
 		}
-		if err := s.AddAssetToRoom(room.ID, asset.ID, ""); err != nil {
+		if err := s.AddAssetToRoom(room.ID, asset.ID, "", "", nil); err != nil {
 			t.Fatalf("AddAssetToRoom: %v", err)
 		}
 		ids = append(ids, asset.ID)

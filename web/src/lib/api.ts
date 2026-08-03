@@ -20,17 +20,47 @@ export interface Session {
 
 export interface Asset {
 	id: string;
+	/**
+	 * What this room calls the asset — what the library and the pickers
+	 * show, and half of what search matches. Defaults to the filename
+	 * minus its extension.
+	 */
+	name: string;
 	filename: string;
 	mimeType: string;
 	byteSize: number;
 	/** Free-text credit or licence for this room's copy, '' when none was given. */
 	attribution: string;
 	/**
+	 * Pixels per grid square, measured when the map was aligned on the
+	 * assets page, so a scene made from it can default to the right
+	 * number. Null for anything nobody aligned — every token, and any map
+	 * added before the assets page existed.
+	 */
+	gridSize: number | null;
+	/**
 	 * Set when an animated upload was accepted as a still image, so the
 	 * uploader can be told rather than left wondering why their goblin
 	 * stopped moving. Absent on the ordinary case.
 	 */
 	flattened?: boolean;
+}
+
+/** Everything the assets page collects about a file before sending it. */
+export interface AssetDetails {
+	name: string;
+	attribution: string;
+	/** Measured pixels per square, for a map that was aligned. */
+	gridSize: number | null;
+	/**
+	 * Pixels to add to the left and top before the image is stored;
+	 * negative crops instead. This is how grid alignment is applied — the
+	 * server bakes it into the pixels during the re-encode every upload
+	 * already goes through, so nothing downstream ever has to know an
+	 * offset existed.
+	 */
+	gridOffsetX: number;
+	gridOffsetY: number;
 }
 
 class ApiError extends Error {}
@@ -80,16 +110,26 @@ export function gmLogin(slug: string, displayName: string, password: string): Pr
  * and re-encodes it to WebP, so what comes back is not the file that went
  * in — `filename` is rewritten to match, and the returned id is shared
  * with any room that already had these exact pixels.
+ *
+ * Every detail travels with the file because nothing is stored until it
+ * does: there's no draft library entry to go back and fill in.
  */
 export async function uploadAsset(
 	slug: string,
 	sessionToken: string,
 	file: File,
-	attribution = ''
+	details: Partial<AssetDetails> = {}
 ): Promise<Asset> {
 	const form = new FormData();
 	form.append('file', file);
-	if (attribution.trim()) form.append('attribution', attribution.trim());
+	if (details.name?.trim()) form.append('name', details.name.trim());
+	if (details.attribution?.trim()) form.append('attribution', details.attribution.trim());
+	if (details.gridSize) form.append('gridSize', String(details.gridSize));
+	// Sent only when non-zero: an offset of 0 is the overwhelmingly common
+	// case, and leaving the field off keeps the server on the path where
+	// the image is passed through untouched.
+	if (details.gridOffsetX) form.append('gridOffsetX', String(details.gridOffsetX));
+	if (details.gridOffsetY) form.append('gridOffsetY', String(details.gridOffsetY));
 
 	const res = await fetch(`/api/rooms/${encodeURIComponent(slug)}/assets`, {
 		method: 'POST',
@@ -101,6 +141,24 @@ export async function uploadAsset(
 		throw new ApiError(body.error ?? `upload failed with status ${res.status}`);
 	}
 	return res.json();
+}
+
+/**
+ * Renames and re-credits a room's copy of an asset. The image and its
+ * measured grid can't be edited: both live in the stored pixels, and
+ * changing those would make a different asset.
+ */
+export function updateAsset(
+	slug: string,
+	sessionToken: string,
+	assetId: string,
+	details: { name: string; attribution: string }
+): Promise<Asset> {
+	return apiFetch(`/api/rooms/${encodeURIComponent(slug)}/assets/${encodeURIComponent(assetId)}`, {
+		method: 'PATCH',
+		headers: { Authorization: `Bearer ${sessionToken}` },
+		body: JSON.stringify(details)
+	});
 }
 
 /** The room's asset library, newest first. Requires a session for that room. */

@@ -135,12 +135,17 @@ test('replacing a map keeps the tokens already standing on the scene', async ({ 
 	const tokenInk = await layerInk(player.page, TOKEN_LAYER);
 	const mapInk = await layerInk(player.page, MAP_LAYER);
 
+	// Art is added on the assets page and only picked here — the replace
+	// dialog has no upload of its own any more.
+	await gm.page.getByRole('link', { name: 'Assets' }).click();
+	await gm.page.getByLabel('Choose images to add').setInputFiles(fixture('swamp.png'));
+	await gm.page.getByRole('button', { name: 'Add to library' }).click();
+	await expect(gm.page.getByText('swamp', { exact: true })).toBeVisible();
+	await gm.page.getByRole('link', { name: 'Back to the table' }).click();
+
 	await openScenes(gm.page);
 	await gm.page.getByRole('button', { name: 'Replace the map for Tavern' }).click();
-	await gm.page.getByLabel('Upload an image').setInputFiles(fixture('swamp.png'));
-	// The upload re-encodes to WebP on the way past, so the library entry
-	// appearing under the new name is what proves the round trip landed.
-	await expect(gm.page.getByRole('button', { name: 'swamp.webp' })).toBeVisible();
+	await gm.page.getByRole('button', { name: 'swamp' }).click();
 	await gm.page.getByRole('button', { name: 'Replace map', exact: true }).click();
 
 	// The map changed for everyone: the scene was a bare 1400x1000 grey

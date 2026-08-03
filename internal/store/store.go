@@ -34,6 +34,12 @@ func (s *Store) migrate() error {
 		`TEXT REFERENCES participant(id) ON DELETE SET NULL`); err != nil {
 		return err
 	}
+	if err := s.addColumnIfMissing("room_asset", "name", `TEXT NOT NULL DEFAULT ''`); err != nil {
+		return err
+	}
+	if err := s.addColumnIfMissing("room_asset", "grid_size", `INTEGER`); err != nil {
+		return err
+	}
 	return s.migrateCircleDrawingsToEllipse()
 }
 
@@ -122,7 +128,16 @@ func (s *Store) createTables() error {
 		CREATE TABLE IF NOT EXISTS room_asset (
 			room_id      TEXT NOT NULL REFERENCES room(id) ON DELETE CASCADE,
 			asset_id     TEXT NOT NULL REFERENCES asset(id) ON DELETE CASCADE,
+			name         TEXT NOT NULL DEFAULT '',
 			attribution  TEXT NOT NULL DEFAULT '',
+			-- Pixels per grid square, as measured when the map was aligned on
+			-- the assets page. Null for art nobody aligned, which is every
+			-- token and any map added before this existed. Per-room rather
+			-- than on the (content-addressed, globally shared) asset row: a
+			-- global column would have one room's upload writing a value
+			-- another room reads, and every rule for resolving that conflict
+			-- is worse than measuring it twice.
+			grid_size    INTEGER,
 			added_at     TEXT NOT NULL,
 			PRIMARY KEY (room_id, asset_id)
 		);

@@ -108,7 +108,7 @@
 						{sessionToken}
 						idPrefix="replace-map"
 						bind:selectedId={replacementAssetId}
-						emptyHint="Nothing in the library yet — upload a map to use it here."
+						emptyHint="Nothing in the library yet — add a map on the assets page."
 					/>
 				</div>
 				<Dialog.Footer>
