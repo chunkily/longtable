@@ -106,8 +106,8 @@ async function save(page: Page) {
 // each one and then edit it again. Both are now on the creation form.
 test('a GM gives a token its size and owner as it is created', async ({ browser }) => {
 	const gm = await openRoomAsGM(browser, 'Token Create Details');
-	// Bob joins first: the owner picker offers the room's roster, and a
-	// player who hasn't joined yet isn't on it.
+	// Bob joins first: the picker offers whoever is connected, and someone
+	// who hasn't arrived yet isn't.
 	const player = await joinRoomAsPlayer(browser, gm.slug);
 
 	await gm.page.getByRole('button', { name: 'New token' }).click();
@@ -146,6 +146,60 @@ test('a GM gives a token its size and owner as it is created', async ({ browser 
 
 	await gm.context.close();
 	await player.context.close();
+});
+
+// The picker offers who's at the table rather than the room's whole
+// roster — a participant row is created on every join, so the roster
+// accumulates the same person from a second browser and everyone who
+// ever dropped in once.
+//
+// Which leaves one way to lose data, and this is mostly about that: an
+// owner who goes offline has to stay on the list, because the update
+// sends the owner every time and a missing option would make the browser
+// fall back to "Nobody" and quietly unassign them on the next save.
+test('the owner picker offers who is connected, and keeps an owner who leaves', async ({
+	browser
+}) => {
+	const gm = await openRoomAsGM(browser, 'Token Owner Presence');
+	const player = await joinRoomAsPlayer(browser, gm.slug);
+
+	await gm.page.getByRole('button', { name: 'New token' }).click();
+	await gm.page.getByLabel('Name').fill("Bob's Fighter");
+	await gm.page.getByLabel('Owner').selectOption({ label: 'Bob' });
+	await gm.page.getByRole('button', { name: 'Create token' }).click();
+	await expect(gm.page.getByRole('button', { name: 'Create token' })).toBeHidden();
+	await expect.poll(() => layerInk(gm.page, TOKEN_LAYER)).toBeGreaterThan(0);
+
+	const box = await canvasBox(gm.page);
+	const spawn = spawnCentre(box);
+	await gm.page.mouse.click(box.x + spawn.x, box.y + spawn.y);
+	await expect(detailsSection(gm.page)).toContainText("Bob's token");
+
+	// Bob shuts his laptop. He's still on the roster — that's a row in the
+	// database — but he is no longer at the table.
+	await player.context.close();
+	await expect(gm.page.getByRole('region', { name: "Who's connected" }).first()).not.toContainText(
+		'Bob'
+	);
+
+	await openEditor(gm.page);
+	// Still offered, and marked, because he still owns the token.
+	await expect(gm.page.getByLabel('Owner')).toContainText('Bob — not connected');
+
+	// The save that would have silently taken the token off him. Renaming
+	// is the whole intent here; the owner has to come through untouched.
+	await gm.page.getByLabel('Name').fill('Fighter');
+	await save(gm.page);
+	await expect(detailsSection(gm.page)).toContainText('Fighter');
+	await expect(detailsSection(gm.page)).toContainText("Bob's token");
+
+	// And it's the server's answer too, not just this page's state.
+	await gm.page.reload();
+	await expect(gm.page.locator('canvas').first()).toBeVisible();
+	await gm.page.mouse.click(box.x + spawn.x, box.y + spawn.y);
+	await expect(detailsSection(gm.page)).toContainText("Bob's token");
+
+	await gm.context.close();
 });
 
 test('a GM renames and resizes a token, and the whole room sees it', async ({ browser }) => {

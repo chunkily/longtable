@@ -7,23 +7,27 @@
 	// use: size and visibility have four options and two, and a room has
 	// as many members as it has people. A button per player is fine at
 	// four and unusable at twelve.
-	import type { Participant } from '$lib/room.svelte';
+	//
+	// The list is whoever is connected — see `ownerOptions`. You're always
+	// on it yourself, since the hub registers a connection before it sends
+	// the state that lists them, so it is never empty.
+	import type { OwnerOption } from '$lib/token-owner';
 	import { Label } from '$lib/components/ui/label';
 
 	let {
 		ownerId = $bindable(null),
-		participants,
+		options,
 		idPrefix = 'token'
 	}: {
 		/** The owner's participant id, or null for nobody. Bindable so a dialog can read it on submit. */
 		ownerId?: string | null;
 		/**
-		 * The room's whole roster, not just who's connected. A GM prepping
-		 * tokens the evening before a session is handing them to people who
-		 * are all offline, and a picker that only offered the people
-		 * currently at the table would be empty exactly when it's used.
+		 * Who may be picked, from `ownerOptions` — the people connected
+		 * right now, plus this token's owner if they've since left. The
+		 * rule lives there rather than here so it can be tested and so both
+		 * dialogs get the same answer.
 		 */
-		participants: Participant[];
+		options: OwnerOption[];
 		idPrefix?: string;
 	} = $props();
 
@@ -48,9 +52,11 @@
 	>
 		<!-- First and default, because most tokens are monsters. -->
 		<option value={UNOWNED}>Nobody (monster or prop)</option>
-		{#each participants as participant (participant.id)}
+		{#each options as { participant, online } (participant.id)}
 			<option value={participant.id}>
-				{participant.displayName}{participant.role === 'gm' ? ' (GM)' : ''}
+				{participant.displayName}{participant.role === 'gm' ? ' (GM)' : ''}{online
+					? ''
+					: ' — not connected'}
 			</option>
 		{/each}
 	</select>

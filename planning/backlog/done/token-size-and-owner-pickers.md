@@ -51,9 +51,31 @@ The size picker went in as-is, as the item predicted. Three things it didn't:
   sends a partial `token.update` will silently unassign the owner.**
 - **The owner picker is a `<select>`**, not the row of buttons the size and visibility pickers
   use. Those have four options and two; a room has as many members as it has people, and a button
-  per player stops working somewhere around a dozen. It offers `participants` — the whole roster —
+  per player stops working somewhere around a dozen. It offered `participants` — the whole roster —
   rather than `connectedParticipants`, because a GM prepping an encounter the night before is
   assigning tokens to people who are all offline.
+
+  **That last part was reversed on review, and the reason it was wrong is worth keeping.** A
+  participant row is created on *every join*: the same person from a phone as well as a laptop,
+  and anyone who ever cleared their browser storage, is a separate row forever. A room that has
+  run for a few months offers a dozen names to choose four from, several of them the same person.
+  Who is at the table is the question a GM is actually answering, so `ownerOptions` in
+  `web/src/lib/token-owner.ts` builds the list from `connectedParticipants`.
+
+  The prepping-the-night-before case is real but rarer, and the answer to it is to hand the token
+  over when people arrive — which the edit dialog already does.
+
+  **`ownerOptions` keeps a token's current owner on the list when they've gone offline, and that
+  is not a nicety.** Since `token.update` sends every editable field every time, a list that
+  dropped an absent owner would leave the select with no matching option, the browser would fall
+  back to the first one — "Nobody" — and a GM renaming the token would silently take it off them.
+  The offline owner is labelled "— not connected" so the list stays honest about it. An e2e case
+  closes a player's browser and renames their token specifically to catch a regression here.
+
+  **The server still validates room membership, not connection**, and deliberately: being offline
+  isn't being gone, and a rule keyed on presence would refuse an assignment the moment someone's
+  socket blipped. The picker is narrower than what the protocol accepts, which is the right way
+  round.
 
 This unblocks [token-move-ownership-lock](../open/token-move-ownership-lock.md), which needed
 owners to be assignable before an owners-only movement rule could mean anything.

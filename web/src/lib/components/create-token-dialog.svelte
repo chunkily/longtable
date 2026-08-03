@@ -5,6 +5,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as Dialog from '$lib/components/ui/dialog';
+	import { ownerOptions } from '$lib/token-owner';
 	import AssetPicker from '$lib/components/asset-picker.svelte';
 	import TokenOwnerPicker from '$lib/components/token-owner-picker.svelte';
 	import TokenSizePicker from '$lib/components/token-size-picker.svelte';
@@ -75,7 +76,12 @@
 				<Input id="token-name" bind:value={name} required />
 			</div>
 			<TokenSizePicker bind:squares idPrefix="token" />
-			<TokenOwnerPicker bind:ownerId={ownerParticipantId} participants={room.participants} />
+			<!-- A token being made now has no owner to preserve, so this is
+			     simply whoever is at the table. -->
+			<TokenOwnerPicker
+				bind:ownerId={ownerParticipantId}
+				options={ownerOptions(room.connectedParticipants, room.participants, null)}
+			/>
 			<div class="flex flex-col gap-2">
 				<Label>Image (optional)</Label>
 				<AssetPicker

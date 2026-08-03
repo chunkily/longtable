@@ -9,6 +9,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as Dialog from '$lib/components/ui/dialog';
+	import { ownerOptions } from '$lib/token-owner';
 	import AssetPicker from '$lib/components/asset-picker.svelte';
 	import TokenOwnerPicker from '$lib/components/token-owner-picker.svelte';
 	import TokenSizePicker, { sizeForSquares } from '$lib/components/token-size-picker.svelte';
@@ -86,9 +87,16 @@
 				<Input id="edit-token-name" bind:value={name} required />
 			</div>
 			<TokenSizePicker bind:squares idPrefix="edit-token" />
+			<!-- Whoever is connected, plus this token's own owner if they have
+			     since left: the update carries the owner every time, so a list
+			     that dropped them would have a rename quietly unassign them. -->
 			<TokenOwnerPicker
 				bind:ownerId={ownerParticipantId}
-				participants={room.participants}
+				options={ownerOptions(
+					room.connectedParticipants,
+					room.participants,
+					token.ownerParticipantId
+				)}
 				idPrefix="edit-token"
 			/>
 			<div class="flex flex-col gap-2">

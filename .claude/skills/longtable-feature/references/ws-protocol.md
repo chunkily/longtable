@@ -90,6 +90,12 @@ unguessable but it isn't scoped, and a token owned by someone in another room is
 nobody present can be shown. Null (nobody owns it) is always allowed and is what most tokens are.
 Both handlers also read a missing `width`/`height` as one square.
 
+That check is **membership of the room, not presence**, even though the UI only offers people who
+are connected. Being offline isn't being gone: ownership outlives a session, and a rule keyed on
+the connection registry would refuse an assignment the moment someone's socket blipped. Expect
+the client to send owners the protocol accepts but the picker wouldn't have offered — an edit to
+a token whose owner has since left does exactly that.
+
 Its broadcast is the only one that depends on what the token *used to be*, because crossing the
 hidden line has to say something different in each direction:
 
