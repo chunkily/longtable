@@ -1,7 +1,6 @@
 package store
 
 import (
-	"crypto/rand"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -22,20 +21,6 @@ type Room struct {
 	GMPasswordHash string
 	ActiveSceneID  *string
 	CreatedAt      string
-}
-
-const slugAlphabet = "abcdefghjkmnpqrstuvwxyz23456789" // no 0/o/1/l/i, easy to read aloud
-
-// newSlug returns a random 6-character room slug.
-func newSlug() (string, error) {
-	buf := make([]byte, 6)
-	if _, err := rand.Read(buf); err != nil {
-		return "", err
-	}
-	for i, b := range buf {
-		buf[i] = slugAlphabet[int(b)%len(slugAlphabet)]
-	}
-	return string(buf), nil
 }
 
 // CreateRoom creates a room and its founding GM participant in one

@@ -36,7 +36,8 @@ authoritative; the client never writes to the database.
 
 ## Where things stand
 
-Working today: rooms with a GM password and player join, scenes built from an uploaded map or a
+Working today: rooms with a GM password and player join (the generated join slug is re-rolled if
+it happens to spell something offensive), scenes built from an uploaded map or a
 picked library asset and managed from a picker (switch, delete, swap the map under one),
 tokens (GM creates, edits — name, art, size, visibility — and deletes, anyone drags, hidden ones
 withheld from players; a token someone else moves slides to its new square rather than jumping;
