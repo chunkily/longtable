@@ -14,7 +14,7 @@
 	// per-file toggle would have been fewer moving parts and was tried
 	// first; it puts the decision after the interesting part is over, which
 	// is exactly when it gets skipped.
-	import { onDestroy, onMount } from 'svelte';
+	import { onDestroy, onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
@@ -108,8 +108,19 @@
 	 * shows, and what anything added from here is going to be. It follows
 	 * whatever was just added or reclassified, so a change never looks
 	 * like nothing happened because the grid on screen was the other one.
+	 *
+	 * Seeded from `?kind=`, which is how the pickers in the room link
+	 * straight to the half they're asking for — a GM who followed "Add
+	 * maps" out of the scene dialog would otherwise land on Tokens and
+	 * file their map there. Read once rather than derived from the URL:
+	 * once the page is up the tab belongs to whoever is looking at it, and
+	 * a derived one would snap back the moment they switched. The
+	 * consequence is a query string that can go stale, which costs
+	 * nothing until a reload and isn't worth a history entry per click.
 	 */
-	let activeKind = $state<AssetKind>('token');
+	let activeKind = $state<AssetKind>(
+		untrack(() => (page.url.searchParams.get('kind') === 'map' ? 'map' : 'token'))
+	);
 	const counts = $derived({
 		token: library.filter((a) => a.kind === 'token').length,
 		map: library.filter((a) => a.kind === 'map').length

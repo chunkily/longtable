@@ -47,4 +47,4 @@ later change breaks by accident:
 
 Nothing is broadcast: the library isn't part of `state.sync`, so someone else's open picker keeps
 showing the removed asset until it refetches. That's the same staleness the picker already
-documents for *additions*, and it's why the "Add images" link opens in a new tab.
+documents for *additions*, and it's why the picker's link to the assets page opens in a new tab.

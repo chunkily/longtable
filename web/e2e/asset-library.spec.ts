@@ -278,6 +278,37 @@ test('the library keeps tokens and maps apart, shows token art whole, and can be
 	await expect(page.getByRole('tab', { name: 'Maps 2' })).toBeVisible();
 });
 
+// A picker sends you to the assets page when the library hasn't got what
+// you need — and it has to send you to the half that adds it. Landing on
+// Tokens after following a link out of the scene dialog is how a map
+// gets filed as token art, which is the thing the tabs exist to prevent.
+test('a picker links to the half of the assets page it is asking for', async ({ page }) => {
+	await createRoomAsGM(page, 'Picker Link');
+
+	await page.getByRole('button', { name: 'New scene' }).click();
+	const toMaps = page.getByRole('link', { name: 'Add maps' });
+	await expect(toMaps).toHaveAttribute('href', /\?kind=map$/);
+
+	// Following it opens the page already on Maps, ready to add one. The
+	// link opens a new tab in the app, so the spec walks the href itself
+	// rather than juggling a popup.
+	await page.goto((await toMaps.getAttribute('href'))!);
+	await expect(page.getByRole('tab', { name: /^Maps/ })).toHaveAttribute('aria-selected', 'true');
+	await expect(page.getByRole('button', { name: 'Choose maps' })).toBeVisible();
+
+	// The token side asks for the other half, from the same component.
+	await page.getByRole('link', { name: 'Back to the table' }).click();
+	await page.getByRole('button', { name: 'New scene' }).click();
+	await page.getByLabel('Name').fill('Tavern');
+	await page.getByRole('button', { name: 'Create scene' }).click();
+	await page.getByRole('button', { name: 'New token' }).click();
+
+	const toTokens = page.getByRole('link', { name: 'Add token art' });
+	await expect(toTokens).toHaveAttribute('href', /\?kind=token$/);
+	await page.goto((await toTokens.getAttribute('href'))!);
+	await expect(page.getByRole('tab', { name: /^Tokens/ })).toHaveAttribute('aria-selected', 'true');
+});
+
 test('a staged file whose shape disagrees with the open tab says so, and can be moved', async ({
 	page
 }) => {

@@ -63,7 +63,9 @@ and offers to move it, but never moves it on its own. Name, credit and kind are 
 afterwards, and an asset can be removed from a room's library (the shared file survives, and
 anything already using it keeps it). Token art is shown whole in a square tile, maps in a wide
 crop; the library there and the pickers in the room share one searchable component, the pickers
-open on the kind they're asking for without hiding the other, and the pickers only pick. Every
+open on the kind they're asking for without hiding the other, and the pickers only pick — their
+link out to the assets page carries the open tab with it (`?kind=`), so art added after following
+it is filed as the thing that was being looked for. Every
 upload is decoded and re-encoded to WebP, with any grid offset padded into the pixels on the way
 through, and joins the uploading room's library — content-addressed globally so identical uploads
 share one file, but a room only ever sees what it added itself, under its own name and credit.

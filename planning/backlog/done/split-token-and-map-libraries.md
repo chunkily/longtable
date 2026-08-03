@@ -70,6 +70,13 @@ The decisions worth not rediscovering:
 - **The tab strip is always both tabs**, even at zero. A tab that appears once it has something in
   it can't tell you where the thing you're missing should have gone.
 
+- **The picker's link to the assets page carries the open tab** as `?kind=`, and the page seeds
+  its tab from it. Following "Add maps" out of the scene dialog and landing on Tokens would file
+  the next upload as token art, which is precisely what the tabs exist to prevent. The page reads
+  the parameter once rather than deriving the tab from the URL: after that the tab belongs to
+  whoever is looking at the page, and a derived one would snap back on every click. The query
+  string can therefore go stale, which costs nothing short of a reload and is cheaper than a
+  history entry per tab click.
 - **The library grid's `kind` is bound even where its tabs are hidden.** The assets page passes
   `showTabs={false}` and renders the switch itself, but the grid's empty states still offer to
   look in the other half — and an unbound prop had those switching the grid while the tab strip

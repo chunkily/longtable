@@ -90,13 +90,19 @@
 	/>
 
 	<div class="flex items-center gap-3 text-xs text-muted-foreground">
+		<!-- Carries the open tab across, so someone who came here looking for
+		     a map lands on the half of the assets page that adds maps rather
+		     than on Tokens, where the upload they then make would be filed
+		     wrong. Follows the tab rather than the `kind` prop: the picker's
+		     own tabs can be switched, and the link should mean what it says
+		     at the moment it's clicked. -->
 		<a
 			class="underline underline-offset-2"
-			href={resolve('/r/[slug]/assets', { slug: roomSlug })}
+			href="{resolve('/r/[slug]/assets', { slug: roomSlug })}?kind={activeKind}"
 			target="_blank"
 			rel="noopener"
 		>
-			Add images
+			Add {activeKind === 'map' ? 'maps' : 'token art'}
 		</a>
 		{#if selectedId}
 			<button
