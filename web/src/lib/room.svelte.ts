@@ -449,15 +449,29 @@ export class RoomClient {
 		this.send('scene.setMap', { sceneId, mapAssetId, width, height });
 	}
 
+	// Size and owner are optional here in the same way they're optional on
+	// the wire: the server reads a missing width as one square and a
+	// missing owner as nobody, which is what most tokens are.
 	createToken(
 		sceneId: string,
 		name: string,
 		imageAssetId: string | null,
 		x: number,
 		y: number,
-		visibility: 'visible' | 'hidden' = 'visible'
+		visibility: 'visible' | 'hidden' = 'visible',
+		options: { squares?: number; ownerParticipantId?: string | null } = {}
 	) {
-		this.send('token.create', { sceneId, name, imageAssetId, x, y, visibility });
+		this.send('token.create', {
+			sceneId,
+			name,
+			imageAssetId,
+			x,
+			y,
+			visibility,
+			width: options.squares ?? 1,
+			height: options.squares ?? 1,
+			ownerParticipantId: options.ownerParticipantId ?? null
+		});
 	}
 
 	revealFog(sceneId: string, cells: FogCell[]) {
@@ -577,8 +591,9 @@ export class RoomClient {
 
 	// Every editable field goes every time, not only the changed ones: the
 	// wire can't tell "left alone" from "cleared", and clearing a token's
-	// art is a real edit. Position isn't here — that's moveToken's, so an
-	// edit dialog opened before a drag can't undo the drag on submit.
+	// art — or taking it back off a Player — is a real edit. Position
+	// isn't here: that's moveToken's, so an edit dialog opened before a
+	// drag can't undo the drag on submit.
 	updateToken(
 		tokenId: string,
 		fields: {
@@ -586,6 +601,7 @@ export class RoomClient {
 			imageAssetId: string | null;
 			width: number;
 			height: number;
+			ownerParticipantId: string | null;
 			visibility: 'visible' | 'hidden';
 		}
 	) {

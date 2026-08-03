@@ -1190,6 +1190,48 @@ describe('RoomClient', () => {
 		expect(client.canUndo).toBe(false);
 	});
 
+	// Both are optional at the call site and neither is optional on the
+	// wire: the server reads a missing width as one square and a missing
+	// owner as nobody, and spelling that out here keeps the two defaults
+	// in one place instead of two.
+	it('defaults token.create to one square and nobody', () => {
+		const { client, socket } = roomWithTokens();
+
+		client.createToken('s1', 'Goblin', null, 3, 4);
+
+		expect(JSON.parse(socket.sent[0]).payload).toMatchObject({
+			width: 1,
+			height: 1,
+			ownerParticipantId: null
+		});
+	});
+
+	it('sends the chosen size as both dimensions, and the owner, on token.create', () => {
+		const { client, socket } = roomWithTokens();
+
+		client.createToken('s1', "Bob's Fighter", null, 3, 4, 'visible', {
+			squares: 3,
+			ownerParticipantId: 'p2'
+		});
+
+		expect(JSON.parse(socket.sent[0])).toEqual({
+			type: 'token.create',
+			payload: {
+				sceneId: 's1',
+				name: "Bob's Fighter",
+				imageAssetId: null,
+				x: 3,
+				y: 4,
+				// A token is square, so one picked size is both dimensions —
+				// the wire carries them separately because the store does.
+				width: 3,
+				height: 3,
+				ownerParticipantId: 'p2',
+				visibility: 'visible'
+			}
+		});
+	});
+
 	it('sends every editable field on token.update, so a cleared image stays cleared', () => {
 		const { client, socket } = roomWithTokens([{ ...goblin, imageAssetId: 'art' }]);
 
@@ -1198,6 +1240,7 @@ describe('RoomClient', () => {
 			imageAssetId: null,
 			width: 2,
 			height: 2,
+			ownerParticipantId: null,
 			visibility: 'hidden'
 		});
 
@@ -1209,6 +1252,7 @@ describe('RoomClient', () => {
 				imageAssetId: null,
 				width: 2,
 				height: 2,
+				ownerParticipantId: null,
 				visibility: 'hidden'
 			}
 		});

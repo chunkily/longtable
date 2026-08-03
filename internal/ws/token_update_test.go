@@ -95,31 +95,74 @@ func TestTokenUpdate_LeavesThePositionAlone(t *testing.T) {
 	}
 }
 
-// A field the command doesn't carry has to survive it. Owner is the one
-// that exists today; HP will be the next.
-func TestTokenUpdate_PreservesFieldsItDoesNotCarry(t *testing.T) {
+// The owner is an editable field now, which means it follows the rule
+// the rest of them follow: sent every time, and an edit that leaves it
+// out is an edit that clears it. Taking a token back off a Player is a
+// real edit, and the wire can't tell "left alone" from "unassign" — the
+// same argument that decided it for a token's art.
+//
+// This test used to assert the opposite, back when nothing could set an
+// owner and preserving it was the only way it survived at all.
+func TestTokenUpdate_AssignsAndClearsTheOwner(t *testing.T) {
 	r := newTokenTestRoom(t)
-	owner := r.player.ID
-	token, err := r.ts.store.CreateToken(store.Token{
-		SceneID: r.scene.ID, Name: "Bob's Fighter", Width: 1, Height: 1,
-		OwnerParticipantID: &owner, Visibility: store.VisibilityVisible,
-	})
-	if err != nil {
-		t.Fatalf("CreateToken: %v", err)
-	}
+	token := r.token(t, "Bob's Fighter", store.VisibilityVisible)
 
 	client := r.ts.connect(t, r.room.Slug, r.gm.SessionToken)
 	client.readEnvelope(t) // state.sync
 
-	client.send(t, "token.update", map[string]any{"tokenId": token.ID, "name": "Renamed"})
+	client.send(t, "token.update", map[string]any{
+		"tokenId": token.ID, "name": "Bob's Fighter", "ownerParticipantId": r.player.ID,
+	})
 	client.readEnvelope(t) // token.updated
 
 	stored, err := r.ts.store.GetToken(token.ID)
 	if err != nil {
 		t.Fatalf("GetToken: %v", err)
 	}
-	if stored.OwnerParticipantID == nil || *stored.OwnerParticipantID != owner {
-		t.Fatalf("owner = %v, want it untouched by an edit that never mentioned it", stored.OwnerParticipantID)
+	if stored.OwnerParticipantID == nil || *stored.OwnerParticipantID != r.player.ID {
+		t.Fatalf("owner = %v, want the player", stored.OwnerParticipantID)
+	}
+
+	client.send(t, "token.update", map[string]any{"tokenId": token.ID, "name": "Bob's Fighter"})
+	client.readEnvelope(t) // token.updated
+
+	stored, err = r.ts.store.GetToken(token.ID)
+	if err != nil {
+		t.Fatalf("GetToken: %v", err)
+	}
+	if stored.OwnerParticipantID != nil {
+		t.Fatalf("owner = %v, want it cleared", *stored.OwnerParticipantID)
+	}
+}
+
+// A participant ID is unguessable but it isn't scoped, so the same check
+// that stands between a token and another room's art has to stand
+// between it and another room's people.
+func TestTokenUpdate_RefusesAnOwnerFromAnotherRoom(t *testing.T) {
+	r := newTokenTestRoom(t)
+	token := r.token(t, "Goblin", store.VisibilityVisible)
+
+	_, otherGM, err := r.ts.store.CreateRoom("Elsewhere", "Carol", "pw")
+	if err != nil {
+		t.Fatalf("CreateRoom: %v", err)
+	}
+
+	client := r.ts.connect(t, r.room.Slug, r.gm.SessionToken)
+	client.readEnvelope(t) // state.sync
+
+	client.send(t, "token.update", map[string]any{
+		"tokenId": token.ID, "name": "Goblin", "ownerParticipantId": otherGM.ID,
+	})
+	if env := client.readEnvelope(t); env.Type != "error" {
+		t.Fatalf("event type = %q, want error", env.Type)
+	}
+
+	stored, err := r.ts.store.GetToken(token.ID)
+	if err != nil {
+		t.Fatalf("GetToken: %v", err)
+	}
+	if stored.OwnerParticipantID != nil {
+		t.Fatalf("owner = %v, want the edit refused outright", *stored.OwnerParticipantID)
 	}
 }
 

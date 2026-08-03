@@ -75,12 +75,20 @@ the token was hidden, exactly as its creation was; an id they were never told ab
 a deletion is itself the leak. Undoing a deletion is a `token.create` carrying the original id,
 so the token returns as the same token to everyone still holding it.
 
-`token.update` carries *every* editable field each time (name, image, size, visibility) rather
-than only the changed ones — a `*string` can't tell "left alone" from "cleared", and clearing a
-token's art is a real edit. It deliberately doesn't carry position: that's `token.move`'s, so an
-edit dialog opened before a drag can't undo the drag when it's submitted after one. The handler
-loads the token and edits it in place, which is what keeps a field the command doesn't mention
-(an owner today, an HP later) from being nulled by a form that predates it.
+`token.update` carries *every* editable field each time (name, image, size, owner, visibility)
+rather than only the changed ones — a `*string` can't tell "left alone" from "cleared", and
+clearing a token's art, or taking it back off a Player, is a real edit. The corollary is that an
+update omitting a field **clears** it, so a client must send them all. It deliberately doesn't
+carry position: that's `token.move`'s, so an edit dialog opened before a drag can't undo the drag
+when it's submitted after one. The handler still loads the token and edits it in place, which is
+what will keep a field this command doesn't mention yet (HP, conditions) from being nulled by a
+form that predates it.
+
+`ownerParticipantId` on both `token.create` and `token.update` is checked with
+`requireOwnerInRoom`, the participant twin of `requireAssetInRoom` — a participant ID is
+unguessable but it isn't scoped, and a token owned by someone in another room is one whose owner
+nobody present can be shown. Null (nobody owns it) is always allowed and is what most tokens are.
+Both handlers also read a missing `width`/`height` as one square.
 
 Its broadcast is the only one that depends on what the token *used to be*, because crossing the
 hidden line has to say something different in each direction:
@@ -190,7 +198,9 @@ is the opposite of the point: replacing a map keeps the tokens, fog and drawings
 4. References: `requireAssetInRoom(ctx, c, assetID)` so a scene or token can't point at a
    dangling asset id — or at an asset that exists but belongs to another room's library, since
    asset rows are global and content-addressed (see `internal/store/asset.go`'s `room_asset`
-   table). `nil` (no image) is always allowed.
+   table). `nil` (no image) is always allowed. `requireOwnerInRoom(ctx, c, ownerID)` is the same
+   check for a token's owner: the participant table is global too, so existing is never the
+   question — membership of *this* room is. `nil` (unowned) is always allowed.
 5. Per-object permission, e.g. `draw.delete` letting a GM erase anything but a player only what
    they authored. A drawing with no recorded author belongs to nobody and is GM-only to erase.
 6. Apply through the store, `slog.Error` on failure, short message to the client.

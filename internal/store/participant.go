@@ -103,6 +103,26 @@ func (s *Store) ListParticipantsForRoom(roomID string) ([]Participant, error) {
 	return participants, rows.Err()
 }
 
+// ParticipantInRoom reports whether a participant belongs to a room.
+//
+// This is the check that stands between a token and someone in another
+// room. Participant IDs are unguessable UUIDs, but so are asset IDs, and
+// the same reasoning applies (see AssetInRoom): unguessable is not
+// scoped, and one leaked ID shouldn't be assignable from anywhere.
+func (s *Store) ParticipantInRoom(roomID, participantID string) (bool, error) {
+	var one int
+	err := s.db.QueryRow(
+		`SELECT 1 FROM participant WHERE room_id = ? AND id = ?`, roomID, participantID,
+	).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // GetParticipantByToken resolves a session token to a participant, and
 // confirms it belongs to roomID (tokens aren't valid across rooms).
 func (s *Store) GetParticipantByToken(roomID, token string) (Participant, error) {

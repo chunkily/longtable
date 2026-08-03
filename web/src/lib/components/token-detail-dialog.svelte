@@ -10,6 +10,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import AssetPicker from '$lib/components/asset-picker.svelte';
+	import TokenOwnerPicker from '$lib/components/token-owner-picker.svelte';
 	import TokenSizePicker, { sizeForSquares } from '$lib/components/token-size-picker.svelte';
 
 	let {
@@ -29,6 +30,7 @@
 	let visibility = $state<'visible' | 'hidden'>('visible');
 	let imageAssetId = $state<string | null>(null);
 	let squares = $state(1);
+	let ownerParticipantId = $state<string | null>(null);
 
 	// Filled from the token when the dialog opens rather than kept in step
 	// with it. Someone else moving or renaming the token mid-edit would
@@ -39,6 +41,7 @@
 		visibility = token.visibility;
 		imageAssetId = token.imageAssetId;
 		squares = sizeForSquares(token.width).squares;
+		ownerParticipantId = token.ownerParticipantId;
 	}
 
 	function handleSubmit(event: SubmitEvent) {
@@ -49,6 +52,7 @@
 				imageAssetId,
 				width: squares,
 				height: squares,
+				ownerParticipantId,
 				visibility
 			});
 			open = false;
@@ -82,6 +86,11 @@
 				<Input id="edit-token-name" bind:value={name} required />
 			</div>
 			<TokenSizePicker bind:squares idPrefix="edit-token" />
+			<TokenOwnerPicker
+				bind:ownerId={ownerParticipantId}
+				participants={room.participants}
+				idPrefix="edit-token"
+			/>
 			<div class="flex flex-col gap-2">
 				<Label>Image (optional)</Label>
 				<AssetPicker

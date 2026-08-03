@@ -97,6 +97,17 @@
 	const selectedToken = $derived<Token | null>(
 		client?.tokens.find((t) => t.id === selectedTokenId) ?? null
 	);
+	/**
+	 * The owner's display name for the details panel. Falls back to a
+	 * neutral phrase rather than the raw id: the roster holds everyone who
+	 * has ever joined, so a miss should be impossible, and an id on screen
+	 * would be a worse answer than admitting we don't know.
+	 */
+	function ownerName(room: RoomClient, participantId: string): string {
+		const owner = room.participants.find((p) => p.id === participantId);
+		return owner ? `${owner.displayName}'s token` : 'Owned by someone no longer listed';
+	}
+
 	// Below the lg breakpoint the chat panel isn't shown inline — it's a
 	// bottom sheet toggled by the "Chat" bar, since there isn't room for
 	// canvas + chat side by side there (see viewport-layout discussion).
@@ -284,6 +295,16 @@
 							? ' · hidden from players'
 							: ''}
 					</p>
+					<!-- Shown to everyone, not just the GM: whose token is whose is
+					     the point of an owner, and it's the roster that turns the
+					     stored id back into a name. Silent when nobody owns it —
+					     most tokens are monsters, and "Owner: nobody" on every one
+					     of them is noise. -->
+					{#if token.ownerParticipantId}
+						<p class="truncate text-xs text-muted-foreground">
+							{ownerName(room, token.ownerParticipantId)}
+						</p>
+					{/if}
 				</div>
 				{#if isGM && session}
 					<TokenDetailDialog

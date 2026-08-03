@@ -6,6 +6,8 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import AssetPicker from '$lib/components/asset-picker.svelte';
+	import TokenOwnerPicker from '$lib/components/token-owner-picker.svelte';
+	import TokenSizePicker from '$lib/components/token-size-picker.svelte';
 
 	let {
 		room,
@@ -25,6 +27,8 @@
 	let name = $state('');
 	let visibility = $state<'visible' | 'hidden'>('visible');
 	let imageAssetId = $state<string | null>(null);
+	let squares = $state(1);
+	let ownerParticipantId = $state<string | null>(null);
 	let submitting = $state(false);
 
 	async function handleSubmit(event: SubmitEvent) {
@@ -34,10 +38,15 @@
 			// dropped near the middle of whatever the GM is currently looking
 			// at — drag it into place on the canvas after creation
 			const { x, y } = spawnCell();
-			room.createToken(sceneId, name, imageAssetId, x, y, visibility);
+			room.createToken(sceneId, name, imageAssetId, x, y, visibility, {
+				squares,
+				ownerParticipantId
+			});
 			open = false;
 			name = '';
 			imageAssetId = null;
+			squares = 1;
+			ownerParticipantId = null;
 			visibility = 'visible';
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : 'failed to create token');
@@ -65,6 +74,8 @@
 				<Label for="token-name">Name</Label>
 				<Input id="token-name" bind:value={name} required />
 			</div>
+			<TokenSizePicker bind:squares idPrefix="token" />
+			<TokenOwnerPicker bind:ownerId={ownerParticipantId} participants={room.participants} />
 			<div class="flex flex-col gap-2">
 				<Label>Image (optional)</Label>
 				<AssetPicker

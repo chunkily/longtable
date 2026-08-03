@@ -381,6 +381,32 @@ func (h *Hub) requireAssetInRoom(ctx context.Context, c *client, assetID *string
 	return true
 }
 
+// requireOwnerInRoom confirms a token's owner is someone in this room. A
+// nil ownerID (nobody owns it — the normal case for a monster) is always
+// allowed.
+//
+// Same shape as requireAssetInRoom above, and for the same reason:
+// participant IDs are unguessable but they aren't scoped, and a token
+// handed to someone in another room would be a token whose owner nobody
+// present could be shown, sitting behind whatever ownership permissions
+// get built on top of it.
+func (h *Hub) requireOwnerInRoom(ctx context.Context, c *client, ownerID *string) bool {
+	if ownerID == nil {
+		return true
+	}
+	inRoom, err := h.store.ParticipantInRoom(c.roomID, *ownerID)
+	if err != nil {
+		slog.Error("ws: lookup room participant failed", "error", err)
+		h.sendError(ctx, c, "owner not found")
+		return false
+	}
+	if !inRoom {
+		h.sendError(ctx, c, "owner not found")
+		return false
+	}
+	return true
+}
+
 func decodePayload(raw json.RawMessage, v any) error {
 	if len(raw) == 0 {
 		return fmt.Errorf("missing payload")
@@ -467,6 +493,9 @@ func (h *Hub) handleTokenCreate(ctx context.Context, c *client, raw json.RawMess
 	if !h.requireAssetInRoom(ctx, c, req.ImageAssetID) {
 		return
 	}
+	if !h.requireOwnerInRoom(ctx, c, req.OwnerParticipantID) {
+		return
+	}
 
 	visibility := store.Visibility(req.Visibility)
 	if visibility == "" {
@@ -518,12 +547,13 @@ func (h *Hub) handleTokenCreate(ctx context.Context, c *client, raw json.RawMess
 // can't tell "left alone" from "cleared", and clearing a token's art is
 // a real edit someone will want.
 type tokenUpdateRequest struct {
-	TokenID      string  `json:"tokenId"`
-	Name         string  `json:"name"`
-	ImageAssetID *string `json:"imageAssetId"`
-	Width        float64 `json:"width"`
-	Height       float64 `json:"height"`
-	Visibility   string  `json:"visibility"`
+	TokenID            string  `json:"tokenId"`
+	Name               string  `json:"name"`
+	ImageAssetID       *string `json:"imageAssetId"`
+	Width              float64 `json:"width"`
+	Height             float64 `json:"height"`
+	OwnerParticipantID *string `json:"ownerParticipantId"`
+	Visibility         string  `json:"visibility"`
 }
 
 // handleTokenUpdate edits a token in place. GM-only, like creating and
@@ -563,6 +593,9 @@ func (h *Hub) handleTokenUpdate(ctx context.Context, c *client, raw json.RawMess
 	if !h.requireAssetInRoom(ctx, c, req.ImageAssetID) {
 		return
 	}
+	if !h.requireOwnerInRoom(ctx, c, req.OwnerParticipantID) {
+		return
+	}
 
 	visibility := store.Visibility(req.Visibility)
 	if visibility == "" {
@@ -587,6 +620,7 @@ func (h *Hub) handleTokenUpdate(ctx context.Context, c *client, raw json.RawMess
 	token.ImageAssetID = req.ImageAssetID
 	token.Width = width
 	token.Height = height
+	token.OwnerParticipantID = req.OwnerParticipantID
 	token.Visibility = visibility
 
 	if err := h.store.UpdateToken(token); err != nil {

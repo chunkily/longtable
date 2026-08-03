@@ -1,10 +1,12 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
 
-// Editing a token is the first command whose broadcast depends on what
-// the token *was*, not only on what it is now: crossing the hidden line
-// tells a Player something different in each direction, and neither
-// direction is visible from the DOM. So this drives two browsers and
-// reads the canvas.
+// Everything a token carries beyond its name and position — size,
+// owner, visibility — set both when it's created and when it's edited.
+//
+// Editing is the first command whose broadcast depends on what the token
+// *was*, not only on what it is now: crossing the hidden line tells a
+// Player something different in each direction, and neither direction is
+// visible from the DOM. So this drives two browsers and reads the canvas.
 
 // One <canvas> per Konva layer, in the order game-canvas.svelte adds
 // them: map, grid, fog, drawings, tokens, pings, measurements, preview,
@@ -98,6 +100,53 @@ async function save(page: Page) {
 	await page.getByRole('button', { name: 'Save changes' }).click();
 	await expect(page.getByRole('button', { name: 'Save changes' })).toBeHidden();
 }
+
+// Size and owner used to be settable only after the fact — a token was
+// born 1x1 and unowned, and a GM prepping an encounter had to create
+// each one and then edit it again. Both are now on the creation form.
+test('a GM gives a token its size and owner as it is created', async ({ browser }) => {
+	const gm = await openRoomAsGM(browser, 'Token Create Details');
+	// Bob joins first: the owner picker offers the room's roster, and a
+	// player who hasn't joined yet isn't on it.
+	const player = await joinRoomAsPlayer(browser, gm.slug);
+
+	await gm.page.getByRole('button', { name: 'New token' }).click();
+	await gm.page.getByLabel('Name').fill("Bob's Fighter");
+	await gm.page.getByRole('button', { name: 'Large (2×2 squares)' }).click();
+	await gm.page.getByLabel('Owner').selectOption({ label: 'Bob' });
+	await gm.page.getByRole('button', { name: 'Create token' }).click();
+	await expect(gm.page.getByRole('button', { name: 'Create token' })).toBeHidden();
+	await expect.poll(() => layerInk(gm.page, TOKEN_LAYER)).toBeGreaterThan(0);
+
+	const box = await canvasBox(gm.page);
+	const spawn = spawnCentre(box);
+	await gm.page.mouse.click(box.x + spawn.x, box.y + spawn.y);
+	await expect(detailsSection(gm.page)).toContainText('2×2 squares');
+
+	// Whose token it is has to be legible to the room, not just to the GM
+	// who assigned it — that is the whole point of an owner, and the
+	// Player's client resolves the id through the same roster.
+	await expect(detailsSection(gm.page)).toContainText("Bob's token");
+	await expect.poll(() => layerInk(player.page, TOKEN_LAYER)).toBeGreaterThan(0);
+	await player.page.mouse.click(box.x + spawn.x, box.y + spawn.y);
+	await expect(detailsSection(player.page)).toContainText("Bob's token");
+
+	// Handing it back is a real edit, so an owner has to be removable —
+	// the update carries the field every time rather than only when it
+	// changed, which is what makes "nobody" expressible at all.
+	await openEditor(gm.page);
+	await expect(gm.page.getByLabel('Owner')).toHaveValue(/.+/);
+	await gm.page.getByLabel('Owner').selectOption({ label: 'Nobody (monster or prop)' });
+	await save(gm.page);
+
+	await expect(detailsSection(gm.page)).not.toContainText("Bob's token");
+	await expect(detailsSection(player.page)).not.toContainText("Bob's token");
+	// Still selected and still 2x2 — clearing the owner changed one field.
+	await expect(detailsSection(gm.page)).toContainText('2×2 squares');
+
+	await gm.context.close();
+	await player.context.close();
+});
 
 test('a GM renames and resizes a token, and the whole room sees it', async ({ browser }) => {
 	const gm = await openRoomAsGM(browser, 'Token Edit');

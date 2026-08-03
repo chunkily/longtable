@@ -40,11 +40,12 @@ authoritative; the client never writes to the database.
 Working today: rooms with a GM password and player join (the generated join slug is re-rolled if
 it happens to spell something offensive), scenes built from an uploaded map or a
 picked library asset and managed from a picker (switch, delete, swap the map under one),
-tokens (GM creates, edits — name, art, size, visibility — and deletes, anyone drags, hidden ones
+tokens (GM creates and edits them with the same set of fields either way — name, art, size, owner,
+visibility — and deletes, anyone drags, hidden ones
 withheld from players; a token someone else moves slides to its new square rather than jumping;
 anyone can click one to select it, which rings it on the map and shows its
-details above chat, with Edit and Delete beside them for a GM — the selection is local to that
-browser, never synced),
+details above chat, whose token it is included, with Edit and Delete beside them for a GM — the
+selection is local to that browser, never synced; owning a token confers nothing yet),
 fog the GM paints on and off a square at a time (plus reveal-all and reset for the whole scene),
 drawings (freehand/line/rect/ellipse) with an eraser, and per-session undo/redo covering
 drawing, erasing and token deletion,
@@ -69,8 +70,8 @@ share one file, but a room only ever sees what it added itself, under its own na
 All of it syncs live; everything but pings and measurements persists.
 
 Known gaps, which is also roughly the queue: no initiative tracker, no HP or conditions on a
-token, no way to assign a token's owner (the roster is on the wire now, but nothing offers it as
-a picker), fog has no automatic vision from tokens, no prebuilt releases, no way for a Host to
+token, ownership is recorded but enforces nothing (anyone can still move anyone's token),
+fog has no automatic vision from tokens, no prebuilt releases, no way for a Host to
 remove a moderated asset server-wide or cap upload sizes per room (a room removing something from
 its own library is a different, smaller thing, and does exist).
 
