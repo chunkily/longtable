@@ -20,6 +20,15 @@ export interface ChatMessage {
 	createdAt: string;
 }
 
+// One of a token's three numeric slots. `value` is null for an empty
+// slot and 0 for a creature on nought hit points — the two states a GM
+// most needs told apart, which is why this isn't a plain number
+// defaulting to zero.
+export interface Tracker {
+	label: string;
+	value: number | null;
+}
+
 export interface Token {
 	id: string;
 	sceneId: string;
@@ -31,6 +40,45 @@ export interface Token {
 	height: number;
 	ownerParticipantId: string | null;
 	visibility: 'visible' | 'hidden';
+	// Always three slots: the server pads whatever it was sent, so nothing
+	// downstream has to check the length. Optional here only because a
+	// token minted by an older server wouldn't carry them — read through
+	// `tokenTrackers()` rather than indexing directly.
+	trackers?: Tracker[];
+	conditions?: string[];
+}
+
+export const TRACKER_SLOTS = 3;
+
+// The one place that copes with a token arriving without trackers, so
+// every caller can index slots 0..2. Cheap enough to call at render.
+export function tokenTrackers(token: Token): Tracker[] {
+	const slots: Tracker[] = [];
+	for (let i = 0; i < TRACKER_SLOTS; i++) {
+		slots.push(token.trackers?.[i] ?? { label: '', value: null });
+	}
+	return slots;
+}
+
+// Only the slots carrying a number. This is the *map's* rule, not the
+// panel's: a hover card exists to be read at a glance mid-fight, and
+// empty slots on it are noise floating over the art. The details panel
+// deliberately shows all three instead — see below.
+export function setTrackers(token: Token): Tracker[] {
+	return tokenTrackers(token).filter((t) => t.value !== null);
+}
+
+// An unset slot reads as a dash rather than disappearing, so the panel
+// always shows the same three positions in the same order. A slot that
+// moved every time a neighbour was filled in would be unreadable at the
+// speed anyone actually consults it, and "no value yet" is itself worth
+// seeing — it's the difference between a creature nobody has rolled hit
+// points for and one at full health.
+export const TRACKER_EMPTY = '—';
+
+export function trackerText(tracker: Tracker): string {
+	const value = tracker.value === null ? TRACKER_EMPTY : String(tracker.value);
+	return tracker.label ? `${tracker.label} ${value}` : value;
 }
 
 export interface Scene {
@@ -632,7 +680,9 @@ export class RoomClient {
 			width: token.width,
 			height: token.height,
 			ownerParticipantId: token.ownerParticipantId,
-			visibility: token.visibility
+			visibility: token.visibility,
+			trackers: tokenTrackers(token),
+			conditions: token.conditions ?? []
 		});
 	}
 
@@ -641,6 +691,12 @@ export class RoomClient {
 	// art — or taking it back off a Player — is a real edit. Position
 	// isn't here: that's moveToken's, so an edit dialog opened before a
 	// drag can't undo the drag on submit.
+	//
+	// One method for both roles, even though a Player may only change the
+	// trackers and conditions. Their form sends the rest back unchanged
+	// and the server ignores it, which is cheaper than a second command
+	// and keeps the "every field every time" rule true of every caller —
+	// a narrower payload would read as a GM clearing the name.
 	updateToken(
 		tokenId: string,
 		fields: {
@@ -650,9 +706,35 @@ export class RoomClient {
 			height: number;
 			ownerParticipantId: string | null;
 			visibility: 'visible' | 'hidden';
+			trackers: Tracker[];
+			conditions: string[];
 		}
 	) {
 		this.send('token.update', { tokenId, ...fields });
+	}
+
+	// Changing only the trackers and conditions — the inline edit in the
+	// details panel, and the only edit a Player may make on a token they
+	// own. Still sends every field, because token.update clears what it
+	// isn't told; the rest come from the token as this client holds it.
+	//
+	// That makes this last-write-wins against a GM editing the same token
+	// in the dialog at the same moment, which is the same bargain the
+	// dialog already makes with itself. Worth knowing, not worth locking:
+	// the fields being raced over are ones a Player can't change anyway.
+	setTokenTrackers(tokenId: string, trackers: Tracker[], conditions: string[]) {
+		const token = this.tokens.find((t) => t.id === tokenId);
+		if (!token) return;
+		this.updateToken(tokenId, {
+			name: token.name,
+			imageAssetId: token.imageAssetId,
+			width: token.width,
+			height: token.height,
+			ownerParticipantId: token.ownerParticipantId,
+			visibility: token.visibility,
+			trackers,
+			conditions
+		});
 	}
 
 	deleteToken(tokenId: string) {

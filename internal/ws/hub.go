@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
@@ -453,6 +454,79 @@ func (h *Hub) handleTokenMove(ctx context.Context, c *client, raw json.RawMessag
 	})
 }
 
+// Bounds on the free text a token carries. Neither is a storage
+// concern — they're what keeps one client from writing a paragraph into
+// a condition tag that every other client then has to draw over the
+// map. Both are generous next to what stays readable at token size.
+const (
+	maxTrackerLabel    = 16
+	maxConditionText   = 32
+	maxTokenConditions = 12
+)
+
+// trackerRequest mirrors store.Tracker on the wire. Value is a pointer
+// for the same reason it is there: null is an empty slot and 0 is a
+// creature on nought hit points, and those are the two states a GM most
+// needs told apart.
+type trackerRequest struct {
+	Label string `json:"label"`
+	Value *int   `json:"value"`
+}
+
+// parseTrackers validates the slots a client sent and pads them out to
+// the fixed count. Too many is an error rather than something to
+// truncate quietly: a client sending four slots disagrees with the
+// server about how many exist, and silently keeping the first three
+// would drop whichever the user had just typed.
+//
+// A label with no value (a slot named ahead of being filled in) and a
+// value with no label (a bare number) are both kept as sent. Which of
+// them is worth drawing is the renderer's call, not the protocol's.
+func parseTrackers(reqs []trackerRequest) ([]store.Tracker, error) {
+	if len(reqs) > store.TrackerSlots {
+		return nil, fmt.Errorf("a token has at most %d trackers", store.TrackerSlots)
+	}
+	out := make([]store.Tracker, store.TrackerSlots)
+	for i, r := range reqs {
+		label := strings.TrimSpace(r.Label)
+		if utf8.RuneCountInString(label) > maxTrackerLabel {
+			return nil, fmt.Errorf("a tracker label is at most %d characters", maxTrackerLabel)
+		}
+		out[i] = store.Tracker{Label: label, Value: r.Value}
+	}
+	return out, nil
+}
+
+// parseConditions trims, drops blanks and deduplicates. The dedupe is
+// case-insensitive and keeps the first spelling seen: "Prone" and
+// "prone" are one condition, and a token wearing both reads as a bug to
+// everyone looking at it.
+func parseConditions(raw []string) ([]string, error) {
+	out := make([]string, 0, len(raw))
+	seen := make(map[string]bool, len(raw))
+	for _, c := range raw {
+		text := strings.TrimSpace(c)
+		if text == "" {
+			continue
+		}
+		if utf8.RuneCountInString(text) > maxConditionText {
+			return nil, fmt.Errorf("a condition is at most %d characters", maxConditionText)
+		}
+		key := strings.ToLower(text)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, text)
+	}
+	// Counted after the dedupe, so a client that sent the same condition
+	// twelve times is refused for the length it actually meant.
+	if len(out) > maxTokenConditions {
+		return nil, fmt.Errorf("a token has at most %d conditions", maxTokenConditions)
+	}
+	return out, nil
+}
+
 type tokenCreateRequest struct {
 	// TokenID is optional and normally absent — the server mints one. A
 	// client supplies it when undoing a deletion, where the token has to
@@ -467,6 +541,13 @@ type tokenCreateRequest struct {
 	Height             float64 `json:"height"`
 	OwnerParticipantID *string `json:"ownerParticipantId"`
 	Visibility         string  `json:"visibility"`
+	// Normally absent — a token is created blank and its trackers filled
+	// in afterwards. They're here for the same reason TokenID is: undoing
+	// a deletion rebuilds the row from this payload alone, and a token
+	// that came back on full health would be a worse bug than the misclick
+	// the undo was for.
+	Trackers   []trackerRequest `json:"trackers"`
+	Conditions []string         `json:"conditions"`
 }
 
 func (h *Hub) handleTokenCreate(ctx context.Context, c *client, raw json.RawMessage) {
@@ -514,6 +595,17 @@ func (h *Hub) handleTokenCreate(ctx context.Context, c *client, raw json.RawMess
 		height = 1
 	}
 
+	trackers, err := parseTrackers(req.Trackers)
+	if err != nil {
+		h.sendError(ctx, c, err.Error())
+		return
+	}
+	conditions, err := parseConditions(req.Conditions)
+	if err != nil {
+		h.sendError(ctx, c, err.Error())
+		return
+	}
+
 	token, err := h.store.CreateToken(store.Token{
 		ID:                 req.TokenID,
 		SceneID:            req.SceneID,
@@ -525,6 +617,8 @@ func (h *Hub) handleTokenCreate(ctx context.Context, c *client, raw json.RawMess
 		Height:             height,
 		OwnerParticipantID: req.OwnerParticipantID,
 		Visibility:         visibility,
+		Trackers:           trackers,
+		Conditions:         conditions,
 	})
 	if err != nil {
 		slog.Error("ws: create token failed", "error", err)
@@ -547,29 +641,40 @@ func (h *Hub) handleTokenCreate(ctx context.Context, c *client, raw json.RawMess
 // can't tell "left alone" from "cleared", and clearing a token's art is
 // a real edit someone will want.
 type tokenUpdateRequest struct {
-	TokenID            string  `json:"tokenId"`
-	Name               string  `json:"name"`
-	ImageAssetID       *string `json:"imageAssetId"`
-	Width              float64 `json:"width"`
-	Height             float64 `json:"height"`
-	OwnerParticipantID *string `json:"ownerParticipantId"`
-	Visibility         string  `json:"visibility"`
+	TokenID            string           `json:"tokenId"`
+	Name               string           `json:"name"`
+	ImageAssetID       *string          `json:"imageAssetId"`
+	Width              float64          `json:"width"`
+	Height             float64          `json:"height"`
+	OwnerParticipantID *string          `json:"ownerParticipantId"`
+	Visibility         string           `json:"visibility"`
+	Trackers           []trackerRequest `json:"trackers"`
+	Conditions         []string         `json:"conditions"`
 }
 
-// handleTokenUpdate edits a token in place. GM-only, like creating and
-// deleting one.
+// handleTokenUpdate edits a token in place.
 //
-// When ownership-based permissions arrive this is where they split: a
-// Player who owns a token should be able to change its HP without being
-// able to touch its visibility, so the role check will have to become
-// per-field rather than the single gate it is here.
+// The role check is per field rather than the single gate at the top it
+// used to be. A GM may change anything; a Player who *owns* the token
+// may change its trackers and conditions and nothing else, because
+// tracking your own damage is the one edit that shouldn't need asking
+// for, while who can see the token, who owns it and what it looks like
+// remain the GM's scene.
+//
+// The fields a Player may not touch are not rejected but ignored: the
+// loaded token keeps them, exactly as it keeps a field this command
+// doesn't carry at all. Rejecting instead would mean comparing every
+// field the client echoed back against what's stored and calling any
+// difference an attack, which turns a stale form into an error and buys
+// nothing — the values are preserved either way.
 func (h *Hub) handleTokenUpdate(ctx context.Context, c *client, raw json.RawMessage) {
-	if !h.requireGM(ctx, c) {
-		return
-	}
+	isGM := c.participant.Role == store.RoleGM
 
 	var req tokenUpdateRequest
-	if err := decodePayload(raw, &req); err != nil || req.TokenID == "" || req.Name == "" {
+	// A name is required only of a GM. It's one of the GM-only fields, so
+	// an owning Player's client has no reason to send one and shouldn't be
+	// made to invent one to change its hit points.
+	if err := decodePayload(raw, &req); err != nil || req.TokenID == "" || (isGM && req.Name == "") {
 		h.sendError(ctx, c, "invalid token.update payload")
 		return
 	}
@@ -590,38 +695,71 @@ func (h *Hub) handleTokenUpdate(ctx context.Context, c *client, raw json.RawMess
 		h.sendError(ctx, c, "token not found")
 		return
 	}
-	if !h.requireAssetInRoom(ctx, c, req.ImageAssetID) {
-		return
-	}
-	if !h.requireOwnerInRoom(ctx, c, req.OwnerParticipantID) {
-		return
+
+	if !isGM {
+		// A hidden token is refused in the words of one that isn't there. A
+		// Player is never told a hidden token exists, and an error that
+		// separated "not yours" from "no such token" would be exactly that
+		// telling — including for a hidden token they own, which they still
+		// cannot see on their own map.
+		if token.Visibility == store.VisibilityHidden {
+			h.sendError(ctx, c, "token not found")
+			return
+		}
+		if token.OwnerParticipantID == nil || *token.OwnerParticipantID != c.participant.ID {
+			h.sendError(ctx, c, "you can only edit a token you own")
+			return
+		}
 	}
 
-	visibility := store.Visibility(req.Visibility)
-	if visibility == "" {
-		visibility = store.VisibilityVisible
-	}
-	if visibility != store.VisibilityVisible && visibility != store.VisibilityHidden {
-		h.sendError(ctx, c, "visibility must be \"visible\" or \"hidden\"")
+	trackers, err := parseTrackers(req.Trackers)
+	if err != nil {
+		h.sendError(ctx, c, err.Error())
 		return
 	}
-
-	width, height := req.Width, req.Height
-	if width == 0 {
-		width = 1
-	}
-	if height == 0 {
-		height = 1
+	conditions, err := parseConditions(req.Conditions)
+	if err != nil {
+		h.sendError(ctx, c, err.Error())
+		return
 	}
 
 	wasHidden := token.Visibility == store.VisibilityHidden
 
-	token.Name = req.Name
-	token.ImageAssetID = req.ImageAssetID
-	token.Width = width
-	token.Height = height
-	token.OwnerParticipantID = req.OwnerParticipantID
-	token.Visibility = visibility
+	if isGM {
+		if !h.requireAssetInRoom(ctx, c, req.ImageAssetID) {
+			return
+		}
+		if !h.requireOwnerInRoom(ctx, c, req.OwnerParticipantID) {
+			return
+		}
+
+		visibility := store.Visibility(req.Visibility)
+		if visibility == "" {
+			visibility = store.VisibilityVisible
+		}
+		if visibility != store.VisibilityVisible && visibility != store.VisibilityHidden {
+			h.sendError(ctx, c, "visibility must be \"visible\" or \"hidden\"")
+			return
+		}
+
+		width, height := req.Width, req.Height
+		if width == 0 {
+			width = 1
+		}
+		if height == 0 {
+			height = 1
+		}
+
+		token.Name = req.Name
+		token.ImageAssetID = req.ImageAssetID
+		token.Width = width
+		token.Height = height
+		token.OwnerParticipantID = req.OwnerParticipantID
+		token.Visibility = visibility
+	}
+
+	token.Trackers = trackers
+	token.Conditions = conditions
 
 	if err := h.store.UpdateToken(token); err != nil {
 		slog.Error("ws: update token failed", "error", err)

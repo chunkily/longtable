@@ -10,7 +10,7 @@ import { expect, test, type Browser, type Page } from '@playwright/test';
 
 // One <canvas> per Konva layer, in the order game-canvas.svelte adds
 // them: map, grid, fog, drawings, tokens, pings, measurements, preview,
-// selection.
+// selection, hover.
 const TOKEN_LAYER = 4;
 const GRID = 70;
 

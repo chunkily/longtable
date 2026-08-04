@@ -7,7 +7,7 @@ import { expect, test, type Browser, type Page } from '@playwright/test';
 
 // One <canvas> per Konva layer, in the order game-canvas.svelte adds
 // them: map, grid, fog, drawings, tokens, pings, measurements, preview,
-// selection. Index 8 is the selection ring, and it is the only thing
+// selection, hover. Index 8 is the selection ring, and it is the only thing
 // ever drawn there — so "is anything on this layer" is exactly "is
 // anything selected".
 const SELECTION_LAYER = 8;

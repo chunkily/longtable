@@ -23,7 +23,7 @@ Envelope both ways:
 | `chat.send` | anyone | yes | `chat.posted` |
 | `token.create` | GM only | yes | `token.created` (GM-only if hidden) |
 | `token.move` | anyone | yes | `token.moved` |
-| `token.update` | GM only | yes | `token.updated` (+ `token.deleted` to Players on hiding) |
+| `token.update` | GM, or the token's owner for trackers/conditions | yes | `token.updated` (+ `token.deleted` to Players on hiding) |
 | `token.delete` | GM only | yes | `token.deleted` (GM-only if hidden) |
 | `fog.reveal` | GM only | yes | `fog.revealed` |
 | `fog.hide` | GM only | yes | `fog.hidden` |
@@ -80,14 +80,50 @@ came from, so any permission check added to `handleTokenMove` governs the undo f
 broadcast carries no sender, which is why the client's history has to decide "was that my move?"
 from the position rather than from the event: see `sendMoveToken` in `room.svelte.ts`.
 
-`token.update` carries *every* editable field each time (name, image, size, owner, visibility)
-rather than only the changed ones — a `*string` can't tell "left alone" from "cleared", and
-clearing a token's art, or taking it back off a Player, is a real edit. The corollary is that an
-update omitting a field **clears** it, so a client must send them all. It deliberately doesn't
-carry position: that's `token.move`'s, so an edit dialog opened before a drag can't undo the drag
-when it's submitted after one. The handler still loads the token and edits it in place, which is
-what will keep a field this command doesn't mention yet (HP, conditions) from being nulled by a
-form that predates it.
+`token.update` carries *every* editable field each time (name, image, size, owner, visibility,
+trackers, conditions) rather than only the changed ones — a `*string` can't tell "left alone" from
+"cleared", and clearing a token's art, or taking it back off a Player, is a real edit. The
+corollary is that an update omitting a field **clears** it, so a client must send them all. It
+deliberately doesn't carry position: that's `token.move`'s, so an edit dialog opened before a drag
+can't undo the drag when it's submitted after one. The handler still loads the token and edits it
+in place, which is what keeps a field this command doesn't mention from being nulled by a form
+that predates it.
+
+**It is the one command with a per-field role check** rather than a single gate at the top. A GM
+may change anything; a Player who *owns* the token may change its `trackers` and `conditions` and
+nothing else — tracking your own damage shouldn't need asking for, while who can see the token,
+who owns it and what it looks like stay the GM's scene. Three things fall out of that and are
+worth not rediscovering:
+
+- The fields a Player may not touch are **ignored, not rejected**. The loaded token keeps them,
+  exactly as it keeps a field the command doesn't carry. Rejecting instead would mean diffing
+  every echoed field against what's stored and calling any difference an attack, which turns a
+  stale form into an error and protects nothing extra.
+- `name` is required only of a GM, since it's one of the fields a Player has no business sending.
+- A **hidden** token is refused to a non-GM in the words of one that doesn't exist, *including to
+  its own owner* — a GM can prep an ambush with a Player's character, and an error separating "not
+  yours" from "no such token" would be how they found out. A visible token they don't own gets a
+  plainer "you can only edit a token you own", which leaks nothing they can't already see.
+
+`trackers` is a fixed **three** slots (`store.TrackerSlots`), each `{label, value}`. The server
+pads or truncates to three, so a client never has to; more than three is an error rather than a
+silent truncation, since a client sending four disagrees about how many there are and dropping the
+last would lose whatever was just typed. `value` is `null` for an empty slot and `0` for a
+creature on nought hit points — **the two must never collapse**, which is why it's a pointer on
+the wire, in the store and in the TypeScript type. Values are integers: every number on a D&D
+sheet is one. `conditions` is free-form text, trimmed, blanks dropped, deduplicated
+case-insensitively keeping the first spelling, and bounded by `maxTrackerLabel`,
+`maxConditionText` and `maxTokenConditions` in `hub.go` — the client mirrors those as `maxlength`
+so a cap never turns into an error toast after someone has finished typing.
+
+`token.create` carries both as well, though a token is normally created blank. Undoing a deletion
+rebuilds the row from that payload alone, and a token that came back on full health would be a
+worse bug than the misclick being undone.
+
+The inline tracker boxes in the details panel send this same command, through
+`RoomClient.setTokenTrackers`, which fills every other field in from the token as that client
+holds it — there is no narrower "just the trackers" command, because one would read as a GM
+clearing the name.
 
 `ownerParticipantId` on both `token.create` and `token.update` is checked with
 `requireOwnerInRoom`, the participant twin of `requireAssetInRoom` — a participant ID is
@@ -117,9 +153,10 @@ still exists — from their side that is exactly what happened, since a hidden t
 something a Player is told about. A dedicated `token.hidden` event would be more precise and buy
 the client nothing.
 
-Notable gaps as of the last pass: there is no way to move a token with an ownership lock, and no
-way to assign a token's owner (blocked on listing a room's participants). See
-`planning/backlog/in-progress/`.
+Notable gaps as of the last pass: there is no way to move a token with an ownership lock — note
+that ownership now means something for the *first* time, on `token.update`'s trackers and
+conditions, so `token-move-ownership-lock` has a worked precedent to copy rather than a rule to
+invent. See `planning/backlog/`.
 
 ## Presence
 

@@ -150,7 +150,24 @@ func tokenPayload(t store.Token) map[string]any {
 		"height":             t.Height,
 		"ownerParticipantId": t.OwnerParticipantID,
 		"visibility":         string(t.Visibility),
+		// Sent to everyone who is sent the token at all. A hidden token is
+		// already withheld whole, so there is nothing here that needs
+		// filtering a second time — and a Player seeing a monster's hit
+		// points is a table's choice, not the protocol's.
+		"trackers":   trackerPayloads(t.Trackers),
+		"conditions": t.Conditions,
 	}
+}
+
+// trackerPayloads is an exhaustive struct-to-map like participantPayload
+// rather than a marshalled struct, so the tracker model can grow a field
+// (a maximum, one day) without it silently starting to broadcast.
+func trackerPayloads(trackers []store.Tracker) []map[string]any {
+	out := make([]map[string]any, len(trackers))
+	for i, tr := range trackers {
+		out[i] = map[string]any{"label": tr.Label, "value": tr.Value}
+	}
+	return out
 }
 
 func tokenPayloads(tokens []store.Token) []map[string]any {

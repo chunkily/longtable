@@ -8,7 +8,7 @@ import { expect, test, type Page } from '@playwright/test';
 
 // One <canvas> per Konva layer, in the order game-canvas.svelte adds
 // them: map, grid, fog, drawings, tokens, pings, measurements, preview,
-// selection.
+// selection, hover.
 // Index 3 is the drawings layer — the only one that should ever have
 // ink here.
 const DRAWING_LAYER = 3;

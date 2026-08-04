@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 
 	"github.com/google/uuid"
@@ -14,6 +15,28 @@ const (
 	VisibilityHidden  Visibility = "hidden"
 )
 
+// TrackerSlots is how many numeric trackers a token carries. Fixed
+// rather than a growable list, following Roll20's token bars: three is
+// what a character sheet's worth of at-a-glance numbers turns out to be
+// (hit points, armour class, one resource), and a fixed count is what
+// lets the map draw them in the same place on every token.
+const TrackerSlots = 3
+
+// Tracker is one of a token's numbered slots. Label is per token rather
+// than per room — a monster's third slot is legendary resistances and a
+// wizard's is spell slots, and there is no room-wide settings surface to
+// hang a shared label off anyway.
+//
+// Value is a pointer because an empty slot and a slot reading zero are
+// different things a GM will care about: a creature on 0 hit points is
+// the whole point of tracking them. Integers rather than floats because
+// every number on a D&D sheet is one, and a float would render as "12.5
+// HP" the first time arithmetic went slightly wrong.
+type Tracker struct {
+	Label string `json:"label"`
+	Value *int   `json:"value"`
+}
+
 type Token struct {
 	ID                 string
 	SceneID            string
@@ -23,6 +46,51 @@ type Token struct {
 	Width, Height      float64
 	OwnerParticipantID *string
 	Visibility         Visibility
+	// Always exactly TrackerSlots long once it has been through the store
+	// — see normalizeTrackers. Conditions is free-form status text
+	// ("Prone", "Concentrating"), in the order it was added.
+	Trackers   []Tracker
+	Conditions []string
+}
+
+// normalizeTrackers pads or truncates to exactly TrackerSlots, so a row
+// written before trackers existed (an empty JSON array) and one written
+// by a client sending too few both come back the same shape. Every
+// caller can then index slots 0..2 without checking the length.
+func normalizeTrackers(trackers []Tracker) []Tracker {
+	out := make([]Tracker, TrackerSlots)
+	copy(out, trackers)
+	return out
+}
+
+// encodeTokenExtras marshals the two JSON-backed columns. Conditions is
+// forced to an empty slice first: a nil one marshals to `null`, which
+// the NOT NULL column would take and every reader would then have to
+// treat as a third case alongside "[]" and a real list.
+func encodeTokenExtras(t Token) (string, string, error) {
+	trackers, err := json.Marshal(normalizeTrackers(t.Trackers))
+	if err != nil {
+		return "", "", err
+	}
+	conditions := t.Conditions
+	if conditions == nil {
+		conditions = []string{}
+	}
+	conditionsJSON, err := json.Marshal(conditions)
+	if err != nil {
+		return "", "", err
+	}
+	return string(trackers), string(conditionsJSON), nil
+}
+
+func decodeTokenExtras(t *Token, trackersJSON, conditionsJSON string) error {
+	var trackers []Tracker
+	if err := json.Unmarshal([]byte(trackersJSON), &trackers); err != nil {
+		return err
+	}
+	t.Trackers = normalizeTrackers(trackers)
+	t.Conditions = []string{}
+	return json.Unmarshal([]byte(conditionsJSON), &t.Conditions)
 }
 
 // CreateToken persists t. An empty ID gets one generated; a caller that
@@ -38,10 +106,19 @@ func (s *Store) CreateToken(t Token) (Token, error) {
 	if t.Visibility == "" {
 		t.Visibility = VisibilityVisible
 	}
-	_, err := s.db.Exec(
-		`INSERT INTO token (id, scene_id, name, image_asset_id, x, y, width, height, owner_participant_id, visibility)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	t.Trackers = normalizeTrackers(t.Trackers)
+	if t.Conditions == nil {
+		t.Conditions = []string{}
+	}
+	trackersJSON, conditionsJSON, err := encodeTokenExtras(t)
+	if err != nil {
+		return Token{}, err
+	}
+	_, err = s.db.Exec(
+		`INSERT INTO token (id, scene_id, name, image_asset_id, x, y, width, height, owner_participant_id, visibility, trackers, conditions)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ID, t.SceneID, t.Name, t.ImageAssetID, t.X, t.Y, t.Width, t.Height, t.OwnerParticipantID, string(t.Visibility),
+		trackersJSON, conditionsJSON,
 	)
 	if err != nil {
 		return Token{}, err
@@ -64,10 +141,16 @@ func (s *Store) MoveToken(id string, x, y float64) error {
 // is what keeps a field nobody's editing yet (an owner, one day an HP)
 // from being quietly nulled by a form that didn't know about it.
 func (s *Store) UpdateToken(t Token) error {
-	_, err := s.db.Exec(
-		`UPDATE token SET name = ?, image_asset_id = ?, width = ?, height = ?, owner_participant_id = ?, visibility = ?
+	trackersJSON, conditionsJSON, err := encodeTokenExtras(t)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(
+		`UPDATE token SET name = ?, image_asset_id = ?, width = ?, height = ?, owner_participant_id = ?, visibility = ?,
+		        trackers = ?, conditions = ?
 		 WHERE id = ?`,
-		t.Name, t.ImageAssetID, t.Width, t.Height, t.OwnerParticipantID, string(t.Visibility), t.ID,
+		t.Name, t.ImageAssetID, t.Width, t.Height, t.OwnerParticipantID, string(t.Visibility),
+		trackersJSON, conditionsJSON, t.ID,
 	)
 	return err
 }
@@ -77,11 +160,12 @@ func (s *Store) UpdateToken(t Token) error {
 // visibility before it can decide who is even told it's gone.
 func (s *Store) GetToken(id string) (Token, error) {
 	var t Token
-	var visibility string
+	var visibility, trackersJSON, conditionsJSON string
 	err := s.db.QueryRow(
-		`SELECT id, scene_id, name, image_asset_id, x, y, width, height, owner_participant_id, visibility
+		`SELECT id, scene_id, name, image_asset_id, x, y, width, height, owner_participant_id, visibility, trackers, conditions
 		 FROM token WHERE id = ?`, id,
-	).Scan(&t.ID, &t.SceneID, &t.Name, &t.ImageAssetID, &t.X, &t.Y, &t.Width, &t.Height, &t.OwnerParticipantID, &visibility)
+	).Scan(&t.ID, &t.SceneID, &t.Name, &t.ImageAssetID, &t.X, &t.Y, &t.Width, &t.Height, &t.OwnerParticipantID, &visibility,
+		&trackersJSON, &conditionsJSON)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Token{}, ErrNotFound
@@ -89,6 +173,9 @@ func (s *Store) GetToken(id string) (Token, error) {
 		return Token{}, err
 	}
 	t.Visibility = Visibility(visibility)
+	if err := decodeTokenExtras(&t, trackersJSON, conditionsJSON); err != nil {
+		return Token{}, err
+	}
 	return t, nil
 }
 
@@ -120,7 +207,7 @@ func (s *Store) TokenRoomID(tokenID string) (string, error) {
 
 func (s *Store) ListTokensForScene(sceneID string) ([]Token, error) {
 	rows, err := s.db.Query(
-		`SELECT id, scene_id, name, image_asset_id, x, y, width, height, owner_participant_id, visibility
+		`SELECT id, scene_id, name, image_asset_id, x, y, width, height, owner_participant_id, visibility, trackers, conditions
 		 FROM token WHERE scene_id = ?`, sceneID,
 	)
 	if err != nil {
@@ -131,11 +218,15 @@ func (s *Store) ListTokensForScene(sceneID string) ([]Token, error) {
 	var tokens []Token
 	for rows.Next() {
 		var t Token
-		var visibility string
-		if err := rows.Scan(&t.ID, &t.SceneID, &t.Name, &t.ImageAssetID, &t.X, &t.Y, &t.Width, &t.Height, &t.OwnerParticipantID, &visibility); err != nil {
+		var visibility, trackersJSON, conditionsJSON string
+		if err := rows.Scan(&t.ID, &t.SceneID, &t.Name, &t.ImageAssetID, &t.X, &t.Y, &t.Width, &t.Height, &t.OwnerParticipantID, &visibility,
+			&trackersJSON, &conditionsJSON); err != nil {
 			return nil, err
 		}
 		t.Visibility = Visibility(visibility)
+		if err := decodeTokenExtras(&t, trackersJSON, conditionsJSON); err != nil {
+			return nil, err
+		}
 		tokens = append(tokens, t)
 	}
 	return tokens, rows.Err()

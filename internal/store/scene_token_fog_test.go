@@ -225,6 +225,64 @@ func TestCreateToken_DefaultsAndLookup(t *testing.T) {
 	}
 }
 
+// Every read path pads to TrackerSlots, so callers can index slots 0..2
+// without checking the length — including for a token created before the
+// columns existed, whose stored value is the empty JSON array the
+// migration defaulted it to. Creating one with no trackers at all
+// produces exactly that shape, which is why this stands in for the
+// migration too.
+func TestToken_TrackersAreAlwaysThreeSlotsOnTheWayOut(t *testing.T) {
+	s := newTestStore(t)
+
+	room, _, err := s.CreateRoom("Room", "GM", "password")
+	if err != nil {
+		t.Fatalf("CreateRoom: %v", err)
+	}
+	scene, err := s.CreateScene(room.ID, "Scene", nil, 70, 10, 10)
+	if err != nil {
+		t.Fatalf("CreateScene: %v", err)
+	}
+
+	bare, err := s.CreateToken(Token{SceneID: scene.ID, Name: "Goblin"})
+	if err != nil {
+		t.Fatalf("CreateToken: %v", err)
+	}
+	loaded, err := s.GetToken(bare.ID)
+	if err != nil {
+		t.Fatalf("GetToken: %v", err)
+	}
+	if len(loaded.Trackers) != TrackerSlots {
+		t.Fatalf("trackers = %+v, want %d empty slots", loaded.Trackers, TrackerSlots)
+	}
+	if loaded.Conditions == nil {
+		t.Fatalf("conditions = nil, want an empty list — a nil one marshals to JSON null")
+	}
+
+	// A single slot supplied is padded rather than kept short.
+	one, err := s.CreateToken(Token{
+		SceneID: scene.ID, Name: "Ogre",
+		Trackers: []Tracker{{Label: "HP", Value: func() *int { v := 0; return &v }()}},
+	})
+	if err != nil {
+		t.Fatalf("CreateToken: %v", err)
+	}
+	tokens, err := s.ListTokensForScene(scene.ID)
+	if err != nil {
+		t.Fatalf("ListTokensForScene: %v", err)
+	}
+	for _, tk := range tokens {
+		if len(tk.Trackers) != TrackerSlots {
+			t.Fatalf("token %q trackers = %+v, want %d slots from the list query too", tk.Name, tk.Trackers, TrackerSlots)
+		}
+		// The one that matters: a creature on nought hit points is a set
+		// value, not an empty slot, and a round trip through JSON and
+		// SQLite is where the two would collapse into each other.
+		if tk.ID == one.ID && (tk.Trackers[0].Value == nil || *tk.Trackers[0].Value != 0) {
+			t.Fatalf("HP = %+v, want a stored 0", tk.Trackers[0])
+		}
+	}
+}
+
 func TestTokenRoomID_NotFound(t *testing.T) {
 	s := newTestStore(t)
 

@@ -15,6 +15,7 @@
 	} from '$lib/aoe';
 	import { cellAt, cellCentre, measureLabel } from '$lib/measure';
 	import { PING_PULSES, PING_PULSE_INTERVAL_MS, PING_PULSE_SECONDS } from '$lib/ping';
+	import { setTrackers, trackerText } from '$lib/room.svelte';
 	import type {
 		Drawing,
 		DrawingKind,
@@ -146,6 +147,14 @@
 	// which a fifth of a second does at any distance. Short enough that
 	// nobody is waiting on it, long enough to be followed.
 	const TOKEN_MOVE_SECONDS = 0.22;
+	// The hover card that shows a token's trackers and conditions. Screen
+	// pixels like everything else that has to read the same at any zoom.
+	const HOVER_FONT_SIZE = 13;
+	const HOVER_LABEL_PADDING = 6;
+	// Clear of the token's top edge, so the card doesn't cover the art of
+	// the thing it's describing.
+	const HOVER_LABEL_OFFSET = 6;
+	const HOVER_FILL = 'rgba(24, 24, 27, 0.92)';
 
 	let container: HTMLDivElement;
 	let stage: Konva.Stage | undefined;
@@ -158,6 +167,7 @@
 	let measureLayer: Konva.Layer;
 	let previewLayer: Konva.Layer;
 	let selectionLayer: Konva.Layer;
+	let hoverLayer: Konva.Layer;
 	let resizeObserver: ResizeObserver | undefined;
 
 	// Tracks the active scene so a switch to a different scene resets
@@ -213,6 +223,12 @@
 		// Appended last, so the existing layer indices the e2e specs read
 		// pixels from don't move.
 		selectionLayer = new Konva.Layer({ listening: false });
+		// Topmost, and appended last for the same reason the selection layer
+		// was: the e2e specs index layers by number. It has a layer of its
+		// own rather than living on the token layer because renderTokens
+		// destroys that layer wholesale on any change to room.tokens — a
+		// card built there would blink out every time anyone moved anything.
+		hoverLayer = new Konva.Layer({ listening: false });
 		stage.add(
 			mapLayer,
 			gridLayer,
@@ -222,11 +238,16 @@
 			pingLayer,
 			measureLayer,
 			previewLayer,
-			selectionLayer
+			selectionLayer,
+			hoverLayer
 		);
 
 		stage.on('wheel', handleWheel);
 		stage.on('dragmove', () => renderGrid());
+		// A pointer that leaves the canvas entirely never gets a mouseleave
+		// from the token it was over — the same gap mouseleave.tool covers
+		// for held gestures.
+		stage.on('mouseleave', () => (hoveredTokenId = null));
 
 		resizeObserver = new ResizeObserver(() => {
 			if (!stage) return;
@@ -292,6 +313,7 @@
 		// ring's stroke, dash and standoff are the same.
 		renderMeasurements();
 		renderSelection();
+		renderHoverCard();
 		refreshCursorOverlay();
 	}
 
@@ -382,6 +404,14 @@
 	$effect(() => {
 		track(room.tokens, room.scene, selectedTokenId);
 		if (stage) renderSelection();
+	});
+
+	// room.tokens is tracked so the card follows the numbers it's showing:
+	// someone else changing a hovered token's hit points has to reach the
+	// card, and a token that leaves the scene has to take its card with it.
+	$effect(() => {
+		track(room.tokens, room.scene, hoveredTokenId);
+		if (stage) renderHoverCard();
 	});
 
 	// The eraser's halo points at a specific drawing, so it has to be
@@ -1349,6 +1379,80 @@
 		measureLayer.add(group);
 	}
 
+	// --- the hover card: a token's trackers and conditions, shown while
+	// the pointer is over it. Local like the selection, and for the same
+	// reason — what one person's pointer is doing isn't the room's
+	// business. ---
+
+	// Which token the pointer is over, or null. $state because the card is
+	// rendered from an effect: unlike the selection ring's bookkeeping,
+	// this one *is* the reactive truth.
+	let hoveredTokenId = $state<string | null>(null);
+
+	// What the card says, or null when there is nothing worth saying. A
+	// token nobody has put a number on gets no card at all — every token on
+	// the map popping an empty box as the pointer crossed it would make the
+	// map unusable during a fight, which is exactly when this is for.
+	function hoverCardText(token: Token): string | null {
+		const lines: string[] = [];
+		const trackers = setTrackers(token);
+		if (trackers.length) lines.push(trackers.map(trackerText).join('   '));
+		const conditions = token.conditions ?? [];
+		if (conditions.length) lines.push(conditions.join(', '));
+		return lines.length ? lines.join('\n') : null;
+	}
+
+	function renderHoverCard() {
+		if (!hoverLayer) return;
+		hoverLayer.destroyChildren();
+
+		const gridSize = room.scene?.gridSize;
+		const token = hoveredTokenId ? room.tokens.find((t) => t.id === hoveredTokenId) : undefined;
+		// A hovered id with no token behind it — deleted, hidden, or the
+		// scene changed under it — reads as nothing hovered. The id is left
+		// alone rather than cleared, so this doesn't write back into the
+		// state it renders from; the pointer's next move settles it.
+		if (!token || !gridSize) {
+			hoverLayer.batchDraw();
+			return;
+		}
+
+		const text = hoverCardText(token);
+		if (!text) {
+			hoverLayer.batchDraw();
+			return;
+		}
+
+		const label = new Konva.Label({
+			// Bottom-centre of the card at the top-centre of the token, so it
+			// stays put as the token's size changes.
+			x: (token.x + token.width / 2) * gridSize,
+			y: token.y * gridSize - screenToWorld(HOVER_LABEL_OFFSET),
+			listening: false
+		});
+		label.add(
+			new Konva.Tag({
+				fill: HOVER_FILL,
+				cornerRadius: screenToWorld(HOVER_LABEL_PADDING),
+				pointerDirection: 'down',
+				pointerWidth: screenToWorld(6),
+				pointerHeight: screenToWorld(4)
+			})
+		);
+		label.add(
+			new Konva.Text({
+				text,
+				fontSize: screenToWorld(HOVER_FONT_SIZE),
+				padding: screenToWorld(HOVER_LABEL_PADDING),
+				align: 'center',
+				lineHeight: 1.3,
+				fill: 'white'
+			})
+		);
+		hoverLayer.add(label);
+		hoverLayer.batchDraw();
+	}
+
 	// --- the selection ring. Purely local: which token this client has
 	// selected is never sent anywhere, so two people can be looking at
 	// different tokens at the same time. ---
@@ -1582,6 +1686,20 @@
 			if (token.visibility === 'hidden') {
 				group.opacity(0.55);
 			}
+
+			// Bound per group and re-bound on every rebuild, like the drag
+			// handlers beside them. A rebuild while the pointer is resting on
+			// a token fires no fresh mouseenter, which is why hoveredTokenId
+			// lives outside this function and survives it — the card is
+			// re-rendered from the new token either way.
+			group.on('mouseenter', () => (hoveredTokenId = token.id));
+			group.on('mouseleave', () => {
+				if (hoveredTokenId === token.id) hoveredTokenId = null;
+			});
+			// A card floating over a token being dragged tracks a stale
+			// position — the group moves under the pointer but the token's
+			// stored square doesn't change until the drop.
+			group.on('dragstart', () => (hoveredTokenId = null));
 
 			group.on('dragmove', () => moveSelectionRing(token.id, group.x(), group.y(), w, h));
 

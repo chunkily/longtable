@@ -44,8 +44,14 @@ tokens (GM creates and edits them with the same set of fields either way — nam
 visibility — and deletes, anyone drags, hidden ones
 withheld from players; a token someone else moves slides to its new square rather than jumping;
 anyone can click one to select it, which rings it on the map and shows its
-details above chat, whose token it is included, with Edit and Delete beside them for a GM — the
-selection is local to that browser, never synced; owning a token confers nothing yet),
+details above chat, whose token it is included, with Edit beside them for a GM or for whoever owns
+it and Delete for a GM alone — the
+selection is local to that browser, never synced; each token also carries three numeric trackers,
+labelled per token (hit points, armour class, a resource), and any number of condition tags — all
+three slots shown in that details panel and their values typed straight into it, plus a card when
+the pointer rests on the token showing only the slots carrying a number; labels and conditions are
+set in the edit dialog, and a GM may change all of it on any token while a Player may change the
+trackers and conditions on one they own, which is the first thing ownership actually confers),
 fog the GM paints on and off a square at a time (plus reveal-all and reset for the whole scene),
 drawings (freehand/line/rect/ellipse) with an eraser, and per-session undo/redo covering
 drawing, erasing, token deletion and token moves (an undo passes over a token someone else has
@@ -72,8 +78,8 @@ through, and joins the uploading room's library — content-addressed globally s
 share one file, but a room only ever sees what it added itself, under its own name and credit.
 All of it syncs live; everything but pings and measurements persists.
 
-Known gaps, which is also roughly the queue: no initiative tracker, no HP or conditions on a
-token, ownership is recorded but enforces nothing (anyone can still move anyone's token),
+Known gaps, which is also roughly the queue: no initiative tracker, ownership governs a token's
+trackers and conditions but nothing else (anyone can still move anyone's token),
 fog has no automatic vision from tokens, no prebuilt releases, no way for a Host to
 remove a moderated asset server-wide or cap upload sizes per room (a room removing something from
 its own library is a different, smaller thing, and does exist).

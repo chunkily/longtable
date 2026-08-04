@@ -18,16 +18,25 @@ Added in this order, so this is also the `document.querySelectorAll('canvas')` i
 | 6 | measurements | no | in-progress measurements from anyone in the room |
 | 7 | preview | no | the current rubber-band shape, cursor ring, eraser halo |
 | 8 | selection | no | the rotating ring around the selected token, if any |
+| 9 | hover | no | the card of trackers and conditions for the token under the pointer |
 
 Several Playwright specs read pixels from a layer *by index* (`DRAWING_LAYER = 3`,
-`PING_LAYER = 5`, `MEASURE_LAYER = 6`, `SELECTION_LAYER = 8`). Appending a layer is safe;
-inserting one renumbers everything above it. Either way, update the layer-order comments in
-`web/e2e/*.spec.ts` — they're the only documentation of that coupling.
+`PING_LAYER = 5`, `MEASURE_LAYER = 6`, `SELECTION_LAYER = 8`, `HOVER_LAYER = 9`). Appending a
+layer is safe; inserting one renumbers everything above it. Either way, update the layer-order
+comments in `web/e2e/*.spec.ts` — they're the only documentation of that coupling.
 
 The selection ring has a layer to itself for a reason worth keeping: it's spun by a
 `Konva.Animation`, which redraws its whole layer every frame for as long as it runs. On the token
 layer that would be a 60fps rebuild of every token whenever anything was selected — the same
 shape as the two lag bugs in `planning/backlog/done/`.
+
+The hover card earns one for the neighbouring reason: `renderTokens` destroys and rebuilds the
+token layer wholesale on *any* change to `room.tokens`, so a card living there would blink out
+every time anyone moved anything. Which token is hovered is `$state` (`hoveredTokenId`), unlike
+the selection ring's plain-`let` bookkeeping, because the card is rendered from an effect rather
+than kept alive across renders — here the id genuinely is the reactive truth. A token with no
+trackers and no conditions gets **no card at all**: every token popping an empty box as the
+pointer crossed it would make the map unusable during a fight, which is when this is for.
 
 Konva warns above 5 layers ("Recommended maximum number of layers is 3-5"). Expected here and
 harmless; the separation is what keeps a stroke from forcing a token re-render.

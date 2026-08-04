@@ -86,6 +86,14 @@ Two more that bite once a spec drives *two* browsers:
   world point is shared; `box.x + point.x` is not. Reusing one page's box for the other page's
   mouse lands the drag several rows off, and the failure looks like the drag being ignored rather
   than like a coordinate bug. `token-move-undo.spec.ts` takes both boxes and names them.
+
+  **Some specs violate this and pass anyway**, which is what makes it easy to copy the wrong
+  pattern: the offset is currently 44px against a 70px grid, so a **2×2** token is wide enough to
+  absorb it and only a **1×1** one misses. `token-edit.spec.ts` shares one box across both pages
+  and gets away with it for exactly that reason. Don't read that as permission — a 1×1 token is
+  the default, and the symptom is a click that selects nothing with no error anywhere.
+  `token-trackers.spec.ts`'s `selectToken` re-reads the box from the page it is about to click,
+  which is the version worth copying.
 - **Don't grab a token that is still sliding.** A move made in another browser arrives as a 0.22s
   tween (`TOKEN_MOVE_SECONDS`), and ink shows up under a probe partway through it — so polling for
   the token at its destination returns *before* it has settled. A drag started in that window

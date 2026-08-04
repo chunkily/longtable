@@ -43,6 +43,16 @@ func (s *Store) migrate() error {
 	if err := s.addAssetKindColumn(); err != nil {
 		return err
 	}
+	// Both hold JSON, like drawing.points, and both default to the empty
+	// JSON array rather than to NULL so every read path can unmarshal
+	// unconditionally — a token that predates trackers is one with none,
+	// not one whose trackers are unknown.
+	if _, err := s.addColumnIfMissing("token", "trackers", `TEXT NOT NULL DEFAULT '[]'`); err != nil {
+		return err
+	}
+	if _, err := s.addColumnIfMissing("token", "conditions", `TEXT NOT NULL DEFAULT '[]'`); err != nil {
+		return err
+	}
 	return s.migrateCircleDrawingsToEllipse()
 }
 
@@ -100,7 +110,9 @@ func (s *Store) createTables() error {
 			width                  REAL NOT NULL DEFAULT 1,
 			height                 REAL NOT NULL DEFAULT 1,
 			owner_participant_id   TEXT REFERENCES participant(id) ON DELETE SET NULL,
-			visibility             TEXT NOT NULL DEFAULT 'visible' CHECK (visibility IN ('visible', 'hidden'))
+			visibility             TEXT NOT NULL DEFAULT 'visible' CHECK (visibility IN ('visible', 'hidden')),
+			trackers               TEXT NOT NULL DEFAULT '[]',
+			conditions             TEXT NOT NULL DEFAULT '[]'
 		);
 		CREATE INDEX IF NOT EXISTS idx_token_scene ON token(scene_id);
 

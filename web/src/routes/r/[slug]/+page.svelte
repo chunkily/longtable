@@ -18,6 +18,7 @@
 	import SceneManagerDialog from '$lib/components/scene-manager-dialog.svelte';
 	import CreateTokenDialog from '$lib/components/create-token-dialog.svelte';
 	import TokenDetailDialog from '$lib/components/token-detail-dialog.svelte';
+	import TokenTrackerStrip from '$lib/components/token-tracker-strip.svelte';
 	import Pen from '@lucide/svelte/icons/pen';
 	import Slash from '@lucide/svelte/icons/slash';
 	import RectangleHorizontal from '@lucide/svelte/icons/rectangle-horizontal';
@@ -197,6 +198,14 @@
 		!!client && client.status !== 'open' && client.status !== 'connecting'
 	);
 	const isGM = $derived(client?.you?.role === 'gm');
+	// Who may open the edit dialog on the selected token: a GM on anything,
+	// and a Player on one they own — where all they get is the trackers and
+	// conditions. Mirrors the per-field check in handleTokenUpdate, which is
+	// what actually enforces it.
+	const canEditSelected = $derived(
+		!!selectedToken &&
+			(isGM || (!!client?.you && selectedToken.ownerParticipantId === client.you.participantId))
+	);
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -305,17 +314,31 @@
 							{ownerName(room, token.ownerParticipantId)}
 						</p>
 					{/if}
+					<!-- Values editable in place for whoever may edit the token at
+					     all — the same rule the Edit button follows. Labels and
+					     conditions stay in the dialog; damage is what changes
+					     every round and what shouldn't cost a dialog to change. -->
+					<TokenTrackerStrip {room} {token} editable={canEditSelected} />
 				</div>
-				{#if isGM && session}
+				{#if canEditSelected && session}
 					<TokenDetailDialog
 						{room}
 						{token}
 						roomSlug={session.roomSlug}
 						sessionToken={session.sessionToken}
+						canEditAll={isGM}
 					/>
-					<!-- Not behind a confirmation, unlike deleting a scene: the
-					     deletion is undoable, which is the cheaper answer to a
-					     misclick than a dialog on every deliberate one. -->
+				{/if}
+				<!-- Deletion stays GM-only even though editing no longer is: a
+				     token is a piece of the GM's scene that a Player may be
+				     allowed to move and now to take damage on, which is a long
+				     way from being allowed to remove it. token.delete enforces
+				     the same rule.
+
+				     Not behind a confirmation, unlike deleting a scene: the
+				     deletion is undoable, which is the cheaper answer to a
+				     misclick than a dialog on every deliberate one. -->
+				{#if isGM}
 					<Button
 						variant="outline"
 						size="sm"

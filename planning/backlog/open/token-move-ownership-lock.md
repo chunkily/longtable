@@ -15,6 +15,14 @@ an owner is someone in this room — so a permission check here can trust
 `token.OwnerParticipantID` without re-validating it. What's missing is the per-room setting
 itself and the check in `handleTokenMove`, which is currently open to any Room Member.
 
+**There is now a worked example of an ownership check to copy.**
+[token-hp-condition-tracker](../done/token-hp-condition-tracker.md) has shipped the first rule in
+the codebase where owning a token means anything: `handleTokenUpdate`'s role gate is per field, and
+a Player who owns a token may change its trackers and conditions. Read that handler before writing
+this one — in particular the part about a **hidden** token being refused to a non-GM in the exact
+words of a token that doesn't exist, *even to its own owner*, since the same reasoning applies to a
+move and getting it wrong is a quiet information leak rather than a visible bug.
+
 One thing this doesn't have to think about: undoing a token move
 ([undo-redo-drawing](../done/undo-redo-drawing.md)) sends an ordinary `token.move`, so whatever
 check lands in `handleTokenMove` governs the undo too, with nothing extra to write. That's

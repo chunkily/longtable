@@ -1142,7 +1142,11 @@ describe('RoomClient', () => {
 	});
 
 	it('undoes a deletion by recreating the token under the same id', () => {
-		const { client, socket } = roomWithTokens([goblin]);
+		// Bloodied and prone when it was deleted, because the trackers are
+		// the easiest part of a token to lose here: they'd come back on full
+		// health, which is a worse outcome than the misclick being undone.
+		const wounded = { ...goblin, trackers: [{ label: 'HP', value: 2 }], conditions: ['Prone'] };
+		const { client, socket } = roomWithTokens([wounded]);
 
 		client.deleteToken('t1');
 		socket.emit({ type: 'token.deleted', payload: { tokenId: 't1' } });
@@ -1164,7 +1168,15 @@ describe('RoomClient', () => {
 			width: 2,
 			height: 2,
 			ownerParticipantId: null,
-			visibility: 'visible'
+			visibility: 'visible',
+			// Padded to the full three slots on the way out, so the server
+			// gets the shape it normalises to anyway.
+			trackers: [
+				{ label: 'HP', value: 2 },
+				{ label: '', value: null },
+				{ label: '', value: null }
+			],
+			conditions: ['Prone']
 		});
 
 		// And redo deletes it again, once the recreation has landed.
@@ -1241,7 +1253,9 @@ describe('RoomClient', () => {
 			width: 2,
 			height: 2,
 			ownerParticipantId: null,
-			visibility: 'hidden'
+			visibility: 'hidden',
+			trackers: [{ label: 'HP', value: 0 }],
+			conditions: ['Prone']
 		});
 
 		expect(JSON.parse(socket.sent[0])).toEqual({
@@ -1253,12 +1267,74 @@ describe('RoomClient', () => {
 				width: 2,
 				height: 2,
 				ownerParticipantId: null,
-				visibility: 'hidden'
+				visibility: 'hidden',
+				// A tracker reading 0 has to survive JSON as 0 rather than
+				// being dropped — it's a creature on nought hit points, not an
+				// empty slot.
+				trackers: [{ label: 'HP', value: 0 }],
+				conditions: ['Prone']
 			}
 		});
 		// Nothing changes locally: unlike a drawing there is no preview
 		// shape to blink, so this waits for the broadcast like token.move.
 		expect(client.tokens[0].name).toBe('Goblin');
+	});
+
+	// The inline edit in the details panel changes one number, but
+	// token.update clears what it isn't told — so the rest of the token
+	// has to be filled in from what this client is holding, or editing
+	// hit points would quietly rename the token to nothing.
+	it('fills in the rest of the token when only the trackers change', () => {
+		const owned = {
+			...goblin,
+			name: "Bob's Fighter",
+			imageAssetId: 'art',
+			ownerParticipantId: 'p2',
+			trackers: [
+				{ label: 'HP', value: 9 },
+				{ label: 'AC', value: 15 },
+				{ label: '', value: null }
+			],
+			conditions: ['Prone']
+		};
+		const { client, socket } = roomWithTokens([owned]);
+
+		client.setTokenTrackers(
+			't1',
+			[
+				{ label: 'HP', value: 4 },
+				{ label: 'AC', value: 15 },
+				{ label: '', value: null }
+			],
+			['Prone']
+		);
+
+		expect(JSON.parse(socket.sent[0])).toEqual({
+			type: 'token.update',
+			payload: {
+				tokenId: 't1',
+				name: "Bob's Fighter",
+				imageAssetId: 'art',
+				width: 2,
+				height: 2,
+				ownerParticipantId: 'p2',
+				visibility: 'visible',
+				trackers: [
+					{ label: 'HP', value: 4 },
+					{ label: 'AC', value: 15 },
+					{ label: '', value: null }
+				],
+				conditions: ['Prone']
+			}
+		});
+	});
+
+	it('sends nothing when the token to track is not on this client', () => {
+		const { client, socket } = roomWithTokens([goblin]);
+
+		client.setTokenTrackers('gone', [{ label: 'HP', value: 1 }], []);
+
+		expect(socket.sent).toHaveLength(0);
 	});
 
 	it('records nothing for a token deletion that could not be sent', () => {
