@@ -8,7 +8,13 @@ Add an initiative tracker: GM-managed turn order with entries that can either li
 existing map token or stand alone (name + value, for things like lair actions or hazards). Full
 turn tracking — current turn highlighted, next/previous navigation, round counter.
 
-Surfaced as a tab alongside chat and event logs — see [chat-panel-tabs](chat-panel-tabs.md).
+Surfaced alongside chat in the room's side panel. That surface changed on 2026-08-04:
+[chat-panel-tabs](../done/chat-panel-tabs.md) was superseded unshipped by
+[full-bleed-map-layout](../open/full-bleed-map-layout.md), where the panel is a full-height rail
+and the switch is three icons at its foot rather than a tab strip. Nothing about the tracker itself
+changes — it's the same content in the same region, reached a different way — but which of the two
+lands first decides whether this item builds a temporary home for the tracker or drops straight
+into the new one.
 
 [token-selection-highlight](../done/token-selection-highlight.md) has **shipped** everything
 except its last checkbox — clicking a tracker entry to select its linked token — which is waiting

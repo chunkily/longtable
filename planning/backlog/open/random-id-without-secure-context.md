@@ -53,3 +53,10 @@ section](../../../.claude/skills/longtable-feature/references/ws-protocol.md).
 
 - [pinch-zoom-touch-devices](pinch-zoom-touch-devices.md) — the other thing in the way of playing
   from a tablet, and found in the same sitting.
+
+## Blocks
+
+[full-bleed-map-layout](full-bleed-map-layout.md) is a deliberately phone-facing redesign, and a
+phone at the table reaches the server on a LAN address — which is precisely where this bug lives.
+Shipping that layout on top of this would mean drawing and pings being broken for exactly the
+clients it was built for.

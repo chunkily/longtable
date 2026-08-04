@@ -20,5 +20,5 @@ picker to come. `RoomClient.connectedParticipants` is the derived intersection.
 
 One criterion is satisfied only trivially and should be re-checked when tabs land: "the list is
 visible regardless of which tab is active" — there are no tabs yet, so it sits above the token
-details and the chat log. When [chat-panel-tabs](../in-progress/chat-panel-tabs.md) ships, this
+details and the chat log. When [chat-panel-tabs](chat-panel-tabs.md) ships, this
 row needs to stay *outside* the tab switcher rather than becoming part of the chat tab.

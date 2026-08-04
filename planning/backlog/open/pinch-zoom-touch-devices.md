@@ -74,6 +74,12 @@ that's cheap to test, and what's left is a gesture that can be checked by hand o
   way of playing from a tablet, found in the same sitting. Drawing throws on any non-localhost
   origin, so touch-drawing on a tablet is broken for a reason that has nothing to do with touch.
 
+## Blocks
+
+[full-bleed-map-layout](full-bleed-map-layout.md) is a deliberately phone-facing redesign — the map
+fills the screen and the panel becomes a bottom sheet. A map that can't be zoomed on the device the
+layout is being built for would undo most of the point, so this should land before or alongside it.
+
 ## Related user stories
 
 - [room-member-pinch-zoom-map](../../user-stories/room-member-pinch-zoom-map.md)

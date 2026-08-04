@@ -13,7 +13,7 @@ actually doing on the map.
 
 Instead: any pointer interaction with a token — click or drag, not just a completed move — should
 bring it to the top of the stack. That also includes selecting a token's linked entry in the
-[initiative tracker](initiative-tracker.md), once that item ships — the same trigger
+[initiative tracker](../in-progress/initiative-tracker.md), once that item ships — the same trigger
 [token-selection-highlight](../done/token-selection-highlight.md) uses for its selection ring, so
 the two should share one bump-to-top call rather than each wiring up their own tracker hook.
 Purely local and purely visual: it's each client's own recency order, not synced to the room and
@@ -34,6 +34,11 @@ that never needs to touch the store.
 - [ ] Any pointer interaction on a token's group raises it via `moveToTop()`
 - [ ] Selecting a token from the initiative tracker raises it the same way, once the tracker exists
 - [ ] No wire message, no persistence
+
+[player-created-tokens](player-created-tokens.md) raises the stakes here: it lets anyone spawn up
+to 20 tokens in one go. They're specified to spread outward into free squares rather than stack,
+partly for this reason — but a group of summons crowding one corner of the map is exactly the
+case where not being able to get at what's underneath starts to hurt.
 
 ## Related user stories
 

@@ -13,7 +13,7 @@ editing HP/conditions.
 
 Shelved: showing values on hover, and opening this panel directly from hovering or otherwise
 interacting with the token. Instead the panel opens from an explicit button in the token details
-section above chat (see [token-selection-highlight](../open/token-selection-highlight.md)) — it
+section above chat (see [token-selection-highlight](token-selection-highlight.md)) — it
 only ever opens on a deliberate click, once a token is already selected there, never from a
 hover.
 
@@ -38,7 +38,7 @@ button — they can still select a token and read its details.
 still open:
 
 - **Owner** is untouched: there is still no way to list who a room's participants *are*. That
-  stays blocked on [list-room-participants](../open/list-room-participants.md), which is now the
+  stays blocked on [list-room-participants](list-room-participants.md), which is now the
   only thing standing between this panel and `gm-assign-token-owner`.
 - **HP and conditions** aren't here either. They need columns that don't exist, and the modelling
   (three labelled tracker slots plus condition tags) is
@@ -68,7 +68,7 @@ Decisions worth not rediscovering:
 
 The size control came out as its own component, `token-size-picker.svelte`, built to
 `gm-set-token-size`'s categories so
-[token-size-and-owner-pickers](../in-progress/token-size-and-owner-pickers.md) can drop it into
+[token-size-and-owner-pickers](token-size-and-owner-pickers.md) can drop it into
 the creation dialog rather than build a second one. One change from that story worth flagging: it
 lists six size names, but Tiny, Small and Medium are all 1×1, and three options that mean the
 same thing can't be told apart when reading a token back — editing a "Tiny" token would silently

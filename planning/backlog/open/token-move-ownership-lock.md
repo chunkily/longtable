@@ -22,6 +22,13 @@ deliberate, and it's what
 [room-member-undo-own-token-move](../../user-stories/room-member-undo-own-token-move.md)'s third
 criterion asks for — undo obeying the move rules in force rather than routing around them.
 
+Two things from the 2026-08-04 design session. The toggle's home is `Manage room`, the third entry
+in the side panel's menu — see [full-bleed-map-layout](full-bleed-map-layout.md). And
+[player-created-tokens](player-created-tokens.md) is what finally makes this feature mean
+something: a Player-made token is owned by its creator without anyone choosing an owner, so a table
+that turns the lock on gets sensible behaviour by default rather than needing the GM to assign
+every token first.
+
 ## Related user stories
 
 - [gm-toggle-token-owner-only-movement](../../user-stories/gm-toggle-token-owner-only-movement.md)

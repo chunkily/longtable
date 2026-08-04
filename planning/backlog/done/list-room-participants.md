@@ -17,7 +17,7 @@ who the candidates are. `token.update` already loads the token and edits it in p
 an owner field to it is a line in the request struct and a line in the assignment block once
 there's a list to pick from.
 
-Found while scoping [token-size-and-owner-pickers](../in-progress/token-size-and-owner-pickers.md):
+Found while scoping [token-size-and-owner-pickers](token-size-and-owner-pickers.md):
 an owner picker needs to offer every Room Member who could plausibly own a token, including a
 Player who joined last week and isn't online at the moment a GM is prepping tokens before a
 session — that's a different list from "who's connected right now."
@@ -49,5 +49,5 @@ start being broadcast. Two tests guard it, one checking the field and one greppi
 
 The two lists are kept apart on the wire exactly as this item argued they should be. The owner
 picker still doesn't exist — see
-[token-size-and-owner-pickers](../in-progress/token-size-and-owner-pickers.md) — but nothing is
+[token-size-and-owner-pickers](token-size-and-owner-pickers.md) — but nothing is
 blocking it now.

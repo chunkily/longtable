@@ -14,8 +14,8 @@ choosing a file and applies to "the next upload", which reads as a trap. There's
 grid alignment step at all — the dialog it lives in is already a form about something else. And
 the search item warns against bolting a filter onto a grid that wasn't built for one.
 
-Subsumes [asset-library-search](../open/asset-library-search.md) and
-[map-asset-grid-offset-padding](../open/map-asset-grid-offset-padding.md); both should move to
+Subsumes [asset-library-search](asset-library-search.md) and
+[map-asset-grid-offset-padding](map-asset-grid-offset-padding.md); both should move to
 `done/` with this rather than surviving it.
 
 ## Decided up front

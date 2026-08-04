@@ -6,7 +6,7 @@ story: room-member-select-token
 ---
 
 Let a Room Member select a token — by clicking it on the canvas, or (once it exists) picking its
-linked entry in the [initiative tracker](initiative-tracker.md) — and have that selection reflected
+linked entry in the [initiative tracker](../in-progress/initiative-tracker.md) — and have that selection reflected
 in two places: a distinct highlight on the token itself, and a small fixed section above the chat
 panel showing its details. Purely local UI state, not synced over the wire or persisted; two
 clients can have different tokens selected at once.
@@ -22,7 +22,7 @@ Today, clicking a token on the canvas only supports drag-to-move (`game-canvas.s
 `dragend` handler) — there's no click/selection handling at all yet. This item is the one that
 adds it.
 
-Related to, but distinct from, [token-detail-panel](../in-progress/token-detail-panel.md): that
+Related to, but distinct from, [token-detail-panel](token-detail-panel.md): that
 item is the full editing surface (owner, HP, conditions) and notes the same missing
 click-to-select as a prerequisite. The two should share one `selectedTokenId` piece of state
 rather than each growing its own — whichever lands first should leave that seam for the other.
@@ -35,7 +35,7 @@ should leave room for them.
 - [ ] Click-to-select on canvas tokens
 - [ ] Rotating dotted-ring highlight on the selected token
 - [ ] Fixed details section above the chat panel, with an empty state
-- [ ] Wire up selection from the initiative tracker once [initiative-tracker](initiative-tracker.md) ships
+- [ ] Wire up selection from the initiative tracker once [initiative-tracker](../in-progress/initiative-tracker.md) ships
 
 ## Related user stories
 

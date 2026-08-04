@@ -13,7 +13,7 @@ and `GetScene`).
 `GridOffsetX`/`GridOffsetY` were found dead (stored and sent to the client but never applied in
 the grid/fog/token rendering math) — rather than wiring those scene-level fields up, alignment is
 now handled at asset upload time instead, baked directly into the image's pixels. See
-[map-asset-grid-offset-padding](../open/map-asset-grid-offset-padding.md); the scene-level fields
+[map-asset-grid-offset-padding](map-asset-grid-offset-padding.md); the scene-level fields
 become unnecessary under that approach.
 
 Deleting a scene has to take its fog with it

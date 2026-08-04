@@ -9,14 +9,14 @@ Add a `token.delete` command (GM only, persists, broadcasts `token.deleted`) —
 remove a token today at all. The button lives in the token details section above chat, which
 [token-selection-highlight](token-selection-highlight.md) has since **shipped** and left
 room on the right for exactly this, next to the "Edit" button that opens
-[token-detail-panel](../in-progress/token-detail-panel.md). Deleting the selected token also
+[token-detail-panel](token-detail-panel.md). Deleting the selected token also
 clears the selection, same as clicking empty map space — though note that falls out for free:
 the details section derives from `room.tokens`, so a token that leaves the scene already reads as
 nothing selected without anything clearing `selectedTokenId`. The id does linger, which means a
 token restored by undo under the same id comes back selected. That's arguably the right
 behaviour here, but decide it rather than inherit it.
 
-Undo should follow the shape [undo-redo-drawing](../in-progress/undo-redo-drawing.md) already
+Undo should follow the shape [undo-redo-drawing](undo-redo-drawing.md) already
 settled for erasing: undoing a delete is a `token.create` under the same id, the same way undoing
 an erase is a `draw.create` under the same id. That reuses the existing per-session undo stack
 rather than a new mechanism — this is really "give tokens the same undo the eraser already has,"
