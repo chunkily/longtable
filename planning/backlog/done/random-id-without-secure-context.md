@@ -51,12 +51,45 @@ section](../../../.claude/skills/longtable-feature/references/ws-protocol.md).
 
 ## Related
 
-- [pinch-zoom-touch-devices](pinch-zoom-touch-devices.md) — the other thing in the way of playing
-  from a tablet, and found in the same sitting.
+- [pinch-zoom-touch-devices](../open/pinch-zoom-touch-devices.md) — the other thing in the way of
+  playing from a tablet, and found in the same sitting. Still open.
 
 ## Blocks
 
-[full-bleed-map-layout](full-bleed-map-layout.md) is a deliberately phone-facing redesign, and a
-phone at the table reaches the server on a LAN address — which is precisely where this bug lives.
-Shipping that layout on top of this would mean drawing and pings being broken for exactly the
-clients it was built for.
+[full-bleed-map-layout](../open/full-bleed-map-layout.md) is a deliberately phone-facing redesign,
+and a phone at the table reaches the server on a LAN address — which is precisely where this bug
+lives. Shipping that layout on top of this would mean drawing and pings being broken for exactly
+the clients it was built for. **No longer blocking as of this item shipping**; pinch-zoom still is.
+
+## What shipped
+
+`randomId()` in `web/src/lib/random-id.ts`, used by both call sites. It prefers
+`crypto.randomUUID` and falls back to a v4 UUID assembled from `crypto.getRandomValues`, which
+isn't gated on a secure context. Nothing changed on the Go side — the fallback's whole job is to
+produce ids the existing `isCanonicalUUID` already accepts.
+
+Three things worth knowing before touching this area again.
+
+**Never call `crypto.randomUUID` directly.** That's now written into `CLAUDE.md` and the `Ids`
+section of `ws-protocol.md`, because the failure mode is so asymmetric: it works perfectly for
+whoever is developing it and for the GM, and fails for every Player. The next API with this shape
+is `navigator.clipboard` — unused today, and a "copy the join link" button would walk straight into
+it.
+
+**The fallback sets the version and variant nibbles even though the server doesn't check them.**
+`isCanonicalUUID` is `uuid.Parse` plus a round-trip comparison, so random hex in the right shape
+would be accepted. Setting them anyway means the ids aren't a lie, and the next thing to validate
+a UUID properly won't reject rows already in the database.
+
+**The e2e spec is the part that actually proves it.** The vitest beside the module checks the
+fallback's spelling; only `web/e2e/insecure-context.spec.ts` checks that the *server* accepts what
+it produces, which is where a plausible-looking wrong fallback would have failed. It fakes the
+insecure context with `page.addInitScript`, since Playwright drives localhost and can't reach a
+real one. Both of its tests were confirmed to fail against the unfixed code before being kept — a
+test for a bug that passes on the broken version is worth nothing, and this one is easy to write
+that way by accident.
+
+One thing found in passing and deliberately not fixed here: `asset-library.spec.ts:184` is flaky
+under the full parallel run, failing roughly one run in three and passing in isolation. Confirmed
+pre-existing by running the suite repeatedly at HEAD with no local changes, so it is unrelated to
+this work.

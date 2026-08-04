@@ -234,3 +234,11 @@ holding. Any future client-chosen id should go through the same check.
 `token.create` takes an optional `tokenId` through that same check, for a different reason:
 nothing is rendered ahead of the server there, but undoing a deletion has to restore the token
 under the id the rest of the room still knows it by, not a fresh one.
+
+On the client, **mint ids with `randomId()` from `$lib/random-id`, never `crypto.randomUUID`
+directly.** `randomUUID` is defined only in a secure context, and Longtable's whole deployment
+story is players on `http://192.168.x.x:8080`, which isn't one — so calling it threw for everyone
+but the GM, and neither the e2e suite nor a developer's browser could see it. The fallback there is
+a real v4 UUID built from `crypto.getRandomValues`, which isn't gated the same way, and it produces
+the canonical spelling on purpose: anything else would pass on localhost and be refused by
+`isCanonicalUUID` on the LAN.

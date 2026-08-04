@@ -6,6 +6,7 @@ import { checkSession } from './api';
 import type { TemplateKind } from './aoe';
 import { MEASURE_SEND_INTERVAL_MS } from './measure';
 import { PING_COOLDOWN_MS, PING_LIFETIME_MS } from './ping';
+import { randomId } from './random-id';
 
 export interface ChatMessage {
 	id: string;
@@ -584,7 +585,7 @@ export class RoomClient {
 
 	createDrawing(sceneId: string, kind: DrawingKind, points: DrawingPoint[], color: string) {
 		const drawing: Drawing = {
-			id: crypto.randomUUID(),
+			id: randomId(),
 			sceneId,
 			kind,
 			points,
@@ -1090,7 +1091,10 @@ export class RoomClient {
 
 			case 'ping': {
 				const payload = env.payload as PingPayload;
-				const ping: Ping = { id: crypto.randomUUID(), ...payload };
+				// Local, and never on the wire: the hub's ping event carries no
+				// id of its own, so this only has to be unique within this
+				// client for long enough to expire itself.
+				const ping: Ping = { id: randomId(), ...payload };
 				this.pings = [...this.pings, ping];
 				setTimeout(() => {
 					this.pings = this.pings.filter((p) => p.id !== ping.id);

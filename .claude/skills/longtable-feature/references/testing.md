@@ -131,6 +131,16 @@ Assertions that only a browser can make, and that are worth reaching for: state 
 `page.reload()` (proves it's server-side, not just local), and `context.close()` mid-gesture
 (proves the server cleans up after a dropped client).
 
+**Simulating an insecure context.** Playwright drives `localhost`, which is always a secure
+context, so the browser APIs that only exist in one are always present — and the bugs that come
+from assuming them are invisible to the whole suite. `insecure-context.spec.ts` fakes it with
+`page.addInitScript` taking the API away before any page script runs, which is the shape every
+client on a LAN address actually sees. Two things make that spec worth copying rather than
+rewriting: it asserts the API really is gone before testing anything (a stub that quietly stopped
+applying would leave a test that passes while checking nothing), and it reloads afterwards, because
+what matters isn't that the client stopped throwing but that the *server accepted* what the
+fallback produced.
+
 Ports: :8080 and :5173, shared with other sessions in this checkout — ask before killing anything
 sitting on them. Runs also write to the shared `web/.e2e-data/longtable.db`.
 

@@ -70,9 +70,10 @@ that's cheap to test, and what's left is a gesture that can be checked by hand o
 
 ## Related
 
-- [random-id-without-secure-context](random-id-without-secure-context.md) — the other thing in the
-  way of playing from a tablet, found in the same sitting. Drawing throws on any non-localhost
-  origin, so touch-drawing on a tablet is broken for a reason that has nothing to do with touch.
+- [random-id-without-secure-context](../done/random-id-without-secure-context.md) — the other thing
+  in the way of playing from a tablet, found in the same sitting. **Fixed on 2026-08-04**, so
+  touch-drawing on a tablet now fails only for reasons that actually have to do with touch. This
+  item is the last one standing between the app and a usable tablet.
 
 ## Blocks
 

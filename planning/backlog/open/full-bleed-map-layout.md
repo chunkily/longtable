@@ -104,15 +104,15 @@ The third icon opens a menu upward: `Scenes`, `Assets`, `Manage room`, `Leave ro
 
 ## Land these first
 
-Two known bugs sit squarely in this design's path, and both are invisible from a developer's
-machine — see their items for why:
+Two known bugs sat squarely in this design's path, both invisible from a developer's machine — see
+their items for why. **One is now fixed:**
 
-- [random-id-without-secure-context](random-id-without-secure-context.md) — drawing and pings throw
-  for every client on a `192.168.x.x` address, which is how every phone at the table connects.
-- [pinch-zoom-touch-devices](pinch-zoom-touch-devices.md) — a touch device can't zoom the map at all.
-
-A layout that makes the app far more phone-facing will make both much more visible. They should
-land before or alongside this, not after.
+- ~~[random-id-without-secure-context](../done/random-id-without-secure-context.md)~~ — drawing and
+  pings threw for every client on a `192.168.x.x` address, which is how every phone at the table
+  connects. Fixed 2026-08-04.
+- [pinch-zoom-touch-devices](pinch-zoom-touch-devices.md) — a touch device can't zoom the map at
+  all. **Still open, and still blocking**: a layout that makes the app far more phone-facing while
+  the map is stuck at 1:1 on a phone would undo most of the point.
 
 ## Supersedes
 

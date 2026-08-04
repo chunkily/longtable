@@ -78,13 +78,18 @@ fog has no automatic vision from tokens, no prebuilt releases, no way for a Host
 remove a moderated asset server-wide or cap upload sizes per room (a room removing something from
 its own library is a different, smaller thing, and does exist).
 
-Two of those bite specifically when the app is used the way it's meant to be — a GM hosting and
-everyone else on `http://192.168.x.x:8080` from their own device — and neither shows up on
-localhost or in the test suites, so they're worth knowing before anyone debugs them from scratch:
-**drawing and pings throw for every non-localhost client**, because ids are minted with
-`crypto.randomUUID`, which browsers expose only in a secure context; and **the map can't be zoomed
-on a touch device**, since the only thing that scales the stage is a mouse wheel. See
-`planning/backlog/open/random-id-without-secure-context.md` and `pinch-zoom-touch-devices.md`.
+One of those bites specifically when the app is used the way it's meant to be — a GM hosting and
+everyone else on `http://192.168.x.x:8080` from their own device — and doesn't show up on
+localhost or in the test suites, so it's worth knowing before anyone debugs it from scratch:
+**the map can't be zoomed on a touch device**, since the only thing that scales the stage is a
+mouse wheel. See `planning/backlog/open/pinch-zoom-touch-devices.md`.
+
+Its twin is fixed. Ids used to be minted with `crypto.randomUUID`, which browsers expose only in a
+secure context, so drawing and pings threw for every client on a LAN address. They now go through
+`randomId()` in `web/src/lib/random-id.ts`, which falls back to `crypto.getRandomValues` — read its
+doc comment before minting an id anywhere else, and **never call `crypto.randomUUID` directly**.
+Anything else gated on a secure context (`navigator.clipboard` is the likely next one, for a "copy
+the join link" button) has the same trap waiting.
 
 `planning/backlog/` is the authority on all of this and goes into far more detail: `done/`
 records what shipped and why, `in-progress/` and `open/` are the queue. Items cite paths and line
