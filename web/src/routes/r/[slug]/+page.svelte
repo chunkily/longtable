@@ -567,7 +567,7 @@
 								variant="outline"
 								size="sm"
 								disabled={!client.canUndo}
-								title="Undo your last drawing, erase or token deletion (Ctrl+Z)"
+								title="Undo your last drawing, erase, token move or deletion (Ctrl+Z)"
 								aria-label="Undo"
 								onclick={() => client?.undo()}
 							>

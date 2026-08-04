@@ -15,6 +15,13 @@ an owner is someone in this room — so a permission check here can trust
 `token.OwnerParticipantID` without re-validating it. What's missing is the per-room setting
 itself and the check in `handleTokenMove`, which is currently open to any Room Member.
 
+One thing this doesn't have to think about: undoing a token move
+([undo-redo-drawing](../done/undo-redo-drawing.md)) sends an ordinary `token.move`, so whatever
+check lands in `handleTokenMove` governs the undo too, with nothing extra to write. That's
+deliberate, and it's what
+[room-member-undo-own-token-move](../../user-stories/room-member-undo-own-token-move.md)'s third
+criterion asks for — undo obeying the move rules in force rather than routing around them.
+
 ## Related user stories
 
 - [gm-toggle-token-owner-only-movement](../../user-stories/gm-toggle-token-owner-only-movement.md)

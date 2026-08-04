@@ -1270,6 +1270,107 @@ describe('RoomClient', () => {
 		expect(client.tokens).toHaveLength(1);
 	});
 
+	it('undoes a move by sending the token back to the square it came from', () => {
+		const { client, socket } = roomWithTokens([goblin]);
+
+		client.moveToken('t1', 8, 9);
+		socket.emit({ type: 'token.moved', payload: { tokenId: 't1', x: 8, y: 9 } });
+		expect(client.canUndo).toBe(true);
+
+		client.undo();
+
+		expect(sentTypes(socket)).toEqual(['token.move', 'token.move']);
+		expect(JSON.parse(socket.sent[1]).payload).toEqual({ tokenId: 't1', x: 3, y: 4 });
+
+		// And redo puts it back where the drag left it, once the undo has
+		// landed — the token has to be at the origin again for redo to
+		// accept it.
+		socket.emit({ type: 'token.moved', payload: { tokenId: 't1', x: 3, y: 4 } });
+		client.redo();
+		expect(JSON.parse(socket.sent[2]).payload).toEqual({ tokenId: 't1', x: 8, y: 9 });
+	});
+
+	// State doesn't move until the broadcast lands, so inside that round
+	// trip the token is still recorded on the square it left. Undo has to
+	// count the move as having happened anyway — otherwise a fast Ctrl+Z
+	// passes over it and undoes whatever came before instead.
+	it('undoes a move whose broadcast has not come back yet', () => {
+		const { client, socket } = roomWithTokens([goblin]);
+
+		client.moveToken('t1', 8, 9);
+		client.undo();
+
+		expect(JSON.parse(socket.sent[1]).payload).toEqual({ tokenId: 't1', x: 3, y: 4 });
+	});
+
+	// Two drags in a row inside one round trip: the second has to record
+	// the first one's destination as its origin, or undo would jump the
+	// token past a square it never left.
+	it('records the second of two quick drags as starting where the first ended', () => {
+		const { client, socket } = roomWithTokens([goblin]);
+
+		client.moveToken('t1', 8, 9);
+		client.moveToken('t1', 8, 10);
+
+		client.undo();
+		expect(JSON.parse(socket.sent[2]).payload).toEqual({ tokenId: 't1', x: 8, y: 9 });
+
+		client.undo();
+		expect(JSON.parse(socket.sent[3]).payload).toEqual({ tokenId: 't1', x: 3, y: 4 });
+	});
+
+	it('records nothing for a drag that ended on the square it started from', () => {
+		const { client, socket } = roomWithTokens([goblin]);
+
+		client.moveToken('t1', 3, 4);
+
+		// The command still goes out — the hub broadcasts it and RoomClient
+		// treats the echo as a no-op — but there is nothing to undo, and an
+		// entry here would swallow a press of Ctrl+Z doing nothing visible.
+		expect(sentTypes(socket)).toEqual(['token.move']);
+		expect(client.canUndo).toBe(false);
+	});
+
+	// Acceptance criterion: undo never reverts a move somebody else made.
+	// The history can't tell who dragged last, so the position stands in
+	// for it — a token that isn't where our move left it has been moved by
+	// someone else since.
+	it('skips a move whose token someone else has since moved', () => {
+		const { client, socket } = roomWithTokens([goblin]);
+
+		client.createDrawing('s1', 'line', [{ x: 0, y: 0 }], '#cc0000');
+		client.moveToken('t1', 8, 9);
+		socket.emit({ type: 'token.moved', payload: { tokenId: 't1', x: 8, y: 9 } });
+		socket.emit({ type: 'token.moved', payload: { tokenId: 't1', x: 1, y: 1 } });
+
+		client.undo();
+
+		// The move entry is passed over and the stroke goes away instead.
+		expect(sentTypes(socket).at(-1)).toBe('draw.delete');
+		expect(client.tokens[0]).toMatchObject({ x: 1, y: 1 });
+	});
+
+	it('skips a move whose token has left the scene', () => {
+		const { client, socket } = roomWithTokens([goblin]);
+
+		client.moveToken('t1', 8, 9);
+		socket.emit({ type: 'token.moved', payload: { tokenId: 't1', x: 8, y: 9 } });
+		socket.emit({ type: 'token.deleted', payload: { tokenId: 't1' } });
+
+		client.undo();
+
+		expect(sentTypes(socket)).toEqual(['token.move']);
+		expect(client.canUndo).toBe(false);
+	});
+
+	it('records nothing for a token move that could not be sent', () => {
+		const { client, socket } = roomWithTokens([goblin]);
+		socket.readyState = 0; // connecting
+
+		client.moveToken('t1', 8, 9);
+		expect(client.canUndo).toBe(false);
+	});
+
 	it('shares one history with drawings, so undo walks back through both', () => {
 		const { client, socket } = roomWithTokens([goblin]);
 

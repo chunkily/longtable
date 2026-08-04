@@ -75,6 +75,11 @@ the token was hidden, exactly as its creation was; an id they were never told ab
 a deletion is itself the leak. Undoing a deletion is a `token.create` carrying the original id,
 so the token returns as the same token to everyone still holding it.
 
+`token.move` is also how a move is *undone* — the client sends the token back to the square it
+came from, so any permission check added to `handleTokenMove` governs the undo for free. The
+broadcast carries no sender, which is why the client's history has to decide "was that my move?"
+from the position rather than from the event: see `sendMoveToken` in `room.svelte.ts`.
+
 `token.update` carries *every* editable field each time (name, image, size, owner, visibility)
 rather than only the changed ones — a `*string` can't tell "left alone" from "cleared", and
 clearing a token's art, or taking it back off a Player, is a real edit. The corollary is that an

@@ -212,9 +212,14 @@ interface MeasureEndedPayload {
 // Deleting a token rides the same stack as drawing and erasing rather
 // than getting a mechanism of its own: undoing a delete is a
 // `token.create` under the same id, exactly as undoing an erase is a
-// `draw.create` under the same id. Note the *other* token case, moving
-// one, is still not here — it needs a position to restore rather than an
-// object to recreate, which is a different shape of entry.
+// `draw.create` under the same id.
+//
+// `moveToken` is the one variant that holds less than the whole object,
+// because a move is the one action where nothing was removed — the token
+// is still there, so only the square it came from has been lost. It
+// carries where it went as well as where it was, and both directions are
+// used: undo needs the destination to check the token is still where
+// this session put it (see sendMoveToken).
 //
 // A caveat that comes with restoring: the server takes a drawing's
 // author from the connection that sent it and ignores anything claimed
@@ -225,7 +230,13 @@ interface MeasureEndedPayload {
 type HistoryAction =
 	| { kind: 'create'; drawing: Drawing }
 	| { kind: 'erase'; drawing: Drawing }
-	| { kind: 'deleteToken'; token: Token };
+	| { kind: 'deleteToken'; token: Token }
+	| { kind: 'moveToken'; tokenId: string; from: TokenPosition; to: TokenPosition };
+
+interface TokenPosition {
+	x: number;
+	y: number;
+}
 
 interface ErrorPayload {
 	message: string;
@@ -274,6 +285,17 @@ export class RoomClient {
 	// — nothing reactive reads it, so a plain Map is right here.
 	// eslint-disable-next-line svelte/prefer-svelte-reactivity
 	private pendingErases = new Map<string, { drawing: Drawing; index: number }>();
+
+	// Where this session's own moves are headed, for tokens whose
+	// broadcast hasn't come back yet. State can't answer that: nothing
+	// about a move is applied optimistically, so a token dragged a moment
+	// ago is still recorded on the square it left. Undo needs the real
+	// answer or a Ctrl+Z pressed inside the round trip would decide the
+	// token never moved, skip the entry and undo whatever came before it.
+	// Bookkeeping only — nothing reactive reads it, so a plain Map is
+	// right here.
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity
+	private pendingMoves = new Map<string, TokenPosition>();
 
 	private lastPingSentAt = 0;
 
@@ -420,8 +442,32 @@ export class RoomClient {
 		this.send('chat.send', { text });
 	}
 
+	// The square the token came from is worked out here rather than passed
+	// in, so the canvas doesn't have to carry history's requirements
+	// through a drag gesture. Everything the undo entry needs is already
+	// known: `settledPosition` is where the room will see the token once
+	// what this session has sent has landed.
 	moveToken(tokenId: string, x: number, y: number) {
-		this.send('token.move', { tokenId, x, y });
+		const from = this.settledPosition(tokenId);
+		if (!this.send('token.move', { tokenId, x, y })) return;
+		this.pendingMoves.set(tokenId, { x, y });
+		// A drop back onto the square it started from moved nothing, so
+		// there is nothing to undo — and an entry with from === to would
+		// swallow a whole press of Ctrl+Z doing nothing visible. The
+		// command still goes out: the hub answers every move, and a refusal
+		// is how the canvas learns a drag it already drew was rejected.
+		if (!from || (from.x === x && from.y === y)) return;
+		this.record({ kind: 'moveToken', tokenId, from, to: { x, y } });
+	}
+
+	// Where the token stands once every move this session has sent has
+	// been answered — the pending destination if one is in flight, and
+	// otherwise what state holds. Null when the token isn't in the scene
+	// at all, which is the one case an in-flight move can't paper over.
+	private settledPosition(tokenId: string): TokenPosition | null {
+		const token = this.tokens.find((t) => t.id === tokenId);
+		if (!token) return null;
+		return this.pendingMoves.get(tokenId) ?? { x: token.x, y: token.y };
 	}
 
 	createScene(
@@ -613,6 +659,21 @@ export class RoomClient {
 		if (token) this.record({ kind: 'deleteToken', token });
 	}
 
+	// Moves a token only if it is still standing where this session's own
+	// move left it. That check is what keeps undo to your own moves: the
+	// history can't tell who dragged a token last, but the position can —
+	// if someone else has moved it since, it is no longer sitting at
+	// `expected`, and dragging it back to a square from this session's
+	// past would be undoing their move, not ours. Skipping instead is the
+	// same treatment a stroke someone else erased already gets.
+	private sendMoveToken(tokenId: string, expected: TokenPosition, to: TokenPosition): boolean {
+		const at = this.settledPosition(tokenId);
+		if (!at || at.x !== expected.x || at.y !== expected.y) return false;
+		if (!this.send('token.move', { tokenId, x: to.x, y: to.y })) return false;
+		this.pendingMoves.set(tokenId, to);
+		return true;
+	}
+
 	// --- undo/redo ---
 	//
 	// The history is this session's own actions and nothing else, which
@@ -620,8 +681,8 @@ export class RoomClient {
 	// strokes you drew or erased yourself, never someone else's work
 	// that happens to be more recent. It needs no server support either
 	// — undoing a drawing is an erase and undoing an erase is a drawing,
-	// both of which already exist, already check permission, and already
-	// render optimistically.
+	// undoing a move is a move back — all of which already exist, already
+	// check permission, and (for drawings) already render optimistically.
 
 	/** Who's at the table right now, in the order they first joined. */
 	get connectedParticipants(): Participant[] {
@@ -691,6 +752,8 @@ export class RoomClient {
 				return this.sendCreate(action.drawing);
 			case 'deleteToken':
 				return this.sendCreateToken(action.token);
+			case 'moveToken':
+				return this.sendMoveToken(action.tokenId, action.to, action.from);
 		}
 	}
 
@@ -702,6 +765,8 @@ export class RoomClient {
 				return this.sendErase(action.drawing.id) !== null;
 			case 'deleteToken':
 				return this.sendDeleteToken(action.token.id) !== null;
+			case 'moveToken':
+				return this.sendMoveToken(action.tokenId, action.from, action.to);
 		}
 	}
 
@@ -718,6 +783,7 @@ export class RoomClient {
 	// would drop a stroke into a map it never belonged to.
 	private resetAfterSync() {
 		this.pendingErases.clear();
+		this.pendingMoves.clear();
 		this.undoable = [];
 		this.redoable = [];
 		// Measurements belong to a scene that may no longer be the one on
@@ -902,12 +968,25 @@ export class RoomClient {
 
 			case 'token.deleted': {
 				const payload = env.payload as TokenDeletedPayload;
+				// No broadcast is coming for a move of a token that no longer
+				// exists, so the entry would sit here for the rest of the
+				// session — and answer for the id if the token ever came back.
+				this.pendingMoves.delete(payload.tokenId);
 				this.tokens = this.tokens.filter((t) => t.id !== payload.tokenId);
 				break;
 			}
 
 			case 'token.moved': {
 				const payload = env.payload as TokenMovedPayload;
+				// Our own move has landed once the room is told about the
+				// square we asked for; anything else is someone else's move
+				// arriving first, and ours is still on its way. Matching on
+				// the coordinates rather than just the id is what tells the
+				// two apart — the hub's events carry no sender.
+				const pending = this.pendingMoves.get(payload.tokenId);
+				if (pending && pending.x === payload.x && pending.y === payload.y) {
+					this.pendingMoves.delete(payload.tokenId);
+				}
 				const current = this.tokens.find((t) => t.id === payload.tokenId);
 				// Dropping a token back on the cell it started from still
 				// broadcasts, and the hub only ever broadcasts coordinates it

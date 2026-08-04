@@ -48,7 +48,8 @@ details above chat, whose token it is included, with Edit and Delete beside them
 selection is local to that browser, never synced; owning a token confers nothing yet),
 fog the GM paints on and off a square at a time (plus reveal-all and reset for the whole scene),
 drawings (freehand/line/rect/ellipse) with an eraser, and per-session undo/redo covering
-drawing, erasing and token deletion,
+drawing, erasing, token deletion and token moves (an undo passes over a token someone else has
+moved since, rather than dragging it back out from under them),
 pings, distance measuring, area-of-effect templates (circle/cone/line/cube, origin on a snap
 mode and size in whole 5 ft steps),
 chat with `/roll`, and a live list of who's connected (distinct from the room's roster of

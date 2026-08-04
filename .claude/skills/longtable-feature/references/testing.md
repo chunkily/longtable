@@ -79,6 +79,19 @@ Two helpers worth copying verbatim rather than rewriting:
 - `canvasOrigin(page)` — canvas-relative pixels double as world coordinates, because a fresh scene
   starts at the identity transform. Don't pan or zoom in a spec that relies on that.
 
+Two more that bite once a spec drives *two* browsers:
+
+- **Each page needs its own canvas box.** A GM's toolbar carries scene, token and fog controls a
+  Player's doesn't, so the two canvases are neither the same size nor at the same page offset. The
+  world point is shared; `box.x + point.x` is not. Reusing one page's box for the other page's
+  mouse lands the drag several rows off, and the failure looks like the drag being ignored rather
+  than like a coordinate bug. `token-move-undo.spec.ts` takes both boxes and names them.
+- **Don't grab a token that is still sliding.** A move made in another browser arrives as a 0.22s
+  tween (`TOKEN_MOVE_SECONDS`), and ink shows up under a probe partway through it — so polling for
+  the token at its destination returns *before* it has settled. A drag started in that window
+  fights the tween and leaves the token where it was. Poll, then wait out the slide; that spec's
+  `settleAt` does both.
+
 `selectTool` does **not** work for either fog tool, both of which relabel themselves (`Reveal
 fog` → `Painting fog…`, `Hide fog` → `Hiding fog…`) rather than only restyling: the locator stops
 matching the moment the tool goes active, so the wait can never pass. `drawing-right-click.spec.ts`
