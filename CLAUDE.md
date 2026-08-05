@@ -48,7 +48,8 @@ details above chat, whose token it is included, with Edit beside them for a GM o
 it and Delete for a GM alone — the
 selection is local to that browser, never synced; each token also carries three numeric trackers,
 labelled per token (hit points, armour class, a resource), and any number of condition tags — all
-three slots shown in that details panel and their values typed straight into it, plus a card when
+three slots shown in that details panel as large boxes whose values are typed straight into them,
+a focused box floating a −/+ control that steps by 1 or by whatever it's told, plus a card when
 the pointer rests on the token showing only the slots carrying a number; labels and conditions are
 set in the edit dialog, and a GM may change all of it on any token while a Player may change the
 trackers and conditions on one they own, which is the first thing ownership actually confers),

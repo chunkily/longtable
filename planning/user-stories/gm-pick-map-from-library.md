@@ -17,7 +17,7 @@ So that I can reuse art already used in this room without re-uploading it every 
 - [ ] Adding new art happens on the assets page, not inline in the dialog; the picker links there
       (opened in a new tab, pre-filtered to Maps) rather than embedding an upload control
 
-Settled 2026-08-06, replacing an earlier draft of this criterion that expected inline upload
+Settled 2026-08-05, replacing an earlier draft of this criterion that expected inline upload
 alongside the picker. That was tried and dropped: an upload made from inside a dialog about
 something else had nowhere to put a name or a grid alignment, so it silently produced assets
 search couldn't find and maps whose squares didn't line up (see the doc comment atop

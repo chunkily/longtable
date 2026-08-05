@@ -16,7 +16,7 @@ So that I can reuse art already used in this room (e.g. common monsters, recurri
 - [ ] Adding new art happens on the assets page, not inline in the dialog; the picker links there
       (opened in a new tab, pre-filtered to Tokens) rather than embedding an upload control
 
-Settled 2026-08-06, same reasoning as
+Settled 2026-08-05, same reasoning as
 [gm-pick-map-from-library](gm-pick-map-from-library.md): the shared `AssetPicker` component
 dropped inline upload in favor of linking out to the assets page, since a name/credit/kind
 couldn't be captured from inside a dialog about something else. Both dialogs use the same

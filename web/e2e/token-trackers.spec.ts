@@ -263,6 +263,83 @@ test('a number typed into the panel reaches the room, and takes nothing else wit
 	await player.context.close();
 });
 
+// The step buttons exist only while a box has focus, which is what lets
+// the boxes themselves be big enough to read across a table: three
+// permanently-visible pairs would cost the width the numbers just took.
+// The subtle half is that a step must survive being clicked twice
+// without re-focusing — "the ogre takes 7, then 3" is one interaction,
+// and a panel that closed on the first click would make it two.
+test('the step control appears on focus, adjusts by what it is told, and survives a second click', async ({
+	browser
+}) => {
+	const gm = await openRoomAsGM(browser, 'Token Trackers Step');
+	const player = await joinRoomAsPlayer(browser, gm.slug);
+
+	await gm.page.getByRole('button', { name: 'New token' }).click();
+	await gm.page.getByLabel('Name').fill('Ogre');
+	await gm.page.getByRole('button', { name: 'Create token' }).click();
+	await expect(gm.page.getByRole('button', { name: 'Create token' })).toBeHidden();
+
+	const box = await canvasBox(gm.page);
+	const spawn = spawnCentre(box);
+	await selectToken(gm.page, spawn, 'Ogre');
+	await selectToken(player.page, spawn, 'Ogre');
+
+	await openEditor(gm.page);
+	await gm.page.getByLabel('Tracker 1 label').fill('HP');
+	await save(gm.page);
+
+	const decrease = gm.page.getByRole('button', { name: 'Decrease HP' });
+	const increase = gm.page.getByRole('button', { name: 'Increase HP' });
+
+	// Nothing is on screen until a box is being used.
+	await expect(decrease).toBeHidden();
+
+	await trackerBox(gm.page, 'HP').fill('30');
+	await expect(decrease).toBeVisible();
+
+	// An unset "by how much" means one, so the common case costs no
+	// typing at all.
+	await decrease.click();
+	await expect(detailsSection(player.page)).toContainText('HP 29');
+
+	// Clicking again without touching the box first is the point: focus
+	// never left it, so the control is still there.
+	await decrease.click();
+	await expect(detailsSection(player.page)).toContainText('HP 28');
+
+	// And the box beside them sets the size of the step.
+	await gm.page.getByLabel('Adjust HP by').fill('7');
+	await decrease.click();
+	await expect(detailsSection(player.page)).toContainText('HP 21');
+	await increase.click();
+	await expect(detailsSection(player.page)).toContainText('HP 28');
+
+	// Focus leaving the control takes it away again, and doesn't undo or
+	// re-send anything the buttons already committed. It's the by-box that
+	// holds focus by this point rather than the value box — which is
+	// itself the proof that clicking the buttons never stole it.
+	await gm.page.getByLabel('Adjust HP by').blur();
+	await expect(decrease).toBeHidden();
+	await expect(detailsSection(player.page)).toContainText('HP 28');
+
+	// An empty slot steps from zero rather than refusing — a creature
+	// that has taken damage before anyone wrote down its total is a
+	// normal way for this to start.
+	await trackerBox(gm.page, 'Tracker 2').click();
+	await gm.page.getByRole('button', { name: 'Decrease Tracker 2' }).click();
+	await expect(trackerBox(gm.page, 'Tracker 2')).toHaveValue('-1');
+
+	// It really reached the server, not just the two canvases.
+	await gm.page.reload();
+	await expect(gm.page.locator('canvas').first()).toBeVisible();
+	await selectToken(gm.page, spawn, 'Ogre');
+	await expect(trackerBox(gm.page, 'HP')).toHaveValue('28');
+
+	await gm.context.close();
+	await player.context.close();
+});
+
 // A Player who owns the token gets the boxes too — that's the whole
 // point of the per-field rule, and the panel is where they'll use it.
 test('a player types their own damage into the panel without opening anything', async ({

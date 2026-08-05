@@ -10,6 +10,7 @@
 	// fit beside the token's name.
 	import { tokenTrackers, trackerText, type RoomClient, type Token } from '$lib/room.svelte';
 	import { Badge } from '$lib/components/ui/badge';
+	import FloatingNumberInput from '$lib/components/floating-number-input.svelte';
 
 	let {
 		room,
@@ -28,32 +29,13 @@
 
 	const trackers = $derived(tokenTrackers(token));
 
-	function valueText(value: number | null): string {
-		return value === null ? '' : String(value);
-	}
-
-	// Committed on `change` rather than `input`: `input` fires on every
-	// keystroke, so typing "12" would send an 11-point heal followed by
-	// the real value, and holding a key down would flood the socket. A
-	// change event is the blur or the Enter, which is when someone has
-	// finished saying what they meant.
-	function commit(index: number, raw: string) {
-		const text = raw.trim();
-		// Anything that isn't a number is dropped rather than stored as
-		// NaN — the field re-renders from the token, so it snaps back to
-		// what the room actually holds.
-		const value = text === '' ? null : Number(text);
-		if (value !== null && !Number.isFinite(value)) return;
-
+	// When a value is finished — a blur, an Enter, or one of the box's
+	// step buttons. Parsing, the per-keystroke question and the Enter key
+	// all live in FloatingNumberInput now; what's left here is the part
+	// that knows about tokens.
+	function commit(index: number, value: number | null) {
 		const next = trackers.map((t, i) => (i === index ? { ...t, value } : { ...t }));
 		room.setTokenTrackers(token.id, next, token.conditions ?? []);
-	}
-
-	// Enter commits without waiting for a blur, which is what anyone
-	// typing a new hit point total expects. The input isn't in a form, so
-	// nothing else is listening for it.
-	function handleKeydown(event: KeyboardEvent & { currentTarget: HTMLInputElement }) {
-		if (event.key === 'Enter') event.currentTarget.blur();
 	}
 </script>
 
@@ -64,27 +46,33 @@
      neighbours along as slots were filled in would not be. Keyed by
      index for the same reason: a slot's identity is its position, and
      three empty ones are otherwise indistinguishable. -->
-<div class="mt-1 flex flex-wrap items-center gap-1">
-	{#each trackers as tracker, i (i)}
-		{#if editable}
-			<div class="flex items-center gap-1 rounded-md border px-1.5 py-0.5">
-				<span class="text-xs text-muted-foreground">{tracker.label || i + 1}</span>
-				<input
-					type="number"
-					inputmode="numeric"
-					aria-label="{tracker.label || `Tracker ${i + 1}`} current value"
-					placeholder="—"
-					value={valueText(tracker.value)}
-					onchange={(e) => commit(i, e.currentTarget.value)}
-					onkeydown={handleKeydown}
-					class="w-10 [appearance:textfield] bg-transparent text-center font-mono text-xs outline-none focus:ring-1 focus:ring-ring [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-				/>
-			</div>
-		{:else}
+{#if editable}
+	<!-- A fixed three-column grid rather than a wrapping row: the slots
+	     keep the same three positions whatever they're called, and each
+	     box gets an equal, predictable share of a sidebar that is only so
+	     wide. -->
+	<div class="mt-1.5 grid grid-cols-3 gap-1.5">
+		{#each trackers as tracker, i (i)}
+			<FloatingNumberInput
+				value={tracker.value}
+				label={tracker.label || `Tracker ${i + 1}`}
+				ariaLabel="{tracker.label || `Tracker ${i + 1}`} current value"
+				oncommit={(next) => commit(i, next)}
+			/>
+		{/each}
+	</div>
+{:else}
+	<div class="mt-1 flex flex-wrap items-center gap-1">
+		{#each trackers as tracker, i (i)}
 			<Badge variant="outline" class="font-mono text-xs">{trackerText(tracker)}</Badge>
-		{/if}
-	{/each}
-	{#each token.conditions ?? [] as condition (condition)}
-		<Badge variant="secondary" class="text-xs">{condition}</Badge>
-	{/each}
-</div>
+		{/each}
+	</div>
+{/if}
+
+{#if (token.conditions ?? []).length > 0}
+	<div class="mt-1.5 flex flex-wrap items-center gap-1">
+		{#each token.conditions ?? [] as condition (condition)}
+			<Badge variant="secondary" class="text-xs">{condition}</Badge>
+		{/each}
+	</div>
+{/if}
