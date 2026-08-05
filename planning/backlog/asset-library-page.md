@@ -30,7 +30,7 @@ Settled from mockups before any code, so a later reader doesn't re-litigate them
 - **Nothing reaches the server until "Add to library".** Staging is entirely client-side, off an
   object URL. So there is no half-finished asset row, no draft state to clean up, and the upload
   carries name, attribution and grid offset in one request — which is what lets the offset be
-  baked at re-encode time as [ADR-0005](../../decisions/0005-webp-reencoding-library.md) and the
+  baked at re-encode time as [ADR-0005](../decisions/0005-webp-reencoding-library.md) and the
   grid story require.
 - **The picker stops uploading.** Scene and token dialogs choose from the library and link here
   instead. Two upload paths would mean one that quietly produces unnamed, unaligned assets, and

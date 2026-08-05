@@ -48,7 +48,7 @@ through the same check.
 So a fallback along the lines of `` `id-${counter}` `` would pass every test on localhost and be
 refused by the server the moment it ran on a LAN — the same asymmetry that hid the original bug,
 reintroduced by the fix. See [ws-protocol.md's "Ids"
-section](../../../.claude/skills/longtable-feature/references/ws-protocol.md).
+section](../../.claude/skills/longtable-feature/references/ws-protocol.md).
 
 ## Related
 

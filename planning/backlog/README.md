@@ -4,6 +4,8 @@ One markdown file per item, all in this one folder. Status is a frontmatter fiel
 
 - `status: open` — not started (or not finished — see below)
 - `status: done` — shipped
+- `status: dropped` — decided against; the file stays, with a `## Why this was dropped` section
+  saying what changed the mind and what replaced it
 
 There's no `in-progress` state. Items are meant to be small enough to land in one session; if one
 turns out not to be, it stays `open` rather than getting a third state to sit in.

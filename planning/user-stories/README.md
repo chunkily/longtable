@@ -21,9 +21,11 @@ So that <benefit>
 - [ ] ...
 ```
 
-`status` is `incomplete` or `done` — flip it to `done` only once every acceptance criterion is
-verified true of the current code, not assumed from a linked backlog item's status. This is
-separate from backlog item status, which is tracked by folder (see
+`status` is `incomplete`, `done` or `dropped`. Flip to `done` only once every acceptance criterion
+is verified true of the current code, not assumed from a linked backlog item's status. Use
+`dropped` for a story decided against — keep the file and the criteria, and add a
+`## Why this was dropped` section explaining what the premise turned out to be and what replaced
+it. Backlog items carry their own `status` field the same way (see
 [../backlog/README.md](../backlog/README.md)).
 
 Backlog items can reference a story by its slug via a `story` field in their frontmatter (see [../backlog/README.md](../backlog/README.md)).

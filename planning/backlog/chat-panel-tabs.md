@@ -1,7 +1,7 @@
 ---
 title: Chat panel with tabs
 created: 2026-07-29
-status: done
+status: dropped
 tags: [chat, ui]
 ---
 
@@ -10,8 +10,9 @@ tracker. (An event log tab was considered and dropped as redundant with chat.)
 
 ## What shipped
 
-**Nothing, directly — this was superseded before it was built**, and it's here rather than in
-`open/` because nobody should pick it up.
+**Nothing, directly — this was superseded before it was built.** It was marked `done` until
+2026-08-05, for want of anywhere better to put it; `dropped` now exists and says the same thing
+without claiming a build that never happened.
 
 A design session on 2026-08-04 replaced the whole room page rather than the chat card inside it:
 see [full-bleed-map-layout](full-bleed-map-layout.md). The panel there is a full-height

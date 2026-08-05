@@ -42,7 +42,7 @@ ring's stroke and dashes, and the eraser's halo are all authored in screen pixel
 through `screenToWorld()` at render time. A pinch handler that calls `stage.batchDraw()` and stops
 will leave every one of them the wrong size, and it'll look like a rendering bug rather than a
 missing call. This contract is written down in
-[canvas.md](../../../.claude/skills/longtable-feature/references/canvas.md).
+[canvas.md](../../.claude/skills/longtable-feature/references/canvas.md).
 
 **A tool owns the pointer, and a pinch is two of them.** `attachToolHandlers` sets
 `stage.draggable(!isActive)` precisely because a tool and panning both start on a drag. A second

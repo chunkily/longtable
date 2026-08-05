@@ -8,7 +8,7 @@ story: room-member-safe-asset-content
 
 Decode and re-encode every uploaded image server-side, so nothing that isn't pixels can reach
 another Room Member's browser. Accept only PNG, JPEG, WebP and GIF; reject anything that doesn't
-decode. Settled in [ADR-0005](../../decisions/0005-webp-reencoding-library.md), which had been
+decode. Settled in [ADR-0005](../decisions/0005-webp-reencoding-library.md), which had been
 accepted but unbuilt — this item was created when the work started, having lived only as a user
 story until then.
 

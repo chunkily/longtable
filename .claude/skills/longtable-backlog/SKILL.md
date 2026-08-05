@@ -13,14 +13,15 @@ moved to upload time). Re-deciding those by accident is the main failure mode he
 ```
 planning/
 ├── roles.md              Role glossary — Host, GM, Player, Room Member, Visitor, Developer
-├── backlog/              one file per item, `status: open` or `status: done` in frontmatter
+├── backlog/              one file per item, `status:` in frontmatter — open, done or dropped
 ├── user-stories/         one story per file, "As a … I want … So that …" + acceptance criteria
 └── decisions/            ADRs, `NNNN-slug.md`
 ```
 
 **Status lives in frontmatter, not the folder — for both backlog items and user stories.**
 Backlog items are `status: open` or `status: done`, stories are `status: incomplete` or
-`status: done` (see [User stories](#user-stories)). Changing status means editing that field in
+`status: done` (see [User stories](#user-stories)). Either can also be `status: dropped` —
+decided against, kept for the reasoning. Changing status means editing that field in
 place, never moving the file — nothing that links to an item goes stale when it ships. This used
 to be a three-folder (`open/`/`in-progress/`/`done/`) scheme; it flattened because every item made
 two folder hops over its life, and anything that had linked to it while `in-progress` broke again
@@ -29,6 +30,24 @@ enough to land in one session, so `open` covers "not started" and "not finished 
 
 A backlog item reaching `status: done` doesn't automatically mean its story is `done` too — a
 story can need more than one backlog item, or an item can ship less than its story asked for.
+
+## Dropping something
+
+`status: dropped` is for work decided against. **Don't delete the file** — write a
+`## Why this was dropped` section under the original text and leave the acceptance criteria or
+sub-tasks exactly as they were. What's being preserved is the reasoning, and it only makes sense
+next to the thing it's reasoning about. A dropped item that names what replaced it, and why the
+replacement is a better fit, is the single most useful thing to find when the same idea comes back
+six months later wearing a different name — which is the usual reason anyone reads `planning/` at
+all.
+
+`gm-set-room-visibility.md` is the worked example: public/private rooms, dropped because the
+premise (an audience of strangers who can reach the server) doesn't exist in a self-hosted LAN
+product. Deleting it would have left nothing to stop the next person proposing it.
+
+Keep the original slug when dropping, even if it now names something that doesn't exist —
+`visitor-browse-public-rooms.md` still spells a role that was retired with it, and that's a
+feature of the record rather than an untidiness to fix.
 
 ## Picking something up
 
@@ -114,8 +133,10 @@ and accepted. Skip anything `git log` already answers.
 ## User stories
 
 One file per story, kebab-case slug prefixed with the role (`gm-`, `player-`, `room-member-`,
-`host-`, `visitor-`, `developer-`). Roles come from `roles.md` — use `room-member-` when a story
-applies to both GMs and players.
+`host-`, `developer-`). Roles come from `roles.md` — use `room-member-` when a story applies to
+both GMs and players, and don't invent a role that isn't in that file. One was invented once, in
+passing, while writing an unrelated story; it survived only because a feature was written to suit
+it, and both had to be removed together. `roles.md` says so at the foot.
 
 ```markdown
 ---
