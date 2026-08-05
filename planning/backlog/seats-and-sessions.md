@@ -49,8 +49,8 @@ browser, and it's the one that proves a seat isn't just a renamed session.
 
 - [identity-color](identity-color.md) — colour belongs on the seat, and its unresolved "where does
   picking happen" question was waiting on the pre-join endpoint this adds
-- Makes the "What can't be recovered" section of `docs/hosting.md` obsolete; update it in the same
-  commit
+- Makes the "What you can't fix from here" section of `docs/hosting.md` obsolete; update it in the
+  same commit
 - Pairs with [host-restores-room-access](../user-stories/host-restores-room-access.md) to make
   recovery whole: the Host gets you the link back, the seat gets you your tokens back
 

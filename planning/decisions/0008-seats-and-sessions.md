@@ -97,8 +97,9 @@ not who you are.
   device" criterion achievable rather than nominally satisfiable.
 - Presence must distinguish sessions from seats: two devices on one seat is one person in the
   roster and arguably one entry in the connected list.
-- Makes the "What can't be recovered" section of `docs/hosting.md` obsolete when it ships; that
-  section documents exactly this gap.
+- Makes the "What you can't fix from here" section of `docs/hosting.md` obsolete when it ships;
+  that section documents exactly this gap, and the hand-reassignment of tokens it tells a GM to do
+  is the manual version of what a seat claim would do by itself.
 - Weakens, without killing,
   [room-member-reusable-display-name](../user-stories/room-member-reusable-display-name.md) — you
   don't type a name to take an existing seat, so a device-level name becomes a prefill for the
