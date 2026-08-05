@@ -1,6 +1,7 @@
 ---
 title: Room Member gets stroke colors that read on a dark map
 created: 2026-07-31
+status: incomplete
 ---
 
 As a Room Member

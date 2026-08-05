@@ -99,5 +99,5 @@ appears in the build commands.
 Encode quality was verified against Chrome decoding the same files with real libwebp: flat
 colours round-trip within ±1 at q90. The decode side needs a correction, which is documented in
 `internal/imageproc` and in
-[safe-asset-reencoding](../backlog/done/safe-asset-reencoding.md) rather than here, since it's an
+[safe-asset-reencoding](../backlog/safe-asset-reencoding.md) rather than here, since it's an
 implementation detail of this library rather than a reason to have chosen differently.

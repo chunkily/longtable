@@ -88,7 +88,7 @@ One of those bites specifically when the app is used the way it's meant to be �
 everyone else on `http://192.168.x.x:8080` from their own device — and doesn't show up on
 localhost or in the test suites, so it's worth knowing before anyone debugs it from scratch:
 **the map can't be zoomed on a touch device**, since the only thing that scales the stage is a
-mouse wheel. See `planning/backlog/open/pinch-zoom-touch-devices.md`.
+mouse wheel. See `planning/backlog/pinch-zoom-touch-devices.md`.
 
 Its twin is fixed. Ids used to be minted with `crypto.randomUUID`, which browsers expose only in a
 secure context, so drawing and pings threw for every client on a LAN address. They now go through
@@ -97,8 +97,8 @@ doc comment before minting an id anywhere else, and **never call `crypto.randomU
 Anything else gated on a secure context (`navigator.clipboard` is the likely next one, for a "copy
 the join link" button) has the same trap waiting.
 
-`planning/backlog/` is the authority on all of this and goes into far more detail: `done/`
-records what shipped and why, `in-progress/` and `open/` are the queue. Items cite paths and line
+`planning/backlog/` is the authority on all of this and goes into far more detail: `status: done`
+items record what shipped and why, `status: open` ones are the queue. Items cite paths and line
 numbers, which is often the fastest orientation available — but they go stale, so verify before
 relying on one.
 
@@ -154,8 +154,9 @@ Others worth matching:
   client state, canvas, tests). Read it before touching `internal/ws/` or `game-canvas.svelte`.
   Its `references/` hold the command/event table, the canvas layer table and the testing
   harnesses.
-- `.claude/skills/longtable-backlog/` — how `planning/` works: picking an item up, moving it
-  through the folders, writing the "What shipped" note.
+- `.claude/skills/longtable-backlog/` — how `planning/` works: picking an item up, flipping its
+  `status:` field when it ships, writing the "What shipped" note, and flipping a user story's
+  `status:` field once its criteria are verified against the code.
 
 ## Keeping these docs current
 
@@ -180,8 +181,9 @@ after the fact has already misled someone. The triggers, all cheap:
   comments in `web/e2e/*.spec.ts`, which index layers by number.
 - Added a test helper or changed how a suite runs → `testing.md`, and the README if the command
   a human types changed.
-- Shipped a feature or closed a gap → "Where things stand" above, plus the backlog move and its
-  "What shipped" note.
+- Shipped a feature or closed a gap → "Where things stand" above, plus the backlog move, its
+  "What shipped" note, and flipping the linked user story's `status:` to `done` once every
+  acceptance criterion actually holds (see `longtable-backlog`).
 - Found one of these docs contradicting the code → fix it then, even mid-task. It's a two-line
   edit now and an hour of someone's confusion later. If the contradiction is in a `planning/done/`
   note, correct it in place rather than deleting the old text: the reasoning that turned out to be

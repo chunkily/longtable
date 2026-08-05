@@ -1,6 +1,7 @@
 ---
 title: GM toggles owner-only token movement
 created: 2026-07-29
+status: incomplete
 ---
 
 As a GM

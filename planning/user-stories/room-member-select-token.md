@@ -1,6 +1,7 @@
 ---
 title: Room Member selects a token to see it highlighted and its details
 created: 2026-07-31
+status: incomplete
 ---
 
 As a Room Member
@@ -19,3 +20,7 @@ So that I can keep track of which token I'm looking at without losing it among e
 - [ ] Clicking empty map space clears the selection (ring and details section both revert)
 - [ ] Selection is purely local — nothing is sent to other Room Members, and it isn't persisted
       across a reload
+
+Marked `incomplete` as of 2026-08-05: everything is built except the initiative-tracker linkage
+(second criterion), which can't exist until [initiative-tracker](../backlog/initiative-tracker.md)
+does. Flip to `done` once that lands and this criterion is wired up.

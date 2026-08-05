@@ -1,6 +1,7 @@
 ---
 title: GM sets a token's size
 created: 2026-07-30
+status: done
 ---
 
 As a GM

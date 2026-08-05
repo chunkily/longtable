@@ -1,6 +1,7 @@
 ---
 title: GM deletes a room
 created: 2026-08-04
+status: incomplete
 ---
 
 As a GM

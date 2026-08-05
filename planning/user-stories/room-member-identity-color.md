@@ -1,6 +1,7 @@
 ---
 title: Room Member picks an identity color
 created: 2026-08-03
+status: incomplete
 ---
 
 As a Room Member

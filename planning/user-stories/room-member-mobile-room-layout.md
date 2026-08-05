@@ -1,6 +1,7 @@
 ---
 title: Room Member plays from a phone
 created: 2026-08-04
+status: incomplete
 ---
 
 As a Room Member

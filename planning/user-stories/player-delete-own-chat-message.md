@@ -1,6 +1,7 @@
 ---
 title: Player deletes their own chat message
 created: 2026-07-29
+status: incomplete
 ---
 
 As a Player

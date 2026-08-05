@@ -1,6 +1,7 @@
 ---
 title: Player erases their own drawing
 created: 2026-07-29
+status: done
 ---
 
 As a Player

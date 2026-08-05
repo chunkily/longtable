@@ -1,6 +1,7 @@
 ---
 title: Room Member sees the selected drawing color highlighted
 created: 2026-07-29
+status: done
 ---
 
 As a Room Member

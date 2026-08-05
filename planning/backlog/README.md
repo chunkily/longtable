@@ -1,12 +1,18 @@
 # Backlog
 
-One markdown file per item. Status is tracked by which folder the file lives in:
+One markdown file per item, all in this one folder. Status is a frontmatter field, not a folder:
 
-- `open/` — not started
-- `in-progress/` — actively being worked
-- `done/` — shipped (kept for history; delete if you don't want to keep it around)
+- `status: open` — not started (or not finished — see below)
+- `status: done` — shipped
 
-To change status, just move the file to the other folder (`mv backlog/open/foo.md backlog/in-progress/foo.md`).
+There's no `in-progress` state. Items are meant to be small enough to land in one session; if one
+turns out not to be, it stays `open` rather than getting a third state to sit in.
+
+To change status, edit the field in place — no file move, so nothing that links to the item
+(other backlog items, user stories, `CLAUDE.md`, skill references) goes stale when it ships. Kept
+this way on purpose: a prior three-folder version of this (`open/`/`in-progress/`/`done/`) meant
+every item made two hops over its life, and anything that had linked to it while it was
+`in-progress` broke again the moment it shipped.
 
 ## Format
 
@@ -14,6 +20,7 @@ To change status, just move the file to the other folder (`mv backlog/open/foo.m
 ---
 title: Short title
 created: YYYY-MM-DD
+status: open
 tags: [optional, labels]
 story: optional-user-story-slug
 ---
@@ -26,4 +33,5 @@ context as needed.
 
 ## Adding an item
 
-Create a new file in `open/` named with a short kebab-case slug, e.g. `backlog/open/eraser-tool.md`.
+Create a new file here named with a short kebab-case slug, e.g. `backlog/eraser-tool.md`, with
+`status: open`.

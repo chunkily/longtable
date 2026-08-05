@@ -265,7 +265,7 @@
 		// clears landed before either add: the map layer kept two
 		// identical copies of the bitmap for the rest of the session, and
 		// redrew both on every pan, zoom and fog change. See
-		// planning/backlog/done/duplicate-map-image.md.
+		// planning/backlog/duplicate-map-image.md.
 	});
 
 	onDestroy(() => {

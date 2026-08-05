@@ -28,7 +28,7 @@ comments in `web/e2e/*.spec.ts` — they're the only documentation of that coupl
 The selection ring has a layer to itself for a reason worth keeping: it's spun by a
 `Konva.Animation`, which redraws its whole layer every frame for as long as it runs. On the token
 layer that would be a 60fps rebuild of every token whenever anything was selected — the same
-shape as the two lag bugs in `planning/backlog/done/`.
+shape as the two lag bugs below.
 
 The hover card earns one for the neighbouring reason: `renderTokens` destroys and rebuilds the
 token layer wholesale on *any* change to `room.tokens`, so a card living there would blink out
@@ -151,9 +151,9 @@ The effects are split by cost on purpose:
 - `render()` tracks scene/fogCells/you — the expensive full rebuild.
 - `renderDrawings()` has its own effect, because drawing and erasing are the most frequent things
   that happen and rebuilding the map, grid, fog and every token for one stroke was a real
-  performance bug (`planning/backlog/done/erasing-causes-canvas-lag.md`).
+  performance bug (`planning/backlog/erasing-causes-canvas-lag.md`).
 - `renderTokens()` has its own effect for exactly the same reason, dragging a token having been
-  the same bug a second time (`planning/backlog/done/token-drag-causes-canvas-lag.md`). It is
+  the same bug a second time (`planning/backlog/token-drag-causes-canvas-lag.md`). It is
   also where `activeTool` is tracked, because token draggability is the only thing in the whole
   render path that reads it — pairing it with `render()` made every tool switch redraw the map.
 - Pings, measurements and the eraser's halo each get their own.

@@ -1,6 +1,7 @@
 ---
 title: GM assigns a token's owner
 created: 2026-07-29
+status: done
 ---
 
 As a GM
@@ -26,4 +27,4 @@ literal Room Member in the goal above, on two counts:
 
 A token that already has an owner keeps them on the list either way, so neither narrowing can
 silently reassign one. See
-[token-size-and-owner-pickers](../backlog/done/token-size-and-owner-pickers.md).
+[token-size-and-owner-pickers](../backlog/token-size-and-owner-pickers.md).

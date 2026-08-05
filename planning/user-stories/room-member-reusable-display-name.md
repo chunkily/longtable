@@ -1,6 +1,7 @@
 ---
 title: Room Member sets a reusable display name
 created: 2026-07-29
+status: incomplete
 ---
 
 As a Room Member

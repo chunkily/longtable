@@ -1,6 +1,7 @@
 ---
 title: GM clears the initiative tracker
 created: 2026-07-29
+status: incomplete
 ---
 
 As a GM

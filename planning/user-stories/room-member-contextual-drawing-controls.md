@@ -1,6 +1,7 @@
 ---
 title: Room Member sees only relevant drawing controls
 created: 2026-07-29
+status: incomplete
 ---
 
 As a Room Member

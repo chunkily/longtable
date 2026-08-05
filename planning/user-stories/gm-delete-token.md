@@ -1,6 +1,7 @@
 ---
 title: GM deletes a token
 created: 2026-07-31
+status: done
 ---
 
 As a GM

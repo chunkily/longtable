@@ -1,6 +1,7 @@
 ---
 title: Developer automates release builds via GitHub CI
 created: 2026-07-29
+status: incomplete
 ---
 
 As a Developer

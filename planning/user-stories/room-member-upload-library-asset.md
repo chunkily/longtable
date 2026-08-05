@@ -1,6 +1,7 @@
 ---
 title: Room Member uploads an asset to the library
 created: 2026-07-29
+status: done
 ---
 
 As a Room Member

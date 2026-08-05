@@ -1,6 +1,7 @@
 ---
 title: Host configures the server via a config file
 created: 2026-07-29
+status: incomplete
 ---
 
 As a Host

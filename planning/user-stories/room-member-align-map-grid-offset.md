@@ -1,6 +1,7 @@
 ---
 title: Room Member aligns a map's grid offset on upload
 created: 2026-07-29
+status: done
 ---
 
 As a Room Member

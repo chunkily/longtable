@@ -1,6 +1,7 @@
 ---
 title: GM sets an optional room join password
 created: 2026-07-29
+status: incomplete
 ---
 
 As a GM

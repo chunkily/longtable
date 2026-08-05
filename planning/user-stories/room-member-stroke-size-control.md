@@ -1,6 +1,7 @@
 ---
 title: Room Member chooses stroke size
 created: 2026-07-29
+status: incomplete
 ---
 
 As a Room Member

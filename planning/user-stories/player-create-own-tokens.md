@@ -1,6 +1,7 @@
 ---
 title: Player creates their own tokens
 created: 2026-08-04
+status: incomplete
 ---
 
 As a Player

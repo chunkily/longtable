@@ -1,6 +1,7 @@
 ---
 title: GM replaces a scene's map image
 created: 2026-07-29
+status: done
 ---
 
 As a GM

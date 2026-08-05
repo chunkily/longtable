@@ -1,6 +1,7 @@
 ---
 title: Room Member sees recently-interacted tokens on top
 created: 2026-07-31
+status: incomplete
 ---
 
 As a Room Member

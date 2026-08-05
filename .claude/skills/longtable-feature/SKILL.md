@@ -124,7 +124,7 @@ This skill's references are only worth reading because they're true, and a featu
 most likely to make them false. The repo is early and moves fast, so treat the doc edit as part
 of the change rather than cleanup for later — a reference corrected next week has already sent
 someone down the wrong path, which is exactly what happened with the eraser's `hitStrokeWidth`
-note in `planning/backlog/done/eraser-tool.md`.
+note in `planning/backlog/eraser-tool.md`.
 
 What a feature typically invalidates:
 

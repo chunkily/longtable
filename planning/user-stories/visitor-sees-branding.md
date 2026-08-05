@@ -1,6 +1,7 @@
 ---
 title: Visitor sees branded favicon and title
 created: 2026-07-29
+status: incomplete
 ---
 
 As a Visitor

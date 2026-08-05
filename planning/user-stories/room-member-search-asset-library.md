@@ -1,6 +1,7 @@
 ---
 title: Room Member searches the asset library
 created: 2026-07-31
+status: done
 ---
 
 As a Room Member

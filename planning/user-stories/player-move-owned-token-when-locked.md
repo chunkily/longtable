@@ -1,6 +1,7 @@
 ---
 title: Player moves only owned tokens when locked
 created: 2026-07-29
+status: incomplete
 ---
 
 As a Player

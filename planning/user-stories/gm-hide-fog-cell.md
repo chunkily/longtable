@@ -1,6 +1,7 @@
 ---
 title: GM re-hides a fog cell
 created: 2026-07-29
+status: done
 ---
 
 As a GM

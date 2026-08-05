@@ -1,6 +1,7 @@
 ---
 title: Room Member removes an asset from the room's library
 created: 2026-08-03
+status: done
 ---
 
 As a Room Member

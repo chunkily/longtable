@@ -1,6 +1,7 @@
 ---
 title: Room Member changes persistent settings
 created: 2026-08-05
+status: incomplete
 ---
 
 As a Room Member

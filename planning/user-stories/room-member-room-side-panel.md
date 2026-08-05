@@ -1,6 +1,7 @@
 ---
 title: Room Member uses one side panel for chat, initiative and room actions
 created: 2026-08-04
+status: incomplete
 ---
 
 As a Room Member

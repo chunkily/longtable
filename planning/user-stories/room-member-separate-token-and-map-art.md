@@ -1,6 +1,7 @@
 ---
 title: Room Member keeps token art and maps apart in the library
 created: 2026-08-03
+status: done
 ---
 
 As a Room Member

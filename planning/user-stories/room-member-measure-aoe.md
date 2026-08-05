@@ -1,6 +1,7 @@
 ---
 title: Room Member measures an area of effect
 created: 2026-07-29
+status: done
 ---
 
 As a Room Member

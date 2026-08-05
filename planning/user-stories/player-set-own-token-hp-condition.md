@@ -1,6 +1,7 @@
 ---
 title: Player sets HP/conditions on their own token
 created: 2026-07-29
+status: done
 ---
 
 As a Player
