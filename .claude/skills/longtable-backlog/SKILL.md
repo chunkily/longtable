@@ -32,16 +32,24 @@ story can need more than one backlog item, or an item can ship less than its sto
 
 ## Picking something up
 
-Look for `status: open` items — `backlog/` is one flat folder now, so a grep for that field (or
-just skimming it; there aren't many) is the whole search. Prefer an item that is genuinely
-self-contained, and say why you chose it. If one item unblocks another, the foundation is usually
-the better pick: the distance measuring tool shipped the ephemeral-broadcast plumbing that the
-area-of-effect tool needs.
+`backlog/` is one flat folder, so finding the queue is a grep:
 
-Most `open` items are untouched, but not all — an item that turned out bigger than expected stays
-`open` rather than getting a third status to sit in, and may carry a short note (a "## Done"
-section, or similar) on what already landed before it was shelved. Read the whole file, not just
-the frontmatter, before assuming "open" means "nothing's happened here yet."
+```bash
+grep -l '^status: open' planning/backlog/*.md
+```
+
+That also matches `README.md`, whose format template sits at column 0 inside a code fence — one
+hit to ignore, not an extra item.
+
+Prefer an item that is genuinely self-contained, and say why you chose it. If one item unblocks
+another, the foundation is usually the better pick: the distance measuring tool shipped the
+ephemeral-broadcast plumbing that the area-of-effect tool needs.
+
+`open` covers both "not started" and "started, not finished". There is deliberately no third
+state — items are meant to be small enough to land in one session, so the case barely comes up.
+The cost is that frontmatter alone won't tell you whether someone has already been in here, and
+other sessions do work in this same checkout. When that matters,
+`git log -- planning/backlog/<slug>.md` and the item's own prose are the only signals there are.
 
 Items name the files and line numbers they concern, and that's often the fastest orientation
 available — but it goes stale. Verify before relying on it.
@@ -67,6 +75,12 @@ What this is, and any context or sub-tasks (`- [ ]` checkboxes).
 `story:` in the frontmatter is for a single story; a "## Related user stories" list is for
 several. Both link into `user-stories/`. New items go in `backlog/` with a kebab-case slug and
 `status: open`.
+
+One trap when writing any frontmatter in this repo, including this skill's own: a colon followed
+by a space ends a key in YAML, so prose *about* the status field — spelling it `status: open`
+inline in a title or description — silently breaks the whole block. It cost this skill its
+description once; the loader fell back to the body's first heading and nothing announced the
+failure. Reword to "an `open`/`done` status field", or quote the value.
 
 ## Finishing an item
 

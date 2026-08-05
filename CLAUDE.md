@@ -169,7 +169,14 @@ Each file owns something, and duplication between them is what rots first:
 | `.claude/skills/longtable-feature/references/ws-protocol.md` | every command and event, who may send it, what persists |
 | `.claude/skills/longtable-feature/references/canvas.md` | Konva layer order and indices, the tool-handler contract |
 | `.claude/skills/longtable-feature/references/testing.md` | the three test harnesses and their helpers |
+| `.claude/skills/longtable-backlog/SKILL.md` | how `planning/` itself works — the status fields, item and story format, what finishing something entails |
 | `planning/` | why a thing exists, what shipped, what's next |
+
+`planning/backlog/README.md` and `planning/user-stories/README.md` restate those same rules for
+someone browsing the folder without the skill loaded. Three files saying one thing is exactly the
+duplication this table exists to catch, so treat the skill as the authority and the two READMEs as
+its summary — when the convention changes, all three move together or the odd one out starts
+lying.
 
 Update them **in the same commit as the change**, not in a later sweep — a doc corrected a week
 after the fact has already misled someone. The triggers, all cheap:
@@ -181,9 +188,11 @@ after the fact has already misled someone. The triggers, all cheap:
   comments in `web/e2e/*.spec.ts`, which index layers by number.
 - Added a test helper or changed how a suite runs → `testing.md`, and the README if the command
   a human types changed.
-- Shipped a feature or closed a gap → "Where things stand" above, plus the backlog move, its
-  "What shipped" note, and flipping the linked user story's `status:` to `done` once every
-  acceptance criterion actually holds (see `longtable-backlog`).
+- Shipped a feature or closed a gap → "Where things stand" above, plus flipping the backlog item's
+  `status:`, its "What shipped" note, and flipping the linked user story's `status:` to `done`
+  once every acceptance criterion actually holds (see `longtable-backlog`).
+- Changed how `planning/` itself works — status values, file format, where a thing lives → the
+  `longtable-backlog` skill **and** both `planning/` READMEs, in one commit.
 - Found one of these docs contradicting the code → fix it then, even mid-task. It's a two-line
   edit now and an hour of someone's confusion later. If the contradiction is in a `planning/done/`
   note, correct it in place rather than deleting the old text: the reasoning that turned out to be
