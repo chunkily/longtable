@@ -141,6 +141,31 @@
 		send(next);
 	}
 
+	// Scrolling over the value box is a step, same as the buttons the panel
+	// already has — only while it's focused, so scrolling the sidebar past
+	// an unfocused box doesn't quietly edit a tracker underneath the cursor.
+	function handleWheel(event: WheelEvent) {
+		if (!focused) return;
+		event.preventDefault();
+		step(event.deltaY < 0 ? 1 : -1);
+	}
+
+	// The by-how-much box has no business going below 1: a step of 0 would
+	// make the buttons do nothing, and a negative one would flip what
+	// plus/minus mean.
+	function clampAmount(next: number | null): number {
+		return next === null || next < 1 ? 1 : next;
+	}
+
+	function handleAmountChange(event: Event & { currentTarget: HTMLInputElement }) {
+		amount = clampAmount(parse(event.currentTarget.value));
+	}
+
+	function handleAmountWheel(event: WheelEvent) {
+		event.preventDefault();
+		amount = clampAmount((parse(amount) ?? 1) + (event.deltaY < 0 ? 1 : -1));
+	}
+
 	const by = $derived(parse(amount) ?? 1);
 </script>
 
@@ -161,6 +186,7 @@
 		bind:value={draft}
 		onchange={handleChange}
 		onkeydown={handleKeydown}
+		onwheel={handleWheel}
 		class="h-11 [appearance:textfield] px-1 text-center font-mono text-lg md:text-lg [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
 	/>
 
@@ -192,7 +218,10 @@
 				aria-label="Adjust {label} by"
 				placeholder="1"
 				step="1"
+				min="1"
 				bind:value={amount}
+				onchange={handleAmountChange}
+				onwheel={handleAmountWheel}
 				class="h-8 w-16 [appearance:textfield] px-1 text-center font-mono text-sm md:text-sm [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
 			/>
 			<Button

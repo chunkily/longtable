@@ -396,6 +396,69 @@ test('a token with no trackers or conditions shows nothing on hover', async ({ b
 	await gm.context.close();
 });
 
+// The wheel is a step too, so a mouse without a keyboard nearby still
+// changes a tracker without opening the by-box — but only once the value
+// box has focus, and the by-box itself refuses to scroll below 1, since a
+// step of zero would make the buttons (and the wheel) do nothing.
+test('the wheel steps a focused tracker, and never drops the step size below 1', async ({
+	browser
+}) => {
+	const gm = await openRoomAsGM(browser, 'Token Trackers Wheel');
+
+	await gm.page.getByRole('button', { name: 'New token' }).click();
+	await gm.page.getByLabel('Name').fill('Troll');
+	await gm.page.getByRole('button', { name: 'Create token' }).click();
+	await expect(gm.page.getByRole('button', { name: 'Create token' })).toBeHidden();
+
+	const box = await canvasBox(gm.page);
+	const spawn = spawnCentre(box);
+	await selectToken(gm.page, spawn, 'Troll');
+
+	await openEditor(gm.page);
+	await gm.page.getByLabel('Tracker 1 label').fill('HP');
+	await save(gm.page);
+
+	const hp = trackerBox(gm.page, 'HP');
+	await hp.fill('30');
+	await hp.blur();
+
+	// Hovering an unfocused box is not enough — the browser dispatches the
+	// wheel to whatever is under the pointer regardless of focus, so this
+	// is the case that actually needs the check rather than proving itself
+	// by construction.
+	await hp.hover();
+	await gm.page.mouse.wheel(0, -100);
+	await expect(hp).toHaveValue('30');
+
+	await hp.click();
+	await gm.page.mouse.wheel(0, -100);
+	await expect(hp).toHaveValue('31');
+	await gm.page.mouse.wheel(0, 100);
+	await gm.page.mouse.wheel(0, 100);
+	await expect(hp).toHaveValue('29');
+
+	// Committing out of the by-box by clicking the value box instead of
+	// blurring off the panel entirely — a full blur takes the whole panel
+	// away, per the step-control test above, which would take "by" with it
+	// before its value could be asserted.
+	const by = gm.page.getByLabel('Adjust HP by');
+	await by.fill('0');
+	await hp.click();
+	await expect(by).toHaveValue('1');
+
+	await by.fill('-5');
+	await hp.click();
+	await expect(by).toHaveValue('1');
+
+	// Scrolling down on the by-box past 1 holds at 1 rather than going
+	// negative.
+	await by.hover();
+	await gm.page.mouse.wheel(0, 100);
+	await expect(by).toHaveValue('1');
+
+	await gm.context.close();
+});
+
 // The per-field permission split. An owner tracks their own damage; the
 // name, art, size, owner and visibility stay the GM's, and the form they
 // get says so by not being there.
