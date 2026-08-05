@@ -94,3 +94,8 @@ One thing found in passing and deliberately not fixed here: `asset-library.spec.
 under the full parallel run, failing roughly one run in three and passing in isolation. Confirmed
 pre-existing by running the suite repeatedly at HEAD with no local changes, so it is unrelated to
 this work.
+
+**Fixed on 2026-08-05** — see [e2e-flakes](e2e-flakes.md). The "passing in isolation" reading
+above was the misleading part: it made this look like a load or timing problem, when the test was
+actually asserting behaviour the code has never had. It passed whenever it managed to check
+before the page refreshed.

@@ -105,6 +105,14 @@ func (s *Store) AddAssetToRoom(roomID, assetID, name, attribution string, kind A
 			-- Each field only overwrites when something was actually
 			-- supplied, so a later upload that skipped the name, the credit
 			-- or the grid step doesn't wipe what an earlier one recorded.
+			--
+			-- Worth knowing what that means in practice, because the two
+			-- halves behave differently through the assets page: it always
+			-- sends a name, defaulting the box to the filename, so re-adding
+			-- bytes already in the room *renames* the entry. It only sends a
+			-- credit if someone typed one, so the credit survives. That's
+			-- intended — an upload says what the image is called now — and
+			-- e2e pins it in asset-library.spec.ts.
 			name = CASE
 				WHEN excluded.name != '' THEN excluded.name
 				ELSE room_asset.name

@@ -181,7 +181,11 @@ test('aligning a map bakes the offset into the image and pre-fills the scene gri
 	await expect(page.getByLabel('Width (px)')).toHaveValue('15');
 });
 
-test('a library entry can be renamed afterwards, and identical content is never duplicated', async ({
+// Adding the same bytes twice makes one entry, not two — and the second
+// add renames it, because the page always supplies a name whether or not
+// anyone typed one. That last part is deliberate rather than a bug worked
+// around: an upload is a statement about what this image is called now.
+test('a library entry can be renamed, and re-adding the same bytes renames rather than duplicates', async ({
 	page
 }) => {
 	await createRoomAsGM(page, 'Library Editing');
@@ -218,10 +222,25 @@ test('a library entry can be renamed afterwards, and identical content is never 
 		buffer: readFileSync(fixture('map.png'))
 	});
 	await page.getByRole('button', { name: 'Add to library' }).click();
-	await expect(page.getByText('Ruined keep')).toHaveCount(1);
-	// The earlier name survives, because an add that didn't set out to
-	// rename anything shouldn't.
-	await expect(page.getByText('map-again')).toHaveCount(0);
+
+	// Re-adding *does* rename, and the positive assertion goes first on
+	// purpose. `map-again` arriving is the only proof the library has
+	// finished refreshing; asserting the absence of something first would
+	// pass against the list as it stood before the upload landed, which is
+	// exactly how this test used to fail about one run in three.
+	await expect(page.getByText('map-again')).toHaveCount(1);
+	await expect(page.getByText('Ruined keep')).toHaveCount(0);
+
+	// But it is still one entry, not two: identical bytes resolve to the
+	// asset already there, and the room already having it makes the add an
+	// update rather than an insert.
+	await expect(page.getByRole('button', { name: /^Remove / })).toHaveCount(1);
+
+	// The credit survives, which is the rule the name is obeying too:
+	// `AddAssetToRoom` overwrites a field only when the upload supplied
+	// one. This page always supplies a name — it defaults the box to the
+	// filename — and only supplies a credit if someone typed it.
+	await expect(page.getByText('by Bob')).toBeVisible();
 });
 
 test('the library keeps tokens and maps apart, shows token art whole, and can be corrected', async ({
