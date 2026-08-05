@@ -6,9 +6,14 @@ tags: [identity]
 story: room-member-identity-color
 ---
 
-A preset color, chosen per room, shown next to pings and chat names. Deliberately scoped apart
-from [first-time-display-name-prompt](first-time-display-name-prompt.md) — color is room-level,
-display name is (eventually) device-level, so don't assume they share a picker or a mechanism.
+A preset color, chosen per room, shown next to pings and chat names.
+
+This used to be scoped apart from a device-level display name, on the grounds that colour was
+room-level and the name wasn't. That contrast is gone: the device-level name was dropped on
+2026-08-05 ([room-member-reusable-display-name](../user-stories/room-member-reusable-display-name.md)),
+so colour and name are now both properties of a seat and picked in the same place — the seat
+picker. They share a mechanism after all, which is the opposite of what this item used to warn
+about.
 
 **Colour belongs on the seat**, decided 2026-08-05 with
 [ADR-0008](../decisions/0008-seats-and-sessions.md). That resolves the second question below and

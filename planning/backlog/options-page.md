@@ -7,17 +7,15 @@ story: room-member-options-page
 ---
 
 There's currently no place in the app for a Room Member to change a device-level setting after
-the fact. Two other items now depend on this existing:
+the fact. [dark-mode](dark-mode.md) needs one — somewhere to put a light/dark/system override.
 
-- [dark-mode](dark-mode.md) — needs a place to put a light/dark/system theme override
-- [first-time-display-name-prompt](first-time-display-name-prompt.md) / the "I can change my
-  display name later" criterion on
-  [room-member-reusable-display-name](../user-stories/room-member-reusable-display-name.md) —
-  the display name is set once on first open with nowhere to revisit it since
-
-Both settings are per-device, stored in `localStorage`, same as the display name already is —
-this page is a UI for editing values that (mostly) already have a storage story, not a new
-persistence mechanism.
+**This item was half about display name until 2026-08-05**, when that was dropped along with
+[room-member-reusable-display-name](../user-stories/room-member-reusable-display-name.md): seats
+mean a name is typed once per room, so there is no device-level name to edit. What's left is the
+theme control, which is enough to justify the page but not much more — so it's worth asking
+whether this should be a page at all, or a menu item next to the theme toggle it exists to hold.
+If dark mode ends up shipping a plain three-way control somewhere in the room chrome, this item
+may have nothing left in it.
 
 Not yet decided: where the page lives in the nav/routing, and whether it's a modal/drawer or a
 full route. Whoever picks this up should mock up the entry point and layout before wiring
@@ -25,8 +23,7 @@ anything — see the dark-mode-palette precedent for that (mocked options were d
 committing to hex values).
 
 - [ ] Reachable entry point (toolbar icon / link, most likely — not tied to a specific room)
-- [ ] Display name field, reads/writes the existing `localStorage` value
-- [ ] Theme control (system / light / dark), reads/writes a new `localStorage` value, used by [dark-mode](dark-mode.md)
+- [ ] Theme control (system / light / dark), reads/writes a `localStorage` value, used by [dark-mode](dark-mode.md)
 - [ ] Changes apply live, no reload
 
 ## Related user stories

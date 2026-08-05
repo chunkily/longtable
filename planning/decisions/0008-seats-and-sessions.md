@@ -103,6 +103,11 @@ not who you are.
   [room-member-reusable-display-name](../user-stories/room-member-reusable-display-name.md) — you
   don't type a name to take an existing seat, so a device-level name becomes a prefill for the
   "I'm new here" path rather than the main event.
+  **Killed it, in the event** — dropped later the same day, and for a reason this consequence
+  missed. The remaining prefill wasn't just small, it was the only piece of identity that would
+  have outlived a room, which sits badly beside this ADR insisting nothing about a seat does. The
+  story carries the argument; the correction is left here because "weakened" was the wrong read
+  and the next person weighing a device-level anything should see why.
 - Seats accumulate across a campaign and need removing, which is the same gesture as
   [leave-room-button](../backlog/leave-room-button.md).
 
