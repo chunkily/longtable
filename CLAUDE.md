@@ -126,8 +126,9 @@ Windows box, but it does run on Linux CI.
 
 The e2e harness binds **:8080** (Go backend) and **:5173** (vite), and other Claude sessions
 work in this same checkout. A process already on either port may well be in use — ask before
-stopping anything. `npx playwright test` also writes to the shared `web/.e2e-data/longtable.db`,
-so a run leaves test rooms in whatever data another session is looking at.
+stopping anything. `npx playwright test` writes to `web/.e2e-data/longtable.db`, which it wipes at
+the start of every run — so starting a run pulls the data out from under any other session
+reading it, and what's left afterwards is the last run's alone.
 
 ## House style
 

@@ -10,7 +10,7 @@
 // Windows firewall/trust prompt only needs approving once, not on
 // every test run.
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -23,6 +23,33 @@ const binPath = path.join(
 );
 
 mkdirSync(dataDir, { recursive: true });
+
+// Every run starts from an empty database.
+//
+// It used to accumulate, and by the time anyone noticed it held a
+// thousand rooms — all of which the home page lists. The create-room form
+// sits under that list, so `getByRole('button', { name: 'Create room' })`
+// was scrolling past a screen-height of links that other workers were
+// still adding to, and occasionally clicking where the button had just
+// been. That failure looked like "room creation is flaky" and was really
+// "the page under test is a thousand rooms tall".
+//
+// Wiping at start rather than at the end deliberately: whatever the last
+// run left is still there to inspect when something fails, which is most
+// of why you'd want to look at this database at all.
+//
+// Set LONGTABLE_E2E_KEEP_DB=1 to append to the previous run instead —
+// occasionally useful when reproducing something that needs the state a
+// previous run built up.
+if (!process.env.LONGTABLE_E2E_KEEP_DB) {
+	for (const name of ['longtable.db', 'longtable.db-wal', 'longtable.db-shm']) {
+		rmSync(path.join(dataDir, name), { force: true });
+	}
+	// The blobs are content-addressed, so keeping them past a wiped
+	// database would be harmless — but then nothing ever removes them, and
+	// "harmless" is how the room table got to a thousand rows.
+	rmSync(path.join(dataDir, 'assets'), { recursive: true, force: true });
+}
 
 const build = spawnSync('go', ['build', '-tags', 'nodynamic', '-o', binPath, './cmd/longtable'], {
 	cwd: repoRoot,

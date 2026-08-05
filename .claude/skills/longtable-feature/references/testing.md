@@ -150,7 +150,9 @@ what matters isn't that the client stopped throwing but that the *server accepte
 fallback produced.
 
 Ports: :8080 and :5173, shared with other sessions in this checkout — ask before killing anything
-sitting on them. Runs also write to the shared `web/.e2e-data/longtable.db`.
+sitting on them. Runs write to `web/.e2e-data/longtable.db`, **which is wiped at the start of
+every run** (`e2e/run-backend.mjs`), so what's in there afterwards is the last run's and nobody
+else's. Set `LONGTABLE_E2E_KEEP_DB=1` to append to the previous run instead.
 
 **Run `npx playwright test` from inside `web/`, not the repo root.** From the root, npm's
 upward `node_modules` search can resolve a different `@playwright/test` than the one `web/`
@@ -176,13 +178,12 @@ and the images live in `e2e/fixtures/` (see its README). It works on a hidden
 so there's no need for a visible-input workaround.
 
 Uploading **by path, not `{ name, mimeType, buffer }`**, is still the default, though the reason
-has narrowed. The e2e database is persistent across runs (`web/.e2e-data/longtable.db`,
-gitignored, never reset between `playwright test` invocations) and assets are content-addressed,
-so identical pixels uploaded weeks later in an unrelated spec resolve to the *same* asset row,
-carrying the `filename` the *bytes* were first stored under. What a spec sees on screen is the
-per-room `name`, which is a `room_asset` column and so belongs to this run's room — a fresh room
-always shows the name this run supplied. So assert on the name; `filename` is the field that
-drifts. Sending the real basename keeps the default name tied to the fixture anyway, which is one
+has narrowed twice. Assets are content-addressed, so identical pixels uploaded by an unrelated
+spec *in the same run* resolve to the same asset row, carrying the `filename` the bytes were
+first stored under. What a spec sees on screen is the per-room `name`, a `room_asset` column
+belonging to this run's room, so a fresh room always shows the name this run supplied. Assert on
+the name; `filename` is the field that drifts. (This used to reach across runs too, back when the
+database was never reset — it no longer does, but within one run it still holds.) Sending the real basename keeps the default name tied to the fixture anyway, which is one
 less thing to spell out in a spec. The one deliberate exception — re-adding identical content
 under a different name to prove dedup — passes bytes explicitly and says why.
 

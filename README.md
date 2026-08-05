@@ -63,7 +63,8 @@ cd web && npx playwright test
 ```
 
 The e2e suite needs ports **8080** and **5173** free, and writes to its own
-scratch database under `web/.e2e-data/` (never your local `longtable.db`). First
+scratch database under `web/.e2e-data/` (never your local `longtable.db`), which
+it wipes at the start of each run so results don't depend on what ran before. First
 run needs the browser: `npx playwright install chromium`. On Windows the first
 run may also raise a firewall prompt for the freshly built server binary — it's
 built to a fixed path, so approving it once is enough.
