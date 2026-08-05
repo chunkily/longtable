@@ -173,7 +173,15 @@ ambiguous, say which reading you took and why.
 
 ## Decisions
 
-`decisions/NNNN-slug.md`, numbered in order (0001–0006 so far: self-hosted multi-room, Go backend,
-SQLite, Svelte+Konva, WebP re-encoding, config file format). Write one when choosing between
-technologies or committing to an architecture, not for ordinary implementation choices — those
-belong in the code comment next to the thing they explain, which is this codebase's habit.
+`decisions/NNNN-slug.md`, numbered in order (0001–0008 so far: self-hosted multi-room, Go backend,
+SQLite, Svelte+Konva, WebP re-encoding, config file format, the table is trusted, seats and
+sessions). Write one when choosing between technologies or committing to an architecture, not for
+ordinary implementation choices — those belong in the code comment next to the thing they explain,
+which is this codebase's habit.
+
+The last two are worth reading before proposing anything about permissions or identity.
+[0007](../../../planning/decisions/0007-the-table-is-trusted.md) is the reason Longtable keeps
+declining to stop Room Members doing things they could misuse: role boundaries (GM vs Player) are
+enforced, identity boundaries (person vs person) are not. A suggestion to add a per-seat password,
+a claim approval or a per-token lock is arguing against it, which is allowed but should be done
+knowingly rather than as an oversight being tidied up.

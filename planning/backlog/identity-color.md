@@ -10,14 +10,22 @@ A preset color, chosen per room, shown next to pings and chat names. Deliberatel
 from [first-time-display-name-prompt](first-time-display-name-prompt.md) — color is room-level,
 display name is (eventually) device-level, so don't assume they share a picker or a mechanism.
 
+**Colour belongs on the seat**, decided 2026-08-05 with
+[ADR-0008](../decisions/0008-seats-and-sessions.md). That resolves the second question below and
+strengthens the first: a colour attached to a durable seat survives a device change alongside the
+tokens, which is most of what makes it worth having. It's also what makes this story's criterion
+"tied to my participant record in this room, not to my device" actually true — when it was
+written, `participant` *was* the device, so that line would have passed review and then failed the
+first time someone cleared their browser.
+
+This now depends on [seats-and-sessions](seats-and-sessions.md) and should not be picked up first.
+
 Not yet decided, worth settling before picking this up:
 
 - [ ] Whether this ships at all — still weighing whether it earns the wire surface below
-- [ ] Where picking happens: on the join form (needs a new pre-join REST endpoint to expose live
-      connected-player colors, since that state currently only exists in the hub once a socket is
-      open) vs. after connecting (fits the existing WS command/event flow, but color starts unset
-      — needs a fallback, e.g. gray, for anyone who hasn't picked yet or joined before this
-      shipped)
+- [x] ~~Where picking happens~~ — settled by the seat model. The seat picker needs a pre-join
+      endpoint listing a room's seats, which is exactly the endpoint colour wanted and couldn't
+      justify alone; colour rides along on it and is picked with the seat
 - [ ] The preset palette itself — has to dodge colors that already carry meaning on the canvas
       (amber is both the erase highlight and today's single hardcoded ping color, sky blue is the
       measuring tool, red is the fog-hide preview) and stay legible on both light and dark maps,

@@ -20,3 +20,11 @@ So that my pings and chat messages are recognizably mine to everyone else at the
       over to another room, or in from one, regardless of how display name ends up working
 - [ ] My color persists for the rest of my time in the room, including across a dropped and
       restored connection
+- [ ] It also survives me coming back on a different device and taking my seat again
+
+The fifth criterion was unsatisfiable when this was written: `participant` had the session token
+as a column, so "my participant record" and "my device" were the same row, and clearing a browser
+would have lost the colour no matter how the feature was built.
+[ADR-0008](../decisions/0008-seats-and-sessions.md) separates them, which is what the last
+criterion above now checks. Depends on
+[room-member-takes-their-seat](room-member-takes-their-seat.md).
