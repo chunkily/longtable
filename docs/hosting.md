@@ -44,16 +44,30 @@ Send the new password some way other than the room's own chat, since that's the 
 reach yet. Whoever holds it can take the room as a GM, so treat it about as carefully as the link
 itself.
 
-## What you can't fix from here
+## What a Player can fix themselves
 
-If a **Player** clears their browser data, they come back as a new person. There's no accounts
-system behind any of this — a browser's identity in a room is a token it stored locally, and once
-that's gone there's nothing to recognise them by. They'll rejoin fine, under the same name if they
-like, but the room will hold two entries for them, and any tokens the old one owned will still
-belong to it.
+A **Player** who clears their browser data, or turns up on a different device, doesn't need you.
 
-Nothing you can run fixes that, so don't go hunting for a subcommand. The GM can put it right from
-inside the room in a few clicks: open each affected token, set its owner to the new entry. Worth
-telling them that up front, because the natural assumption is that something is broken, and it
-isn't — a duplicate in the roster is exactly what's supposed to happen given there's nobody to
-match the returning browser against.
+Identity in a room is a *seat* — a chair at the table that outlives any particular browser. A
+device proves it holds a seat with a token stored locally, but the seat is the durable part, and
+it's what tokens are owned by. So a Player opening the room on a device that doesn't remember them
+gets a list of the room's seats, takes their own back, and finds their tokens and their name
+exactly where they left them. No password, no approval, nothing for you to run.
+
+This is also why the same person on a phone and a laptop is one person rather than two: both
+devices sit in the same seat, and the room shows one entry for them.
+
+Two things worth telling a GM up front:
+
+- **Anyone with the room link can take any seat.** That's deliberate: getting to the list at all
+  means having been given the link, and the GM watches the roster in real time. Longtable trusts
+  the people at the table and guards the way in, rather than putting a lock on every chair. The
+  GM's own seat is the exception and needs the room password — which is why losing that password
+  is the one thing they still need you for.
+- **Seats build up over a campaign.** A GM can add one before a new player arrives, and remove one
+  that's finished with, from `Manage room` inside the room. Removing a seat signs out every device
+  on it and leaves anything it owned belonging to nobody.
+
+There's still no accounts system behind any of this, and a seat isn't one: it's scoped to a single
+room, carries no credential, and says nothing about who someone is anywhere else. It only
+remembers which chair they sat in.

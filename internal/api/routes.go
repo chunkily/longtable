@@ -40,6 +40,14 @@ func NewRouter(s *store.Store, hub *ws.Hub, blobs *blobstore.Store, frontend fs.
 	mux.HandleFunc("POST /api/rooms/{slug}/join", srv.joinRoom)
 	mux.HandleFunc("POST /api/rooms/{slug}/gm-login", srv.gmLogin)
 	mux.HandleFunc("GET /api/rooms/{slug}/session", srv.checkSession)
+	mux.HandleFunc("DELETE /api/rooms/{slug}/session", srv.endSession)
+	// The one endpoint that answers before the caller has a session,
+	// because it is what a device with no session looks at. Scoped to a
+	// room whose link the caller already holds, and thin on purpose —
+	// see listSeats.
+	mux.HandleFunc("GET /api/rooms/{slug}/seats", srv.listSeats)
+	mux.HandleFunc("POST /api/rooms/{slug}/seats", srv.createSeat)
+	mux.HandleFunc("DELETE /api/rooms/{slug}/seats/{id}", srv.deleteSeat)
 	mux.HandleFunc("GET /api/rooms/{slug}/assets", srv.listRoomAssets)
 	mux.HandleFunc("POST /api/rooms/{slug}/assets", srv.uploadAsset)
 	mux.HandleFunc("PATCH /api/rooms/{slug}/assets/{id}", srv.updateRoomAsset)

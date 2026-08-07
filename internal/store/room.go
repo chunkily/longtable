@@ -14,6 +14,14 @@ import (
 
 var ErrNotFound = errors.New("not found")
 
+// Seats are open-claim, but the GM's is a role boundary rather than an
+// identity one: it goes through the room password instead. See ADR-0008.
+var ErrGMSeatNeedsPassword = errors.New("the GM seat needs the room password")
+
+// The room password signs you into the GM seat, so removing it would
+// strand the only role that could undo the damage.
+var ErrCannotDeleteGMSeat = errors.New("the GM seat cannot be removed")
+
 type Room struct {
 	ID             string
 	Slug           string

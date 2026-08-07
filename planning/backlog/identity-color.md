@@ -24,6 +24,13 @@ written, `participant` *was* the device, so that line would have passed review a
 first time someone cleared their browser.
 
 This now depends on [seats-and-sessions](seats-and-sessions.md) and should not be picked up first.
+**That shipped on 2026-08-07, so nothing blocks this any more.** What it left you:
+`GET /api/rooms/{slug}/seats` (`listSeats` in `internal/api/rooms.go`, `$lib/api.ts`) already
+returns a seat's name, role and whether anyone is on it, and the seat picker on the join screen
+already renders one button per seat — a colour is a column on `participant`, a field on that
+payload, and a swatch on that button. Note the endpoint is deliberately unauthenticated and
+deliberately thin, so adding to it is a decision about what a stranger with the link may see, not
+a free extension.
 
 Not yet decided, worth settling before picking this up:
 

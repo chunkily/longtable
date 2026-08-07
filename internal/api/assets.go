@@ -415,6 +415,38 @@ func (srv *Server) checkSession(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// endSession signs one device out, leaving the seat and every other
+// device on it alone — which is the whole of what leaving a room does
+// now that a seat outlives a browser. Before seats there was nothing
+// server-side to end: the session *was* the identity, so leaving could
+// only be a browser forgetting its own localStorage.
+//
+// Idempotent by construction: a token that no longer resolves is a
+// device that is already signed out, and a "leave" that fails because
+// you already left would be a worse answer than silence.
+func (srv *Server) endSession(w http.ResponseWriter, r *http.Request) {
+	room, ok := srv.lookupRoom(w, r.PathValue("slug"))
+	if !ok {
+		return
+	}
+	token := bearerToken(r)
+	if token == "" {
+		writeError(w, http.StatusUnauthorized, "missing session token")
+		return
+	}
+	// Scoped through the room like every other token read, so one room's
+	// link can't be used to end a session in another.
+	if _, err := srv.store.GetParticipantByToken(room.ID, token); err == nil {
+		if err := srv.store.DeleteSession(token); err != nil {
+			slog.Error("api: end session failed", "error", err)
+			writeError(w, http.StatusInternalServerError, "failed to leave the room")
+			return
+		}
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // requireParticipant checks the bearer session token belongs to this
 // room, which is the whole of "are you allowed to see this room's
 // things" — there are no accounts, so holding a session for the room is

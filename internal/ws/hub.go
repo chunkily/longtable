@@ -175,9 +175,16 @@ func (h *Hub) participantConnectedLocked(roomID, participantID string) bool {
 	return false
 }
 
-// connectedParticipantIDs lists who is connected to roomID right now,
-// one entry per person however many tabs they have open.
-func (h *Hub) connectedParticipantIDs(roomID string) []string {
+// ConnectedParticipantIDs lists who is connected to roomID right now,
+// one entry per person however many tabs or devices they have open.
+//
+// The dedupe is what makes "two devices on one seat is one person" true
+// rather than merely intended: it keys on the seat, so a phone and a
+// laptop signed into the same seat collapse to one entry here exactly as
+// two tabs always did. Exported for the pre-join seat list, which shows
+// whether anyone is sitting in a chair right now — a live question only
+// the hub can answer, since presence is never written down.
+func (h *Hub) ConnectedParticipantIDs(roomID string) []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 

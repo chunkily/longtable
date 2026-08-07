@@ -72,9 +72,70 @@ func (srv *Server) createRoom(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, toSessionResponse(room, participant))
 }
 
+// seatResponse is a room's seat as the pre-join screen sees it.
+//
+// Deliberately narrow: this endpoint is reachable by anyone holding the
+// room's link and before they have proved anything about who they are.
+// A name and whether the chair is occupied is what a seat picker needs;
+// anything more would be telling a stranger about the table.
+type seatResponse struct {
+	ParticipantID string `json:"participantId"`
+	DisplayName   string `json:"displayName"`
+	Role          string `json:"role"`
+	Connected     bool   `json:"connected"`
+}
+
+// listSeats answers "which chairs are at this table, and is anyone in
+// them" for a device with no session yet.
+//
+// Deliberately unauthenticated, because it has to be: it is what you
+// look at *before* you have a session. That is not a room-enumeration
+// hole — there is no endpoint listing rooms, so reaching this means
+// already holding the link — but it is the reason the payload stays as
+// thin as it is. See ADR-0008 and ADR-0007.
+func (srv *Server) listSeats(w http.ResponseWriter, r *http.Request) {
+	room, ok := srv.lookupRoom(w, r.PathValue("slug"))
+	if !ok {
+		return
+	}
+
+	seats, err := srv.store.ListSeatsForRoom(room.ID)
+	if err != nil {
+		slog.Error("api: list seats failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to list seats")
+		return
+	}
+
+	// "Occupied" is a live question, so it comes from the hub rather than
+	// from the session count: a seat with two sessions and nobody
+	// connected is a returning player's, not a taken chair.
+	connected := make(map[string]bool)
+	for _, id := range srv.hub.ConnectedParticipantIDs(room.ID) {
+		connected[id] = true
+	}
+
+	out := make([]seatResponse, 0, len(seats))
+	for _, seat := range seats {
+		out = append(out, seatResponse{
+			ParticipantID: seat.ID,
+			DisplayName:   seat.DisplayName,
+			Role:          string(seat.Role),
+			Connected:     connected[seat.ID],
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"roomName": room.Name,
+		"seats":    out,
+	})
+}
+
 type joinRequest struct {
 	DisplayName  string `json:"displayName"`
 	SessionToken string `json:"sessionToken"`
+	// Set to take an existing seat rather than make a new one. Empty is
+	// the "I'm new here" path, which is exactly what joining used to be.
+	ParticipantID string `json:"participantId"`
 }
 
 func (srv *Server) joinRoom(w http.ResponseWriter, r *http.Request) {
@@ -89,13 +150,34 @@ func (srv *Server) joinRoom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// A returning browser can resume its existing identity instead of
-	// joining as a brand new participant.
+	// A returning browser that still has its token resumes without
+	// touching the seat picker at all.
 	if req.SessionToken != "" {
 		if p, err := srv.store.GetParticipantByToken(room.ID, req.SessionToken); err == nil {
 			writeJSON(w, http.StatusOK, toSessionResponse(room, p))
 			return
 		}
+	}
+
+	// Taking a seat someone already sat in. No secret and no approval —
+	// seats are open-claim, bounded by needing the room's link to get
+	// here (ADR-0007). The GM's seat is the exception.
+	if req.ParticipantID != "" {
+		participant, err := srv.store.ClaimSeat(room.ID, req.ParticipantID)
+		switch {
+		case errors.Is(err, store.ErrGMSeatNeedsPassword):
+			writeError(w, http.StatusForbidden, "the GM seat needs the room password")
+			return
+		case errors.Is(err, store.ErrNotFound):
+			writeError(w, http.StatusNotFound, "seat not found")
+			return
+		case err != nil:
+			slog.Error("api: claim seat failed", "error", err)
+			writeError(w, http.StatusInternalServerError, "failed to take that seat")
+			return
+		}
+		writeJSON(w, http.StatusCreated, toSessionResponse(room, participant))
+		return
 	}
 
 	req.DisplayName = strings.TrimSpace(req.DisplayName)
@@ -150,6 +232,94 @@ func (srv *Server) gmLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, toSessionResponse(room, participant))
+}
+
+type createSeatRequest struct {
+	DisplayName string `json:"displayName"`
+}
+
+// createSeat lets a GM set the table before anyone arrives: a named
+// chair with nobody signed into it, waiting to be claimed.
+func (srv *Server) createSeat(w http.ResponseWriter, r *http.Request) {
+	room, ok := srv.lookupRoom(w, r.PathValue("slug"))
+	if !ok {
+		return
+	}
+	if !srv.requireGM(w, r, room) {
+		return
+	}
+
+	var req createSeatRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	req.DisplayName = strings.TrimSpace(req.DisplayName)
+	if req.DisplayName == "" {
+		writeError(w, http.StatusBadRequest, "displayName is required")
+		return
+	}
+
+	seat, err := srv.store.CreateSeat(room.ID, req.DisplayName)
+	if err != nil {
+		slog.Error("api: create seat failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to add a seat")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, seatResponse{
+		ParticipantID: seat.ID,
+		DisplayName:   seat.DisplayName,
+		Role:          string(seat.Role),
+	})
+}
+
+// deleteSeat removes a seat and every device signed into it. Seats
+// accumulate over a campaign, so a GM needs to be able to clear one out.
+func (srv *Server) deleteSeat(w http.ResponseWriter, r *http.Request) {
+	room, ok := srv.lookupRoom(w, r.PathValue("slug"))
+	if !ok {
+		return
+	}
+	if !srv.requireGM(w, r, room) {
+		return
+	}
+
+	err := srv.store.DeleteSeat(room.ID, r.PathValue("id"))
+	switch {
+	case errors.Is(err, store.ErrCannotDeleteGMSeat):
+		writeError(w, http.StatusForbidden, "the GM seat can't be removed")
+		return
+	case errors.Is(err, store.ErrNotFound):
+		writeError(w, http.StatusNotFound, "seat not found")
+		return
+	case err != nil:
+		slog.Error("api: delete seat failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to remove that seat")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// requireGM is requireParticipant plus the role check, for the endpoints
+// that manage the room rather than play in it.
+func (srv *Server) requireGM(w http.ResponseWriter, r *http.Request, room store.Room) bool {
+	token := bearerToken(r)
+	if token == "" {
+		writeError(w, http.StatusUnauthorized, "missing session token")
+		return false
+	}
+	participant, err := srv.store.GetParticipantByToken(room.ID, token)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "invalid session")
+		return false
+	}
+	if participant.Role != store.RoleGM {
+		writeError(w, http.StatusForbidden, "that action is GM-only")
+		return false
+	}
+	return true
 }
 
 func (srv *Server) lookupRoom(w http.ResponseWriter, slug string) (store.Room, bool) {

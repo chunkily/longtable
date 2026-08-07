@@ -4,7 +4,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
-	import { gmLogin, joinRoom, type Session } from '$lib/api';
+	import { endSession, gmLogin, joinRoom, listSeats, type Seat, type Session } from '$lib/api';
 	import { clearSession, loadSession, saveSession, touchSession } from '$lib/session';
 	import { RoomClient, type Token } from '$lib/room.svelte';
 	import { DEFAULT_LINE_WIDTH_FEET, type SnapMode } from '$lib/aoe';
@@ -13,6 +13,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Badge } from '$lib/components/ui/badge';
+	import { Separator } from '$lib/components/ui/separator';
 	import * as Card from '$lib/components/ui/card';
 	import GameCanvas from '$lib/components/game-canvas.svelte';
 	import MapToolbar from '$lib/components/map-toolbar.svelte';
@@ -41,6 +42,16 @@
 	let displayName = $state('');
 	let password = $state('');
 	let joining = $state(false);
+
+	// The room's seats, for a device with no stored session. Only the
+	// player seats are offered: the GM's is a role boundary and goes
+	// through the password field below it.
+	let seats = $state<Seat[]>([]);
+	let seatsRoomName = $state('');
+	// Set by "I'm new here", which hides the list and leaves the plain
+	// join form — exactly what joining was before seats existed.
+	let newHere = $state(false);
+	const playerSeats = $derived(seats.filter((s) => s.role !== 'gm'));
 
 	let chatText = $state('');
 
@@ -100,12 +111,26 @@
 
 	onMount(() => {
 		const existing = loadSession(slug);
-		if (!existing) return;
-		// Sitting back down at this table puts it at the top of the home
-		// page's list, which is what makes that list order by the game
-		// someone is actually playing.
-		touchSession(slug);
-		startSession(existing);
+		if (existing) {
+			// Sitting back down at this table puts it at the top of the home
+			// page's list, which is what makes that list order by the game
+			// someone is actually playing. A device that still has its
+			// session never sees the seat picker at all.
+			touchSession(slug);
+			startSession(existing);
+			return;
+		}
+
+		// No session: this is the pre-join screen, so find out what chairs
+		// are at the table. A failure here isn't fatal — the plain join
+		// form below the list still works, and telling someone the room is
+		// broken when they can simply join would be the worse answer.
+		listSeats(slug)
+			.then((res) => {
+				seatsRoomName = res.roomName;
+				seats = res.seats;
+			})
+			.catch(() => {});
 	});
 
 	onDestroy(() => {
@@ -121,6 +146,23 @@
 		const c = new RoomClient();
 		c.connect(s.roomSlug, s.sessionToken);
 		client = c;
+	}
+
+	// Taking a seat someone already sat in. No name to type and no
+	// password: the seat carries the name, and claiming is open by
+	// design (ADR-0007) — what you get back is a session of your own on
+	// a seat that already owns tokens.
+	async function handleClaimSeat(seat: Seat) {
+		joining = true;
+		try {
+			const s = await joinRoom(slug, { participantId: seat.participantId });
+			saveSession(s);
+			startSession(s);
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : 'failed to take that seat');
+		} finally {
+			joining = false;
+		}
 	}
 
 	async function handleJoin(event: SubmitEvent) {
@@ -148,15 +190,21 @@
 		chatText = '';
 	}
 
-	// Leaving is the in-room twin of "Forget" on the home page, and does
-	// the same thing: a session in localStorage is the whole record of
-	// being in a room, so dropping it is the whole of leaving. It
-	// deliberately doesn't tell the room — the roster is everyone who has
-	// *ever* joined, and the protocol has no way to express removal from
-	// it. Disconnecting first so the others see the presence drop straight
+	// Leaving spends a *session*, not an identity. Since seats, the seat
+	// survives with the tokens it owns still attached, so coming back
+	// means picking it off the list rather than starting over — and any
+	// other device signed into the same seat stays signed in.
+	//
+	// It still doesn't remove anyone from the roster: that list is
+	// everyone who has ever joined, and a seat is exactly the thing meant
+	// to outlive a browser. A GM who wants a seat gone removes it from
+	// Manage room.
+	//
+	// Disconnecting first so the others see the presence drop straight
 	// away rather than when the socket eventually times out.
-	function handleLeave() {
+	async function handleLeave() {
 		client?.disconnect();
+		if (session) await endSession(slug, session.sessionToken);
 		clearSession(slug);
 		goto(resolve('/'));
 	}
@@ -220,10 +268,48 @@
 	<div class="mx-auto max-w-md p-6">
 		<Card.Root>
 			<Card.Header>
-				<Card.Title>Join room</Card.Title>
+				<Card.Title>{seatsRoomName || 'Join room'}</Card.Title>
 				<Card.Description>{slug}</Card.Description>
 			</Card.Header>
-			<Card.Content>
+			<Card.Content class="flex flex-col gap-4">
+				<!-- Taking a seat comes first, because on a device that doesn't
+				     remember you it is almost always what you want: it brings
+				     back the tokens you own and your name, where joining fresh
+				     would leave them behind on a seat nobody is sitting in.
+				     Open-claim, no password — see ADR-0008 and ADR-0007. -->
+				{#if playerSeats.length > 0 && !newHere}
+					<div class="flex flex-col gap-2">
+						<p class="text-sm font-medium">Take your seat</p>
+						{#each playerSeats as seat (seat.participantId)}
+							<!-- Named rather than left to its contents: "Bob" alone is
+							     also what a token is called, and this is the one
+							     control on the page whose whole job is to say whose
+							     chair it is. -->
+							<Button
+								type="button"
+								variant="outline"
+								class="justify-between"
+								aria-label="Take {seat.displayName}'s seat"
+								disabled={joining}
+								onclick={() => handleClaimSeat(seat)}
+							>
+								<span class="truncate">{seat.displayName}</span>
+								{#if seat.connected}
+									<!-- Someone is on it right now. Still claimable — two
+									     devices on one seat is one person, which is the
+									     whole point — but worth saying so nobody takes a
+									     chair thinking it's spare. -->
+									<Badge variant="secondary">here now</Badge>
+								{/if}
+							</Button>
+						{/each}
+						<Button type="button" variant="ghost" onclick={() => (newHere = true)}>
+							I'm new here
+						</Button>
+					</div>
+					<Separator />
+				{/if}
+
 				<form class="flex flex-col gap-4" onsubmit={handleJoin}>
 					<div class="flex gap-2">
 						<Button
@@ -250,6 +336,9 @@
 					{#if mode === 'gm'}
 						<div class="flex flex-col gap-2">
 							<Label for="gm-password">GM password</Label>
+							<!-- The GM seat is the one exception to open-claim: it's a
+							     role boundary, so it goes through the room password
+							     rather than being offered on the list above. -->
 							<Input id="gm-password" type="password" bind:value={password} required />
 						</div>
 					{/if}
@@ -492,7 +581,12 @@
 			bind:open={newSceneOpen}
 			trigger={false}
 		/>
-		<ManageRoomDialog bind:open={manageRoomOpen} />
+		<ManageRoomDialog
+			room={client}
+			roomSlug={session.roomSlug}
+			sessionToken={session.sessionToken}
+			bind:open={manageRoomOpen}
+		/>
 	{/if}
 
 	<div class="fixed inset-0 flex flex-col lg:flex-row">

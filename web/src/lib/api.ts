@@ -78,6 +78,10 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 		const body = await res.json().catch(() => ({}));
 		throw new ApiError(body.error ?? `request failed with status ${res.status}`);
 	}
+	// 204 means the request succeeded and said nothing — a DELETE that
+	// worked. Parsing that as JSON throws on an empty body, which would
+	// turn every successful delete into an error toast.
+	if (res.status === 204) return undefined as T;
 	return res.json();
 }
 
@@ -88,14 +92,82 @@ export function createRoom(roomName: string, gmName: string, password: string): 
 	});
 }
 
+/**
+ * A chair at a table, as seen by a device that hasn't proved anything
+ * about who it is yet. Carries no credential — taking a seat is what
+ * gets you one. See ADR-0008.
+ */
+export interface Seat {
+	participantId: string;
+	displayName: string;
+	role: 'gm' | 'player';
+	/** Whether anyone has a socket open on this seat right now. */
+	connected: boolean;
+}
+
+/**
+ * The room's seats, for the pre-join screen. Unauthenticated, because
+ * it answers before you have a session — reaching it means already
+ * holding the room's link.
+ */
+export function listSeats(slug: string): Promise<{ roomName: string; seats: Seat[] }> {
+	return apiFetch(`/api/rooms/${encodeURIComponent(slug)}/seats`);
+}
+
+/**
+ * Joins a room, three ways depending on what's passed:
+ *
+ * - `sessionToken` — a browser that still remembers this room resumes
+ *   without touching the seat picker.
+ * - `participantId` — take a seat someone already sat in, and get this
+ *   device's own session on it.
+ * - `displayName` — "I'm new here": a fresh seat, exactly what joining
+ *   used to be.
+ */
 export function joinRoom(
 	slug: string,
-	opts: { displayName?: string; sessionToken?: string }
+	opts: { displayName?: string; sessionToken?: string; participantId?: string }
 ): Promise<Session> {
 	return apiFetch(`/api/rooms/${encodeURIComponent(slug)}/join`, {
 		method: 'POST',
 		body: JSON.stringify(opts)
 	});
+}
+
+export function addSeat(slug: string, sessionToken: string, displayName: string): Promise<Seat> {
+	return apiFetch(`/api/rooms/${encodeURIComponent(slug)}/seats`, {
+		method: 'POST',
+		headers: { Authorization: `Bearer ${sessionToken}` },
+		body: JSON.stringify({ displayName })
+	});
+}
+
+export function removeSeat(
+	slug: string,
+	sessionToken: string,
+	participantId: string
+): Promise<void> {
+	return apiFetch(
+		`/api/rooms/${encodeURIComponent(slug)}/seats/${encodeURIComponent(participantId)}`,
+		{ method: 'DELETE', headers: { Authorization: `Bearer ${sessionToken}` } }
+	);
+}
+
+/**
+ * Signs this device out of the room, leaving the seat and any other
+ * device on it alone. Best-effort: the browser is dropping its own
+ * session either way, so a server that can't be reached must not keep
+ * someone in a room they've left.
+ */
+export async function endSession(slug: string, sessionToken: string): Promise<void> {
+	try {
+		await fetch(`/api/rooms/${encodeURIComponent(slug)}/session`, {
+			method: 'DELETE',
+			headers: { Authorization: `Bearer ${sessionToken}` }
+		});
+	} catch {
+		// Ignored on purpose — see above.
+	}
 }
 
 export function gmLogin(slug: string, displayName: string, password: string): Promise<Session> {

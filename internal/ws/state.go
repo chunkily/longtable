@@ -35,7 +35,7 @@ func (h *Hub) sendStateSync(ctx context.Context, c *client, room store.Room) {
 	} else {
 		payload["participants"] = participantPayloads(participants)
 	}
-	payload["connectedParticipantIds"] = h.connectedParticipantIDs(room.ID)
+	payload["connectedParticipantIds"] = h.ConnectedParticipantIDs(room.ID)
 
 	messages, err := h.store.ListRecentMessages(room.ID, 50)
 	if err != nil {

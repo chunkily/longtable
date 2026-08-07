@@ -114,4 +114,27 @@ not who you are.
 
 ## Action Items
 
-- [seats-and-sessions](../backlog/seats-and-sessions.md) carries the work.
+- [seats-and-sessions](../backlog/seats-and-sessions.md) carries the work. **Shipped 2026-08-07.**
+
+## What it looked like once built
+
+Corrections to the consequences above, left rather than edited into them, since the reasoning that
+turned out slightly wrong is the useful part:
+
+- **"A smaller change than it sounds" was right, and for the predicted reason.** `participant` was
+  already the seat in every respect except the stapled credential, so `GetParticipantByToken`
+  absorbed the whole split: the WS handshake, the reconnect probe and the asset endpoints changed
+  not at all.
+- **Presence got no more complicated.** The ADR expected it to. `connectedParticipantIDs` already
+  deduped by participant to handle two tabs, and two devices on one seat turned out to be the same
+  shape — the case fell out for free rather than needing a session/seat distinction in the hub.
+- **The retroactive benefit was never collected.** "Orphaned participants in existing rooms become
+  claimable seats" assumed a migration; there were no users yet, so the database was wiped and the
+  migration deleted along with the rest of the migration layer. The property still holds for any
+  room that accumulates orphans from here.
+- **A consequence the ADR missed:** every `gmLogin` used to mint a *new* participant, so a GM on a
+  second device grew the roster by one every time. Reusing the GM seat fixed a bug nobody had
+  filed, and it follows directly from the model — the password is a way into a seat, not a way to
+  make one.
+- **Leaving a room now has a server-side meaning**, which it couldn't have before: it ends one
+  session and leaves the seat, its tokens and any other device alone.

@@ -121,6 +121,11 @@ Two more that bite once a spec drives *two* browsers:
   property it relies on — that the two layouts stay identical across roles — is exactly the kind
   of thing the next layout change breaks silently. The old symptom is worth remembering: a click
   that selects nothing, with no error anywhere.
+- **A second browser *context* is not a second tab, and for seats that's the whole test.** Tabs
+  share `localStorage`, so a second tab reuses the first one's session token and can never
+  exercise the seat picker or "two devices, one seat" — it just proves the two-tabs case again.
+  `browser.newContext()` gets a device that has genuinely never been here. `seats.spec.ts` is
+  built entirely on that distinction and says so at the top.
 - **Don't grab a token that is still sliding.** A move made in another browser arrives as a 0.22s
   tween (`TOKEN_MOVE_SECONDS`), and ink shows up under a probe partway through it — so polling for
   the token at its destination returns *before* it has settled. A drag started in that window

@@ -18,7 +18,7 @@ architecture and current state live here instead**, and keeping them true is par
 | `internal/store/` | SQLite schema and every typed query (rooms, participants, scenes, tokens, fog, drawings, chat). `store.go` holds the `CREATE TABLE`s and migrations |
 | `internal/imageproc/` | decodes and re-encodes every upload to WebP. Read its doc comment before touching it — the studio-swing trap in there is easy to reintroduce |
 | `internal/blobstore/` | re-encoded images on disk, addressed by content hash so identical uploads share a file |
-| `internal/auth/` | session tokens and bcrypt password hashing. No accounts — identity in a room is a token in `localStorage` |
+| `internal/auth/` | session tokens and bcrypt password hashing. No accounts — identity in a room is a *seat* (a `participant` row), and a device proves it holds one with a `session` token in `localStorage`. See [ADR-0008](planning/decisions/0008-seats-and-sessions.md) |
 | `internal/dice/` | `/roll 2d6+3` expression parser |
 | `internal/db/` | SQLite wiring (`modernc.org/sqlite`, no CGO) |
 | `assets.go` (root) | `go:embed`s `web/build`. Has to be at the root — embed can't reach outside its own directory |
@@ -42,7 +42,15 @@ authoritative; the client never writes to the database.
 ## Where things stand
 
 Working today: rooms with a GM password and player join (the generated join slug is re-rolled if
-it happens to spell something offensive). **Rooms are not listed anywhere** — the home page shows
+it happens to spell something offensive). **Identity in a room is a seat, not a browser**: a
+device with no stored session gets the room's seats and takes one, which brings back the tokens
+that seat owns and its name — so a cleared browser or a borrowed laptop costs a session rather
+than an identity, and one person on a phone and a laptop is two sessions and one entry in the
+roster. Claiming is open, with no password or approval; the GM's seat is the exception and goes
+through the room password, which also means a second GM login reuses that seat instead of growing
+the roster. A GM can add a seat before anyone arrives and remove a finished one from `Manage
+room`; leaving a room ends that device's session and leaves the seat behind to come back to.
+**Rooms are not listed anywhere** — the home page shows
 only the rooms this browser holds a session for, newest first, with a box to paste an invite link
 or bare code into; there is no server endpoint that enumerates rooms, and `longtable room list` is
 the only way to see them all, which is the Host's job and needs the database file. Scenes built

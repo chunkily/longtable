@@ -10,6 +10,13 @@ participant — there is no way to reach a room's live state without a valid ses
 REST endpoints. Sessions are per-room and live in `localStorage` (`web/src/lib/session.ts`); there
 are no accounts. On connect the server immediately sends `state.sync` and then loops on reads.
 
+The token resolves to a participant through the `session` table rather than off the participant
+row: a participant is a **seat**, and many devices can hold one over time (ADR-0008). Nothing in
+the protocol changed for it — `c.participant` is still the identity every handler uses, and
+`GetParticipantByToken` is still the single place a credential becomes one. What did change is
+that two *different* tokens can now resolve to the same participant, which is what makes a phone
+and a laptop one person; see the presence note below, which was already written to survive it.
+
 Envelope both ways:
 
 ```json
@@ -200,7 +207,10 @@ Three things worth knowing before touching it:
 - **A person is not a connection.** Two browser tabs are two clients and one participant, so
   `register`/`unregister` return whether this was the *first* or *last* connection that
   participant had open, and only those broadcast. Otherwise opening a tab announces someone who
-  was already here.
+  was already here. Since seats this covers two *devices* as well, for free and for the same
+  reason: the dedupe keys on the participant, and a phone and a laptop signed into one seat are
+  two sessions pointing at one participant. `ConnectedParticipantIDs` is exported for the
+  pre-join seat list, which needs the same live answer to say whether a chair is taken.
 - **`participant.connected` is the one broadcast that skips its own sender.** Every other one
   echoes back because the sender has something optimistic to reconcile; here the arriving client's
   `state.sync` already lists it among the connected, so an echo would be a second copy of
