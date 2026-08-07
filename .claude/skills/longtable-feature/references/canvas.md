@@ -99,11 +99,21 @@ selects before dragging for exactly this reason.
 pointer handlers are bound. It:
 
 1. Removes every `.tool`-namespaced handler (`mousedown.tool touchstart.tool …`).
-2. Resets all transient gesture state — and *retracts* anything in flight. A measurement or fog
-   sweep abandoned by a tool switch has to be ended here, or it strands on other clients with no
-   end event coming.
+2. Calls `retractInFlightGesture()` — resets transient gesture state and *retracts* anything in
+   flight. A measurement or fog sweep abandoned by a tool switch has to be ended there, or it
+   strands on other clients with no end event coming. It's a named function rather than an inline
+   block because a pinch needs identical cleanup (below), and two copies is how a retraction gets
+   added to one and missed in the other.
 3. Sets `stage.draggable(!isActive)`, since panning and tools both start on a left-drag.
 4. Binds the handlers for the active tool and returns early per tool.
+
+**The pinch handlers are `.pinch`-namespaced and bound once in `onMount`, not here** — step 1
+would tear them off on every tool change, and a pinch has to work whatever tool is selected. When
+a second finger lands, `handlePinchMove` calls `stage.stopDrag()` (or the map pans and scales at
+once and slides out from under the fingers) and then `retractInFlightGesture()`: a tool owns the
+pointer and a pinch is two of them, so the second touch would otherwise read as more of the same
+stroke. The gesture is abandoned rather than committed — a half-drawn line that appears because
+someone reached to zoom isn't something they asked for.
 
 Handlers use `stage.getRelativePointerPosition()`, not the raw event coordinates — that's what
 accounts for the stage's own pan and zoom. `mouseleave.tool` matters for any held gesture: no
@@ -130,10 +140,19 @@ Anything that should read the same at every zoom level is authored in screen pix
 with `screenToWorld(px)` — `px / stage.scaleX()`. Grid lines, stroke widths on overlays, the
 eraser's reach, measurement dashes and label text all do this.
 
-The consequence: **a zoom changes what those values mean, so it has to re-render them.**
-`handleWheel` explicitly calls `renderGrid()`, `renderMeasurements()` and
-`refreshCursorOverlay()` for exactly that reason. A new screen-sized overlay needs the same
-treatment or it silently mis-sizes after a scroll.
+The consequence: **a zoom changes what those values mean, so it has to re-render them.** That
+whole set lives in **`applyViewChange()`** — `renderGrid`, `renderMeasurements`,
+`renderSelection`, `renderHoverCard`, `refreshCursorOverlay` — and every path that alters the
+stage's scale or position calls it: `handleWheel`, the pinch handler, and `resetView`. A new
+screen-sized overlay gets a line in there, or it silently mis-sizes after the first zoom.
+
+**`resetView` calls it through `untrack()`, and that matters.** `resetView` runs inside
+`render()`'s effect (on a scene change) *before* its first await, so the reads inside
+`applyViewChange` — `renderSelection` reaches `selectedTokenId` — land in the window Svelte is
+collecting dependencies in. Untracked, the map effect gains a dependency on the selection:
+clicking a token rebuilds the map, which re-enters `resetView`, and selection stops working
+across most of the suite. Anything else called from inside `render()`'s synchronous window that
+reads state belonging to another effect needs the same treatment.
 
 Cell arithmetic: `cellAt`/`cellCentre` in `web/src/lib/measure.ts` floor a world point onto its
 cell and find a cell's centre. Tokens are stored in cell units and multiplied by `gridSize` at

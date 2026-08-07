@@ -85,13 +85,17 @@ fog has no automatic vision from tokens, no prebuilt releases, no way for a Host
 remove a moderated asset server-wide or cap upload sizes per room (a room removing something from
 its own library is a different, smaller thing, and does exist).
 
-One of those bites specifically when the app is used the way it's meant to be — a GM hosting and
-everyone else on `http://192.168.x.x:8080` from their own device — and doesn't show up on
-localhost or in the test suites, so it's worth knowing before anyone debugs it from scratch:
-**the map can't be zoomed on a touch device**, since the only thing that scales the stage is a
-mouse wheel. See `planning/backlog/pinch-zoom-touch-devices.md`.
+Two bugs used to bite specifically when the app was used the way it's meant to be — a GM hosting
+and everyone else on `http://192.168.x.x:8080` from their own device — while never showing up on
+localhost or in the test suites. **Both are fixed**, and both are worth knowing about, because the
+next thing to break on a tablet will break the same way: silently, for everyone except whoever is
+developing it.
 
-Its twin is fixed. Ids used to be minted with `crypto.randomUUID`, which browsers expose only in a
+The map can now be pinched to zoom on a touch device (`handlePinchMove` in `game-canvas.svelte`,
+arithmetic in `web/src/lib/pinch.ts`). Until then the only thing that scaled the stage was a mouse
+wheel, so a Player on an iPad saw about nine squares of a battle map and had no way to pull back.
+
+Ids used to be minted with `crypto.randomUUID`, which browsers expose only in a
 secure context, so drawing and pings threw for every client on a LAN address. They now go through
 `randomId()` in `web/src/lib/random-id.ts`, which falls back to `crypto.getRandomValues` — read its
 doc comment before minting an id anywhere else, and **never call `crypto.randomUUID` directly**.

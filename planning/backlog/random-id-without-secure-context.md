@@ -53,14 +53,16 @@ section](../../.claude/skills/longtable-feature/references/ws-protocol.md).
 ## Related
 
 - [pinch-zoom-touch-devices](pinch-zoom-touch-devices.md) — the other thing in the way of
-  playing from a tablet, and found in the same sitting. Still open.
+  playing from a tablet, and found in the same sitting. **Fixed 2026-08-07**, so the tablet is
+  now playable rather than merely no longer throwing.
 
 ## Blocks
 
 [full-bleed-map-layout](full-bleed-map-layout.md) is a deliberately phone-facing redesign,
 and a phone at the table reaches the server on a LAN address — which is precisely where this bug
 lives. Shipping that layout on top of this would mean drawing and pings being broken for exactly
-the clients it was built for. **No longer blocking as of this item shipping**; pinch-zoom still is.
+the clients it was built for. **No longer blocking as of this item shipping**, and pinch-zoom
+stopped blocking it on 2026-08-07, so that layout is now unblocked entirely.
 
 ## What shipped
 

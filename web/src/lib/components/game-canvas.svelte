@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onDestroy, onMount } from 'svelte';
+	import { onDestroy, onMount, untrack } from 'svelte';
 	import Konva from 'konva';
 	import { assetUrl } from '$lib/api';
 	import { DRAWING_STROKE_WIDTH, pickDrawing, strokeWidthOf } from '$lib/drawing-hit';
@@ -14,6 +14,7 @@
 		type TemplateKind
 	} from '$lib/aoe';
 	import { cellAt, cellCentre, measureLabel } from '$lib/measure';
+	import { pinchStep, touchCentre, touchDistance, type Point } from '$lib/pinch';
 	import { PING_PULSES, PING_PULSE_INTERVAL_MS, PING_PULSE_SECONDS } from '$lib/ping';
 	import { setTrackers, trackerText } from '$lib/room.svelte';
 	import type {
@@ -243,6 +244,12 @@
 		);
 
 		stage.on('wheel', handleWheel);
+		// Namespaced and bound once here rather than in
+		// attachToolHandlers, which tears down every `.tool` handler each
+		// time the tool changes. A pinch has to work whatever is selected,
+		// including nothing.
+		stage.on('touchmove.pinch', handlePinchMove);
+		stage.on('touchend.pinch touchcancel.pinch', handlePinchEnd);
 		stage.on('dragmove', () => renderGrid());
 		// A pointer that leaves the canvas entirely never gets a mouseleave
 		// from the token it was over — the same gap mouseleave.tool covers
@@ -306,11 +313,91 @@
 			x: pointer.x - mousePointTo.x * newScale,
 			y: pointer.y - mousePointTo.y * newScale
 		});
-		stage.batchDraw();
+		applyViewChange();
+	}
+
+	// Where the pinch was last sampled, or null when fewer than two
+	// fingers are down. Both are cleared on touchend: lifting one finger
+	// of two leaves the other mid-gesture, and a stale distance would
+	// make the next touch jump the scale by whatever it happened to hold.
+	let pinchCentre: Point | null = null;
+	let pinchDistance = 0;
+
+	// Touch positions arrive in client coordinates, and the stage's own
+	// pointer helpers only ever track one of them — so the two fingers
+	// have to be read off the raw event and offset by the container's box
+	// by hand.
+	function touchPoint(touch: Touch, box: DOMRect): Point {
+		return { x: touch.clientX - box.left, y: touch.clientY - box.top };
+	}
+
+	function handlePinchMove(e: Konva.KonvaEventObject<TouchEvent>) {
+		const touches = e.evt.touches;
+		if (!stage || touches.length < 2) return;
+
+		// Only once two fingers are down, so a one-finger pan still scrolls
+		// the page's own gestures normally on the way in.
+		e.evt.preventDefault();
+
+		const box = stage.container().getBoundingClientRect();
+		const a = touchPoint(touches[0], box);
+		const b = touchPoint(touches[1], box);
+		const centre = touchCentre(a, b);
+		const distance = touchDistance(a, b);
+
+		if (!pinchCentre) {
+			// The second finger has just landed. Konva is most likely
+			// dragging the stage from the first one; left running, the map
+			// pans and scales at once and slides out from under the hands.
+			stage.stopDrag();
+			// A tool owns the pointer, and a pinch is two of them — the
+			// second touch reads as more of the same stroke otherwise. The
+			// gesture is abandoned rather than committed: a half-drawn line
+			// that appears because someone reached to zoom isn't something
+			// they asked for, and undo is a poor answer on a tablet.
+			retractInFlightGesture();
+			pinchCentre = centre;
+			pinchDistance = distance;
+			return;
+		}
+
+		const next = pinchStep({
+			scale: stage.scaleX(),
+			position: stage.position(),
+			from: pinchCentre,
+			to: centre,
+			ratio: pinchDistance > 0 ? distance / pinchDistance : 1,
+			minScale: MIN_SCALE,
+			maxScale: MAX_SCALE
+		});
+
+		stage.scale({ x: next.scale, y: next.scale });
+		stage.position(next.position);
+		pinchCentre = centre;
+		pinchDistance = distance;
+		applyViewChange();
+	}
+
+	function handlePinchEnd(e: Konva.KonvaEventObject<TouchEvent>) {
+		if (e.evt.touches.length >= 2) return;
+		pinchCentre = null;
+		pinchDistance = 0;
+	}
+
+	// Everything that has to happen after the stage's scale or position
+	// changes, for any reason.
+	//
+	// These are re-renders rather than redraws on purpose. Measurement
+	// lines and labels, the selection ring's stroke and dashes, the hover
+	// card and the eraser's halo are all authored in screen pixels and
+	// converted through screenToWorld() at render time, so a change of
+	// scale changes what they should be in world units. A handler that
+	// calls batchDraw() and stops leaves every one of them the wrong
+	// size, which reads as a rendering bug rather than as a missing call
+	// — see canvas.md, which writes the contract down.
+	function applyViewChange() {
+		stage?.batchDraw();
 		renderGrid();
-		// Measurement lines and labels are sized in screen pixels, so a
-		// zoom changes what they should be in world units. The selection
-		// ring's stroke, dash and standoff are the same.
 		renderMeasurements();
 		renderSelection();
 		renderHoverCard();
@@ -325,8 +412,21 @@
 		if (!stage) return;
 		stage.scale({ x: 1, y: 1 });
 		stage.position({ x: 0, y: 0 });
-		stage.batchDraw();
-		renderGrid();
+		// Resetting from 2x back to 1x is a scale change like any other, so
+		// everything sized in screen pixels has to be re-rendered — this
+		// used to redraw the grid alone, which left a selection ring
+		// carrying the stroke width it had been given at the old zoom.
+		//
+		// `untrack` is load-bearing rather than tidy. This runs inside
+		// render()'s effect, before its first await and therefore inside
+		// the window Svelte is collecting dependencies in, and
+		// applyViewChange reads `selectedTokenId` on the way through
+		// renderSelection. Without it, the whole map effect gains a
+		// dependency on the selection: clicking a token rebuilds the map,
+		// which re-enters this, and selection stopped working entirely
+		// across 26 specs. The reads in there belong to their own effects,
+		// which already track them.
+		untrack(applyViewChange);
 	}
 
 	// The grid cell currently at the center of the viewport, in the same
@@ -622,19 +722,31 @@
 		return !(e.evt instanceof MouseEvent) || e.evt.button === 0;
 	}
 
+	// Abandons whatever gesture is part-way through, leaving nothing
+	// half-finished on this map or anyone else's. Called when the tool
+	// changes and when a second finger turns a drag into a pinch — the
+	// two need identical cleanup, and having had it written out twice is
+	// how a retraction gets added to one and missed in the other.
+	//
+	// The measurement is the one that matters beyond this browser: it
+	// lives in RoomClient and is broadcast, so without the endMeasure()
+	// inside stopMeasuring() it stays frozen on every other map with no
+	// end event ever coming.
+	function retractInFlightGesture() {
+		painting = false;
+		pendingCells.clear();
+		stopErasing();
+		stopMeasuring();
+		clearPreview();
+		clearCursorOverlay();
+	}
+
 	function attachToolHandlers() {
 		if (!stage) return;
 		stage.off(
 			'mousedown.tool touchstart.tool mousemove.tool touchmove.tool mouseup.tool touchend.tool mouseleave.tool'
 		);
-		painting = false;
-		pendingCells.clear();
-		stopErasing();
-		// Switching tools mid-drag has to retract the measurement, or it
-		// stays on every other map with no end event ever coming.
-		stopMeasuring();
-		clearPreview();
-		clearCursorOverlay();
+		retractInFlightGesture();
 
 		const scene = room.scene;
 		const isActive = activeTool !== 'none' && !!scene;

@@ -111,9 +111,12 @@ their items for why. **One is now fixed:**
 - ~~[random-id-without-secure-context](random-id-without-secure-context.md)~~ — drawing and
   pings threw for every client on a `192.168.x.x` address, which is how every phone at the table
   connects. Fixed 2026-08-04.
-- [pinch-zoom-touch-devices](pinch-zoom-touch-devices.md) — a touch device can't zoom the map at
-  all. **Still open, and still blocking**: a layout that makes the app far more phone-facing while
-  the map is stuck at 1:1 on a phone would undo most of the point.
+- [pinch-zoom-touch-devices](pinch-zoom-touch-devices.md) — a touch device couldn't zoom the map
+  at all, which would have undone most of the point of a phone-facing layout. **Fixed 2026-08-07,
+  so this is no longer blocked by anything.** Worth reading its "What shipped" before starting
+  here: it left `applyViewChange()` as the one place that re-renders everything sized in screen
+  pixels after the view moves, and a bottom sheet that resizes the stage will need it for the same
+  reason a zoom does.
 
 ## Supersedes
 

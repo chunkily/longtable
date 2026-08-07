@@ -71,6 +71,20 @@ Reading the canvas is the standard trick — count opaque pixels on a layer, eit
 around a point (`inkAt`) or across the whole layer when the shape moves (`pingInk`, `measureInk`).
 Remember `devicePixelRatio` when indexing into `getImageData`.
 
+**Multi-touch needs raw CDP.** `page.touchscreen` is single-touch, so a pinch can't be driven from
+the ordinary API. `pinch-zoom.spec.ts` sends `Input.dispatchTouchEvent` over a
+`context.newCDPSession(page)` with two `touchPoints`, and it's the only spec that does — it is
+Chromium-only, which is fine here because the suite runs Chromium alone. Two things it gets wrong
+easily: the context needs `hasTouch: true` or the browser never dispatches touch at all and the
+calls land silently, and the move has to be sent in several steps rather than one jump, since a
+gesture handler that accumulates a ratio against the previous sample is only exercised by more
+than one sample.
+
+That spec is deliberately thin, because the arithmetic behind the gesture lives in
+`web/src/lib/pinch.ts` with unit tests. The rule generalises: when a gesture is awkward to drive,
+put the maths in a plain module so the part that has to be *correct* is the part that's cheap to
+test, and leave the spec to prove the wiring.
+
 Two helpers worth copying verbatim rather than rewriting:
 
 - `selectTool(page, name)` — clicks only if not already active, then waits for `bg-primary`.

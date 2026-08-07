@@ -1,7 +1,7 @@
 ---
 title: Room Member pinches to zoom the map on a touch device
 created: 2026-08-04
-status: incomplete
+status: done
 ---
 
 As a Room Member

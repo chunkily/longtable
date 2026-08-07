@@ -1,7 +1,7 @@
 ---
 title: Pinch to zoom the map on a touch device
 created: 2026-08-04
-status: open
+status: done
 tags: [canvas, mobile, ui]
 story: room-member-pinch-zoom-map
 ---
@@ -85,3 +85,54 @@ layout is being built for would undo most of the point, so this should land befo
 ## Related user stories
 
 - [room-member-pinch-zoom-map](../user-stories/room-member-pinch-zoom-map.md)
+
+## What shipped
+
+Two fingers on the map zoom it, anchored so the point under the hands stays under the hands, and
+clamped to the same `MIN_SCALE`/`MAX_SCALE` the wheel already respected. Two-finger panning came
+free and wasn't asked for — see below. The arithmetic is `web/src/lib/pinch.ts` with unit tests;
+`handlePinchMove` in `game-canvas.svelte` is the thin part.
+
+**Anchor on the *previous* midpoint, not the current one.** This is the whole trick and it looks
+wrong at first. Anchoring on the current midpoint makes the algebra cancel — the world point under
+the fingers is by definition already under the fingers — so sliding both hands across the glass
+scales nothing and moves nothing. Using the previous midpoint gives zoom *and* pan out of one
+expression, which is why there's no separate two-finger-pan code.
+
+**Clamping has to be applied before the anchor is computed, not after.** The position is derived
+from whatever scale actually ends up applied, so hitting a limit stops the zoom dead. Derive it
+from the unclamped scale and the map keeps sliding while the number stays put — an e2e test pins
+this, because it looks like nothing is wrong until you push past the limit.
+
+**The retraction was extracted rather than copied.** `retractInFlightGesture()` is now called both
+by `attachToolHandlers` and by the second finger landing. A pinch mid-stroke abandons the stroke
+instead of committing it: reaching to zoom shouldn't leave a line behind, and undo is a poor answer
+on a tablet.
+
+### The expensive mistake, which is a trap for anything touching `resetView`
+
+`resetView` re-rendered only the grid, which was already wrong — screen-pixel things like the
+selection ring's stroke were left sized for the old zoom. Fixing it to call the new
+`applyViewChange()` broke **26 specs**, and not visibly: no exception, no console error, selection
+simply stopped working.
+
+`resetView` is called from inside `render()`'s `$effect`, before its first `await` — so it sits in
+the window Svelte collects dependencies in, and `applyViewChange` reaches `selectedTokenId`
+through `renderSelection`. The map effect gained a dependency on the selection, clicking a token
+rebuilt the map, and the two fought. `untrack(applyViewChange)` is the fix and the comment there
+says why. Anything else called from inside `render()`'s synchronous window that reads state
+belonging to another effect needs the same treatment; `canvas.md` now records it.
+
+### Decisions made along the way
+
+- **Pinch works with a tool active**, rather than being ignored while one is. Requiring a tool
+  switch to zoom on the device the tool is hardest to use on defeats the point.
+- **Double-tap to reset the view wasn't built.** The item flagged it as separate and it stayed
+  separate; "Reset view" is still a button.
+- `Konva.hitOnDragEnabled` and `captureTouchEventsEnabled` were **not** needed. The handler reads
+  `e.evt.touches` off the raw event rather than going through Konva's single-pointer helpers, so
+  the multi-touch caveats in Konva's own recipe don't apply. Left at their defaults deliberately —
+  they're global and affect hit-testing cost everywhere.
+- The e2e spec is the suite's first use of raw CDP (`Input.dispatchTouchEvent`), because
+  `page.touchscreen` is single-touch. All three of its tests were confirmed to fail against the
+  unfixed code before being kept.
