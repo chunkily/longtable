@@ -313,7 +313,7 @@
 	}
 </script>
 
-<svelte:head><title>Assets — {session?.roomName ?? slug}</title></svelte:head>
+<svelte:head><title>Assets — {session?.roomName ?? slug} — Longtable</title></svelte:head>
 
 <div class="mx-auto flex max-w-4xl flex-col gap-6 p-6">
 	<header class="flex flex-wrap items-baseline gap-x-3 gap-y-1">

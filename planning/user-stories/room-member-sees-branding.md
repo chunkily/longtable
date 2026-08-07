@@ -1,7 +1,7 @@
 ---
 title: Room Member sees branded favicon and title
 created: 2026-07-29
-status: incomplete
+status: done
 ---
 
 As a Room Member

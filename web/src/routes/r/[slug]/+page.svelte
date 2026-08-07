@@ -262,6 +262,8 @@
 	const showStrip = $derived(familyHasStrip(familyOf(activeTool)));
 </script>
 
+<svelte:head><title>{session?.roomName ?? seatsRoomName ?? slug} — Longtable</title></svelte:head>
+
 <svelte:window onkeydown={handleKeydown} />
 
 {#if !session || !client}
