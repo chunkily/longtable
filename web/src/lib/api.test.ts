@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { assetUrl, createRoom, listRooms } from './api';
+import { assetUrl, createRoom, listRoomAssets } from './api';
 
 function jsonResponse(status: number, body: unknown) {
 	return {
@@ -9,7 +9,7 @@ function jsonResponse(status: number, body: unknown) {
 	} as Response;
 }
 
-describe('apiFetch (via listRooms/createRoom)', () => {
+describe('apiFetch (via listRoomAssets/createRoom)', () => {
 	afterEach(() => {
 		vi.unstubAllGlobals();
 	});
@@ -17,13 +17,11 @@ describe('apiFetch (via listRooms/createRoom)', () => {
 	it('resolves with the parsed JSON body on success', async () => {
 		vi.stubGlobal(
 			'fetch',
-			vi
-				.fn()
-				.mockResolvedValue(jsonResponse(200, [{ slug: 'abc', name: 'Room', createdAt: 'now' }]))
+			vi.fn().mockResolvedValue(jsonResponse(200, [{ id: 'abc', name: 'Goblin' }]))
 		);
 
-		const rooms = await listRooms();
-		expect(rooms).toEqual([{ slug: 'abc', name: 'Room', createdAt: 'now' }]);
+		const assets = await listRoomAssets('7wdbtb', 'token');
+		expect(assets).toEqual([{ id: 'abc', name: 'Goblin' }]);
 	});
 
 	it('throws with the server-provided error message on a non-ok response', async () => {
@@ -47,7 +45,9 @@ describe('apiFetch (via listRooms/createRoom)', () => {
 			} as unknown as Response)
 		);
 
-		await expect(listRooms()).rejects.toThrow('request failed with status 500');
+		await expect(listRoomAssets('7wdbtb', 'token')).rejects.toThrow(
+			'request failed with status 500'
+		);
 	});
 });
 

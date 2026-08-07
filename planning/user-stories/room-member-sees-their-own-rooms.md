@@ -1,7 +1,7 @@
 ---
 title: Room Member sees their own rooms on the home page
 created: 2026-08-05
-status: incomplete
+status: done
 ---
 
 As a Room Member

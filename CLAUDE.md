@@ -38,7 +38,11 @@ authoritative; the client never writes to the database.
 ## Where things stand
 
 Working today: rooms with a GM password and player join (the generated join slug is re-rolled if
-it happens to spell something offensive), scenes built from an uploaded map or a
+it happens to spell something offensive). **Rooms are not listed anywhere** — the home page shows
+only the rooms this browser holds a session for, newest first, with a box to paste an invite link
+or bare code into; there is no server endpoint that enumerates rooms, and `longtable room list` is
+the only way to see them all, which is the Host's job and needs the database file. Scenes built
+from an uploaded map or a
 picked library asset and managed from a picker (switch, delete, swap the map under one),
 tokens (GM creates and edits them with the same set of fields either way — name, art, size, owner,
 visibility — and deletes, anyone drags, hidden ones

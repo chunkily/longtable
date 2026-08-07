@@ -29,7 +29,13 @@ func NewRouter(s *store.Store, hub *ws.Hub, blobs *blobstore.Store, frontend fs.
 		w.Write([]byte("ok"))
 	})
 
-	mux.HandleFunc("GET /api/rooms", srv.listRooms)
+	// Deliberately no `GET /api/rooms`. There used to be one, and the home
+	// page listed every room on the server to anyone who loaded it — which
+	// meant the names of everyone's games were readable by anyone who
+	// could reach the machine. Rooms are reached by being given their
+	// link; a browser's own list comes from its localStorage sessions.
+	// The Host's `longtable room list` still enumerates them, which is the
+	// right place for it since it needs the database file.
 	mux.HandleFunc("POST /api/rooms", srv.createRoom)
 	mux.HandleFunc("POST /api/rooms/{slug}/join", srv.joinRoom)
 	mux.HandleFunc("POST /api/rooms/{slug}/gm-login", srv.gmLogin)

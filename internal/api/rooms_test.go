@@ -3,10 +3,12 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"longtable/internal/blobstore"
@@ -218,17 +220,42 @@ func TestGMLogin_CorrectPassword(t *testing.T) {
 	}
 }
 
-func TestListRooms(t *testing.T) {
+// There is no way to ask the server what rooms exist. This used to be
+// `GET /api/rooms`, feeding a home page that listed every room to anyone
+// who loaded it — so the names of everyone's games were readable by
+// anyone who could reach the machine.
+//
+// Asserted on the room's *name* rather than on a status code, because
+// what matters is that nothing leaks: whether an unregistered method
+// falls through to the SPA route, 404s or 405s is an implementation
+// detail that could change without the property changing. Enumeration
+// lives in `longtable room list`, which needs the database file and so
+// belongs to whoever runs the server.
+func TestNoRoomEnumerationOverHTTP(t *testing.T) {
 	srv, _ := newTestServer(t)
-	createTestRoom(t, srv)
 
-	resp, err := http.Get(srv.URL + "/api/rooms")
-	if err != nil {
-		t.Fatalf("GET: %v", err)
-	}
-	var rooms []roomSummary
-	decodeJSONBody(t, resp, &rooms)
-	if len(rooms) != 1 {
-		t.Fatalf("len(rooms) = %d, want 1", len(rooms))
+	// Named distinctively rather than reusing createTestRoom's "Room",
+	// which is a common enough word to turn up in an unrelated body and
+	// fail this for the wrong reason.
+	const testRoomName = "Zarfblatt Ambush Rehearsal"
+	resp := postJSON(t, srv.URL+"/api/rooms", map[string]string{
+		"roomName": testRoomName, "gmName": "Alice", "password": "hunter2",
+	})
+	resp.Body.Close()
+
+	for _, path := range []string{"/api/rooms", "/api/rooms/"} {
+		resp, err := http.Get(srv.URL + path)
+		if err != nil {
+			t.Fatalf("GET %s: %v", path, err)
+		}
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		if strings.Contains(string(body), testRoomName) {
+			t.Fatalf("GET %s leaked the room name %q (status %d, body %q)",
+				path, testRoomName, resp.StatusCode, body)
+		}
 	}
 }

@@ -4,7 +4,7 @@
 	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
 	import { gmLogin, joinRoom, type Session } from '$lib/api';
-	import { loadSession, saveSession } from '$lib/session';
+	import { loadSession, saveSession, touchSession } from '$lib/session';
 	import { RoomClient, type Token } from '$lib/room.svelte';
 	import { DEFAULT_LINE_WIDTH_FEET, LINE_WIDTH_CHOICES_FEET, type SnapMode } from '$lib/aoe';
 	import { Button } from '$lib/components/ui/button';
@@ -116,7 +116,12 @@
 
 	onMount(() => {
 		const existing = loadSession(slug);
-		if (existing) startSession(existing);
+		if (!existing) return;
+		// Sitting back down at this table puts it at the top of the home
+		// page's list, which is what makes that list order by the game
+		// someone is actually playing.
+		touchSession(slug);
+		startSession(existing);
 	});
 
 	onDestroy(() => {

@@ -16,8 +16,21 @@ what made them look alike, and it's a symptom that means almost nothing on its o
 
 **The room-creation one was accumulated state.** `web/.e2e-data/longtable.db` was never reset, and
 had reached **1031 rooms**. The home page lists every room, and the create-room form sits under
-that list, so `openRoomAsGM`'s click on `Create room` was scrolling past a screen-height of links
-that other workers were still adding to, and now and then landing where the button had just been.
+that list.
+
+**Correction, 2026-08-07 — the trigger was right and the mechanism was wrong.** This originally
+said the click was landing where the button had just been, as the list grew under it. It isn't
+that. Filling the form *before hydration finishes* loses the values: Svelte reconciles the inputs
+back to their initial `$state('')`, the click then submits an empty form, `required` blocks it,
+and the page simply stays put. The failure snapshot that settled it shows all three fields empty
+with the previously-created room listed above them.
+
+Page size was still the trigger — 1031 rooms took long enough to hydrate that the race was lost
+regularly, and wiping the database shrank the window rather than closing it. So the fix below is
+real but incomplete, and this can come back on any page that grows. The tell is a form that
+submitted nothing rather than a click that missed: check whether the fields are empty in the
+snapshot before assuming a coordinate problem. `page.waitForLoadState('networkidle')` after
+`goto('/')` is the reliable guard when a spec fills a form immediately after loading.
 `e2e/run-backend.mjs` now wipes the database at the start of every run — at the start rather than
 the end, so a failed run's data is still there to look at. `LONGTABLE_E2E_KEEP_DB=1` opts out. A
 full run now leaves 72 rooms instead of adding to a pile.

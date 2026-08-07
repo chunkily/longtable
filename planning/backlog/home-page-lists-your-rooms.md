@@ -1,7 +1,7 @@
 ---
 title: The home page lists your rooms, not the server's
 created: 2026-08-05
-status: open
+status: done
 tags: [rooms, ui]
 story: room-member-sees-their-own-rooms
 ---
@@ -40,3 +40,43 @@ sits below an unbounded list, which reached 1031 rooms and about 26,000px — se
 ## Related user stories
 
 - [room-member-sees-their-own-rooms](../user-stories/room-member-sees-their-own-rooms.md)
+
+## What shipped
+
+The home page lists the rooms this browser has sessions for, most recently opened first, each row
+carrying the room's name, the name you go by there and whether you're its GM. Below it, a box that
+takes an invite; below that, the create form as before. `GET /api/rooms` is gone.
+
+**The design question in the item above answered itself: the session already holds the room name.**
+`sessionResponse` has carried `roomName` since rooms were first built, so neither of the two
+options — cache it at join time, or add an endpoint to resolve slugs — was needed. Worth the two
+minutes it takes to look: the plan assumed a gap that wasn't there.
+
+The one thing genuinely missing was ordering, so `saveSession` now stamps `lastOpenedAt` and the
+room page calls `touchSession` on mount. That's deliberately *not* folded into `loadSession`: the
+assets page loads a session too, and reading one isn't the same as sitting down at the table.
+
+**`GET /api/rooms` was deleted rather than filtered.** Leaving it up and hiding the UI would have
+kept the leak while making it invisible, which is worse than the honest version — the next person
+reads the page and assumes rooms are private. `store.ListRooms` stays, because
+`longtable room list` is the Host's enumeration path and needs the database file, which is the
+right bar for it.
+
+The Go test asserts on the *room name* not appearing in the response rather than on a status code.
+Whether an unregistered method falls through to the SPA route, 404s or 405s is an implementation
+detail; that nothing leaks is the property. It also names the room something distinctive, because
+the existing `createTestRoom` calls its room "Room" — common enough to appear in an unrelated body
+and pass for the wrong reason.
+
+`parseInvite` (`web/src/lib/invite.ts`) is lenient about shape and strict about the slug: a full
+URL, a path or six bare characters all work, case folded because phones capitalise the first
+letter unprompted, but the last segment has to match the slug alphabet. That alphabet is mirrored
+from `internal/store/slug.go`, which drops `0`/`o`/`1`/`l`/`i` precisely so a code read aloud isn't
+ambiguous — the two have to agree, and this is the situation that alphabet exists for.
+
+### Found in passing
+
+The room-creation e2e flake was **mis-diagnosed** when it was fixed; the trigger was right and the
+mechanism was wrong. Corrected in place in [e2e-flakes](e2e-flakes.md) — it's a hydration race that
+loses form values, not a click landing where a button used to be, and it can return on any page
+that grows enough to hydrate slowly.

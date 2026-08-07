@@ -3,12 +3,6 @@
 // the same origin; in dev, vite.config.ts proxies /api to a locally
 // running `go run ./cmd/longtable`.
 
-export interface RoomSummary {
-	slug: string;
-	name: string;
-	createdAt: string;
-}
-
 export interface Session {
 	roomSlug: string;
 	roomName: string;
@@ -85,10 +79,6 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 		throw new ApiError(body.error ?? `request failed with status ${res.status}`);
 	}
 	return res.json();
-}
-
-export function listRooms(): Promise<RoomSummary[]> {
-	return apiFetch('/api/rooms');
 }
 
 export function createRoom(roomName: string, gmName: string, password: string): Promise<Session> {

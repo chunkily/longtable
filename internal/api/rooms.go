@@ -10,12 +10,6 @@ import (
 	"longtable/internal/store"
 )
 
-type roomSummary struct {
-	Slug      string `json:"slug"`
-	Name      string `json:"name"`
-	CreatedAt string `json:"createdAt"`
-}
-
 // sessionResponse is returned by every endpoint that establishes a
 // participant session (create room, join, gm-login). The client stores
 // sessionToken and uses it both to resume this identity on a later
@@ -38,21 +32,6 @@ func toSessionResponse(room store.Room, p store.Participant) sessionResponse {
 		Role:          string(p.Role),
 		SessionToken:  p.SessionToken,
 	}
-}
-
-func (srv *Server) listRooms(w http.ResponseWriter, r *http.Request) {
-	rooms, err := srv.store.ListRooms()
-	if err != nil {
-		slog.Error("api: list rooms failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "failed to list rooms")
-		return
-	}
-
-	out := make([]roomSummary, len(rooms))
-	for i, room := range rooms {
-		out[i] = roomSummary{Slug: room.Slug, Name: room.Name, CreatedAt: room.CreatedAt}
-	}
-	writeJSON(w, http.StatusOK, out)
 }
 
 type createRoomRequest struct {
