@@ -9,22 +9,9 @@ and their defaults — once that feature is implemented.
 
 ## Getting a GM back into their room
 
-Two things go wrong often enough to deserve their own section: someone loses the link to their
-room, and someone forgets the GM password. Both are routine, and both land on you.
+Longtable was designed to be hosted and administrated by people who aren't necessarily the GMs of every room. If someone loses GM access to a room because they lost the link or forgot the password, only the host can help recover access.
 
-They land on you because running the server and running a game are separate jobs in Longtable. You
-might be a GM on your own server, but you needn't be, and the people with rooms on it might have
-no idea what a terminal is. There's deliberately no "recover my room" page in the app — anything
-that handed out room links to whoever asked would rather defeat the point of rooms not being
-listed — so when someone's locked out, you're the way back in.
-
-Be nice about it. A room link is six random characters that lived in a browser tab until something
-closed it, and a GM password gets chosen once, in the exciting five minutes before a first
-session, then not typed again for a month. Losing them is the normal outcome, not carelessness.
-Both fixes below take about ten seconds.
-
-Both subcommands take `-db` if your database isn't at the default `longtable.db`, and the flag has
-to come *before* the slug.
+Two recovery scenarios are documented here for hosts to help GMs that don't have access to the hosting machine, and each should take less than a minute to do.
 
 ### They've lost the link
 
@@ -47,8 +34,7 @@ that's quicker than either of you guessing.
 longtable room reset-password <slug>
 ```
 
-This prints a new one. You don't need the old password, and there's nothing to dig out of the
-database beforehand.
+This assigns a new randomly generated password to the room and prints it out on the screen.
 
 Do check the slug before pressing enter, though. There's no confirmation and no undo, so a typo
 here locks out a second GM who hadn't lost anything — which turns one person's small problem into
