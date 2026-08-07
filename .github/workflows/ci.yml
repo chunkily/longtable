@@ -69,9 +69,10 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - working-directory: web
         run: npm ci
-      # Same reason as the backend job: run-backend.mjs builds
-      # ./cmd/longtable, which cannot compile until web/build exists. The
-      # specs themselves are served by vite, not by this build.
+      # Same reason as the backend job: run-app.mjs builds ./cmd/longtable,
+      # which cannot compile until web/build exists. The specs are served
+      # by that binary too — run-app.mjs rebuilds the frontend itself, so
+      # this step is only here to make the first Go build possible.
       - working-directory: web
         run: npm run build
       - working-directory: web

@@ -54,15 +54,16 @@ geometry modules (grid distance, drawing hit-testing). Vitest, no browser:
 npm --prefix web run test
 ```
 
-**End-to-end** — Playwright, driving real browsers against a real server. It
-builds the Go binary and starts both the backend and the dev server itself, so
-there's nothing to start first:
+**End-to-end** — Playwright, driving real browsers against the real thing: it
+builds the frontend, builds the Go binary that embeds it, and runs that single
+binary, so the tests exercise what a Host actually starts rather than a dev
+server. Nothing to start first:
 
 ```bash
 cd web && npx playwright test
 ```
 
-The e2e suite needs ports **8080** and **5173** free, and writes to its own
+The e2e suite needs port **8080** free, and writes to its own
 scratch database under `web/.e2e-data/` (never your local `longtable.db`), which
 it wipes at the start of each run so results don't depend on what ran before. First
 run needs the browser: `npx playwright install chromium`. On Windows the first

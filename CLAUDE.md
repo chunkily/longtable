@@ -156,7 +156,7 @@ cd web && npm install && npm run build && cd .. && go build -tags nodynamic -o l
 | Frontend unit tests | `npm --prefix web run test` (vitest + jsdom) |
 | Types | `npm --prefix web run check` (svelte-check) |
 | Lint + format | `npm --prefix web run lint` (prettier check + eslint), `... run format` to fix |
-| E2E | `cd web && npx playwright test` — builds the Go binary and starts both servers itself |
+| E2E | `cd web && npx playwright test` — builds the frontend, builds the Go binary that embeds it, and tests against that one binary (not the dev server; see `testing.md`) |
 
 Scope the Go commands to `./internal/... ./cmd/...`, not `./...`: the repo root also contains
 `web/node_modules`, which the go tool would walk looking for packages. CI (`.github/workflows/ci.yml`)
@@ -165,8 +165,9 @@ Windows box, but it does run on Linux CI.
 
 ## Before touching a shared port
 
-The e2e harness binds **:8080** (Go backend) and **:5173** (vite), and other Claude sessions
-work in this same checkout. A process already on either port may well be in use — ask before
+The e2e harness binds **:8080** — the Go binary, serving the SPA it embeds; it no longer starts
+vite, so :5173 is only in play if someone is running `npm run dev` by hand. Other Claude sessions
+work in this same checkout, so a process already on either port may well be in use — ask before
 stopping anything. `npx playwright test` writes to `web/.e2e-data/longtable.db`, which it wipes at
 the start of every run — so starting a run pulls the data out from under any other session
 reading it, and what's left afterwards is the last run's alone.

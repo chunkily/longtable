@@ -64,8 +64,20 @@ tested without a Konva stage.
 ## Playwright: two browsers (`web/e2e/*.spec.ts`)
 
 For anything the DOM can't show: Konva rendering, multi-client sync, server-enforced permissions,
-disconnects. `npx playwright test` builds the Go binary and starts both servers itself (see
-`playwright.config.ts` and `e2e/run-backend.mjs`).
+disconnects. `npx playwright test` builds the frontend, builds the Go binary that embeds it, and
+runs that one binary on **:8080** (see `playwright.config.ts` and `e2e/run-app.mjs`).
+
+**The suite does not run against `npm run dev`, and putting it back would reintroduce a bug.**
+Vite discovers dependencies lazily and force-reloads every connected client when it re-optimizes
+("optimized dependencies changed. reloading"), which loses whatever a test was mid-way through.
+On a cold `node_modules/.vite` that cost exactly one failure per worker — 14 workers, 14
+failures, each a worker's *first* test — and looked like flakiness because every run after the
+first passed. Serving the built SPA from the binary removes the whole class, tests the artifact a
+Host actually runs (including the SPA fallback and same-origin `/api`/`/ws`), and is *faster*:
+~35s against ~50s. See [e2e-served-by-dev-server](../../../../planning/backlog/e2e-served-by-dev-server.md).
+
+To iterate on a failing spec with HMR, start `npm run dev` and a backend yourself and point
+Playwright at :5173 by hand — just don't make it the default again.
 
 Reading the canvas is the standard trick — count opaque pixels on a layer, either in a small box
 around a point (`inkAt`) or across the whole layer when the shape moves (`pingInk`, `measureInk`).
@@ -181,10 +193,16 @@ applying would leave a test that passes while checking nothing), and it reloads 
 what matters isn't that the client stopped throwing but that the *server accepted* what the
 fallback produced.
 
-Ports: :8080 and :5173, shared with other sessions in this checkout — ask before killing anything
-sitting on them. Runs write to `web/.e2e-data/longtable.db`, **which is wiped at the start of
-every run** (`e2e/run-backend.mjs`), so what's in there afterwards is the last run's and nobody
-else's. Set `LONGTABLE_E2E_KEEP_DB=1` to append to the previous run instead.
+Port: **:8080** only, since vite is no longer in the picture — still shared with other sessions in
+this checkout, so ask before killing anything sitting on it. Runs write to
+`web/.e2e-data/longtable.db`, **which is wiped at the start of every run** (`e2e/run-app.mjs`), so
+what's in there afterwards is the last run's and nobody else's. Set `LONGTABLE_E2E_KEEP_DB=1` to
+append to the previous run instead.
+
+One known hang survives all of this, about one run in six:
+[e2e-hang-after-token-edit](../../../../planning/backlog/e2e-hang-after-token-edit.md). Before
+calling anything else flaky, read that item — it records what has already been ruled out, and
+capping workers is one of the things that made it *worse*.
 
 **Run `npx playwright test` from inside `web/`, not the repo root.** From the root, npm's
 upward `node_modules` search can resolve a different `@playwright/test` than the one `web/`
