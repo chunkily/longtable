@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { PING_LIFETIME_MS, PING_PULSE_INTERVAL_MS } from '../src/lib/ping';
+import { openNewSceneDialog } from './room';
 
 // A ping pulses several times over a few seconds rather than flashing
 // once, so it still catches someone who glanced away at the wrong
@@ -34,7 +35,7 @@ test('a ping keeps pulsing after a single flash would have finished', async ({ p
 	await page.getByRole('button', { name: 'Create room' }).click();
 
 	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
-	await page.getByRole('button', { name: 'New scene' }).click();
+	await openNewSceneDialog(page);
 	await page.getByLabel('Name').fill('Map');
 	await page.getByRole('button', { name: 'Create scene' }).click();
 	await expect(page.locator('canvas').first()).toBeVisible();

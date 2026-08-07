@@ -1,4 +1,5 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
+import { TOOLBAR_CLEARANCE_Y, mapGestureOrigin, openNewSceneDialog, selectTool } from './room';
 
 // Area templates are the measuring tool's gesture wearing a different
 // shape: ephemeral, one per participant, gone when the drag ends. None
@@ -31,27 +32,6 @@ async function measureInk(page: Page): Promise<number> {
 	}, MEASURE_LAYER);
 }
 
-// Re-read after every tool change, never cached across one. Selecting a
-// template tool reveals the snap/width controls above the map, which
-// pushes the canvas down — a stale origin silently shifts every drag,
-// and with snapping on, a short drag can round both ends onto the same
-// intersection and draw nothing at all.
-async function canvasOrigin(page: Page): Promise<{ x: number; y: number }> {
-	const box = await page.locator('canvas').first().boundingBox();
-	if (!box) throw new Error('canvas has no bounding box');
-	return { x: box.x, y: box.y };
-}
-
-// The active styling is the observable signal that the canvas has
-// rebound its pointer handlers, so a drag started after it can't land on
-// the previous tool.
-async function selectTool(page: Page, name: string) {
-	const button = page.getByRole('button', { name, exact: true });
-	const alreadyActive = await button.evaluate((el) => el.className.includes('bg-primary'));
-	if (!alreadyActive) await button.click();
-	await expect(button).toHaveClass(/bg-primary/);
-}
-
 async function openRoomAsGM(browser: Browser, roomName: string) {
 	const context = await browser.newContext();
 	const page = await context.newPage();
@@ -64,7 +44,7 @@ async function openRoomAsGM(browser: Browser, roomName: string) {
 	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
 	const slug = new URL(page.url()).pathname.split('/').pop()!;
 
-	await page.getByRole('button', { name: 'New scene' }).click();
+	await openNewSceneDialog(page);
 	await page.getByLabel('Name').fill('Map');
 	await page.getByRole('button', { name: 'Create scene' }).click();
 	await expect(page.locator('canvas').first()).toBeVisible();
@@ -104,7 +84,7 @@ test('a template is on everyone else’s map while it is dragged, and gone after
 	expect(await measureInk(player.page)).toBe(0);
 
 	await selectTool(gm.page, 'Cone template');
-	const origin = await canvasOrigin(gm.page);
+	const origin = await mapGestureOrigin(gm.page);
 	await dragTemplate(gm.page, origin);
 
 	// Mid-drag: the point of the whole feature is that the rest of the
@@ -134,7 +114,7 @@ test('each template shape draws a different area for the same drag', async ({ br
 	const ink: Record<string, number> = {};
 	for (const tool of ['Circle template', 'Cone template', 'Line template', 'Cube template']) {
 		await selectTool(gm.page, tool);
-		const origin = await canvasOrigin(gm.page);
+		const origin = await mapGestureOrigin(gm.page);
 		await dragTemplate(gm.page, origin);
 		await expect.poll(() => measureInk(gm.page)).toBeGreaterThan(0);
 		ink[tool] = await measureInk(gm.page);
@@ -155,7 +135,7 @@ test('a line template redraws wider when its width is changed', async ({ browser
 	const gm = await openRoomAsGM(browser, 'Template Line Width');
 
 	await selectTool(gm.page, 'Line template');
-	await dragTemplate(gm.page, await canvasOrigin(gm.page));
+	await dragTemplate(gm.page, await mapGestureOrigin(gm.page));
 	await expect.poll(() => measureInk(gm.page)).toBeGreaterThan(0);
 	const atDefaultWidth = await measureInk(gm.page);
 	await gm.page.mouse.up();
@@ -163,7 +143,7 @@ test('a line template redraws wider when its width is changed', async ({ browser
 	// Width is the one part of a Line a drag can't express, so it comes
 	// from a control rather than the gesture.
 	await gm.page.getByRole('button', { name: '20 foot wide line' }).click();
-	await dragTemplate(gm.page, await canvasOrigin(gm.page));
+	await dragTemplate(gm.page, await mapGestureOrigin(gm.page));
 	await expect.poll(() => measureInk(gm.page)).toBeGreaterThan(atDefaultWidth);
 	await gm.page.mouse.up();
 
@@ -207,12 +187,15 @@ test('snapping moves where a template lands without changing the drag', async ({
 				for (let i = 3; i < data.length; i += 4) if (data[i] > 200) opaque++;
 				return opaque;
 			},
-			{ layer: MEASURE_LAYER, x: offGrid.x, y: offGrid.y }
+			// The drag below is measured from mapGestureOrigin, which starts
+			// below the floating toolbar; the canvas's pixel buffer starts at
+			// its true corner, so the clearance goes back on here.
+			{ layer: MEASURE_LAYER, x: offGrid.x, y: offGrid.y + TOOLBAR_CLEARANCE_Y }
 		);
 	}
 
 	async function dragFromOffGrid(): Promise<number> {
-		const origin = await canvasOrigin(gm.page);
+		const origin = await mapGestureOrigin(gm.page);
 		await gm.page.mouse.move(origin.x + offGrid.x, origin.y + offGrid.y);
 		await gm.page.mouse.down();
 		await gm.page.mouse.move(origin.x + TO.x, origin.y + TO.y, { steps: 6 });

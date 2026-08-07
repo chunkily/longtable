@@ -14,12 +14,12 @@
 		type TemplateKind
 	} from '$lib/aoe';
 	import { cellAt, cellCentre, measureLabel } from '$lib/measure';
+	import type { Tool } from '$lib/tool-family';
 	import { pinchStep, touchCentre, touchDistance, type Point } from '$lib/pinch';
 	import { PING_PULSES, PING_PULSE_INTERVAL_MS, PING_PULSE_SECONDS } from '$lib/ping';
 	import { setTrackers, trackerText } from '$lib/room.svelte';
 	import type {
 		Drawing,
-		DrawingKind,
 		DrawingPoint,
 		Measurement,
 		Ping,
@@ -27,21 +27,10 @@
 		Token
 	} from '$lib/room.svelte';
 
-	// 'none' is plain pan/token-drag mode. Every other tool takes over
-	// the stage's pointer handling exclusively — only one can be active
-	// at a time, since they all interpret a left-drag differently.
-	export type Tool =
-		| 'none'
-		| 'fog-reveal'
-		| 'fog-hide'
-		| DrawingKind
-		| 'ping'
-		| 'eraser'
-		| 'measure'
-		| 'template-circle'
-		| 'template-cone'
-		| 'template-line'
-		| 'template-cube';
+	// The tool union lives in $lib/tool-family alongside the rules for
+	// grouping it into the toolbar's five families — the canvas only cares
+	// which tool is active, never how the toolbar arranges them. Import
+	// the type from there rather than from this component.
 
 	// The area templates and the shape each drags out. They share the
 	// measuring tool's whole gesture — one per participant, thrown away
@@ -256,11 +245,18 @@
 		// for held gestures.
 		stage.on('mouseleave', () => (hoveredTokenId = null));
 
+		// applyViewChange rather than renderGrid alone: the stage now fills
+		// the window, so it resizes for reasons that aren't a window drag —
+		// the mobile sheet opening, the contextual strip appearing under
+		// the toolbar. Those move the viewport over the world exactly as a
+		// pan does, and everything authored in screen pixels has to be
+		// re-rendered afterwards or it keeps the size it was given for the
+		// old box. Same contract a zoom follows; see canvas.md.
 		resizeObserver = new ResizeObserver(() => {
 			if (!stage) return;
 			stage.width(container.clientWidth);
 			stage.height(container.clientHeight);
-			renderGrid();
+			applyViewChange();
 		});
 		resizeObserver.observe(container);
 
@@ -1848,6 +1844,32 @@
 		}
 
 		tokenLayer.batchDraw();
+
+		// The rebuild above destroyed every group, and Konva's idea of what
+		// the pointer is over went with them: the old group can't fire
+		// mouseleave because it no longer exists, and the new one fires no
+		// mouseenter because the pointer never moved. Left alone,
+		// hoveredTokenId keeps whatever it had — so a card could outlive the
+		// pointer resting on its token, and moving away would never clear it.
+		// Re-deriving it from where the pointer actually is fixes both
+		// directions at once.
+		//
+		// This only shows up when the pointer stays *inside* the stage: the
+		// stage's own mouseleave used to paper over it, which is why it went
+		// unnoticed until the map filled the window and there was much less
+		// outside to move to.
+		syncHoverToPointer();
+	}
+
+	// The token under the pointer right now, or null. Reads the layer
+	// rather than the tokens array, so it agrees with what Konva would
+	// dispatch a mouse event to — including a token hidden behind another.
+	function syncHoverToPointer() {
+		const pointer = stage?.getPointerPosition();
+		if (!pointer) return;
+		const hit = tokenLayer.getIntersection(pointer);
+		const group = hit?.findAncestor('.token', true) as Konva.Group | undefined;
+		hoveredTokenId = (group?.getAttr('tokenId') as string | undefined) ?? null;
 	}
 
 	function addTokenImage(group: Konva.Group, img: HTMLImageElement, w: number, h: number) {
@@ -1877,7 +1899,9 @@
 	}
 </script>
 
-<div
-	bind:this={container}
-	class="h-[70vh] min-h-[480px] w-full overflow-hidden rounded-md border bg-muted"
-></div>
+<!-- Fills whatever box the room page gives it, which since the
+     full-bleed layout is the whole window. No border or rounding: there
+     is no card around the map any more, and a 1px edge on a stage that
+     reaches every side of the screen only ever reads as a rendering
+     artefact. -->
+<div bind:this={container} class="h-full w-full overflow-hidden bg-muted"></div>

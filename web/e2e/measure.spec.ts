@@ -1,4 +1,5 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
+import { mapGestureOrigin, openNewSceneDialog, selectTool } from './room';
 
 // A measurement exists only while someone is dragging it out, and it has
 // to be on everyone's map for those few seconds — neither half of that
@@ -26,22 +27,6 @@ async function measureInk(page: Page): Promise<number> {
 	}, MEASURE_LAYER);
 }
 
-async function canvasOrigin(page: Page): Promise<{ x: number; y: number }> {
-	const box = await page.locator('canvas').first().boundingBox();
-	if (!box) throw new Error('canvas has no bounding box');
-	return { x: box.x, y: box.y };
-}
-
-// See drawing-eraser.spec.ts: the active styling is the observable
-// signal that the canvas has rebound its pointer handlers to the new
-// tool, so a drag started after it can't land on the old one.
-async function selectTool(page: Page, name: string) {
-	const button = page.getByRole('button', { name, exact: true });
-	const alreadyActive = await button.evaluate((el) => el.className.includes('bg-primary'));
-	if (!alreadyActive) await button.click();
-	await expect(button).toHaveClass(/bg-primary/);
-}
-
 async function openRoomAsGM(browser: Browser, roomName: string) {
 	const context = await browser.newContext();
 	const page = await context.newPage();
@@ -55,7 +40,7 @@ async function openRoomAsGM(browser: Browser, roomName: string) {
 	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
 	const slug = new URL(page.url()).pathname.split('/').pop()!;
 
-	await page.getByRole('button', { name: 'New scene' }).click();
+	await openNewSceneDialog(page);
 	await page.getByLabel('Name').fill('Map');
 	await page.getByRole('button', { name: 'Create scene' }).click();
 	await expect(page.locator('canvas').first()).toBeVisible();
@@ -85,8 +70,8 @@ test('a measurement is shared while it is dragged and gone once it ends', async 
 	const gm = await openRoomAsGM(browser, 'Measure');
 	const player = await joinRoomAsPlayer(browser, gm.slug);
 
-	await selectTool(gm.page, 'Measure');
-	const origin = await canvasOrigin(gm.page);
+	await selectTool(gm.page, 'Distance');
+	const origin = await mapGestureOrigin(gm.page);
 	await gm.page.mouse.move(origin.x + MEASURE_FROM.x, origin.y + MEASURE_FROM.y);
 	await gm.page.mouse.down();
 	await gm.page.mouse.move(origin.x + MEASURE_TO.x, origin.y + MEASURE_TO.y, { steps: 8 });
@@ -117,8 +102,8 @@ test("a measurer's line is cleared when they disconnect mid-drag", async ({ brow
 	const gm = await openRoomAsGM(browser, 'Measure Drop');
 	const player = await joinRoomAsPlayer(browser, gm.slug);
 
-	await selectTool(gm.page, 'Measure');
-	const origin = await canvasOrigin(gm.page);
+	await selectTool(gm.page, 'Distance');
+	const origin = await mapGestureOrigin(gm.page);
 	await gm.page.mouse.move(origin.x + MEASURE_FROM.x, origin.y + MEASURE_FROM.y);
 	await gm.page.mouse.down();
 	await gm.page.mouse.move(origin.x + MEASURE_TO.x, origin.y + MEASURE_TO.y, { steps: 8 });

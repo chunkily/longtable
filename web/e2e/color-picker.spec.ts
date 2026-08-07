@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { openNewSceneDialog, selectToolFamily } from './room';
 
 // The selected colour used to be visible only as pixels, which meant
 // nothing could assert it and a screen reader couldn't report it. It is
@@ -12,10 +13,14 @@ async function createRoomWithScene(page: Page) {
 	await page.getByRole('button', { name: 'Create room' }).click();
 
 	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
-	await page.getByRole('button', { name: 'New scene' }).click();
+	await openNewSceneDialog(page);
 	await page.getByLabel('Name').fill('Map');
 	await page.getByRole('button', { name: 'Create scene' }).click();
 	await expect(page.locator('canvas').first()).toBeVisible();
+
+	// The swatches live on the draw family's contextual strip, so they
+	// don't exist until the family is open.
+	await selectToolFamily(page, 'Draw');
 }
 
 const swatch = (page: Page, label: string) =>

@@ -17,6 +17,16 @@ changes — it's the same content in the same region, reached a different way �
 lands first decides whether this item builds a temporary home for the tracker or drops straight
 into the new one.
 
+**That's settled: the layout landed first (2026-08-07), so the home already exists.** The rail's
+second panel is an `initiativePanel` snippet in `web/src/routes/r/[slug]/+page.svelte` that
+currently says the tracker isn't built yet, reached by the Swords icon at the foot of the panel.
+Replacing that snippet's body is the whole of the UI surface — the switcher, the mobile sheet copy
+and the "switching panels doesn't lose state" behaviour are all done and tested. Both panels stay
+mounted and are hidden with CSS rather than swapped out, deliberately, so whatever the tracker
+holds survives a trip to chat and back without needing to be lifted into page state.
+[room-member-room-side-panel](../user-stories/room-member-room-side-panel.md) is `incomplete`
+naming this item as the reason.
+
 [token-selection-highlight](token-selection-highlight.md) has **shipped** everything
 except its last checkbox — clicking a tracker entry to select its linked token — which is waiting
 on this item and is a one-liner once entries exist: set `selectedTokenId`, the `$bindable` prop

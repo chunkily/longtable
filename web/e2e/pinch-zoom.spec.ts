@@ -1,4 +1,5 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
+import { openNewSceneDialog, selectTool } from './room';
 
 // Pinch-to-zoom on a touch device — the one gesture the map was missing,
 // and the reason it was unusable on the tablet people actually bring to
@@ -89,7 +90,7 @@ async function openRoomAsGM(browser: Browser, roomName: string) {
 	await page.getByRole('button', { name: 'Create room' }).click();
 	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
 
-	await page.getByRole('button', { name: 'New scene' }).click();
+	await openNewSceneDialog(page);
 	await page.getByLabel('Name').fill('Map');
 	await page.getByRole('button', { name: 'Create scene' }).click();
 	await expect(page.locator('canvas').first()).toBeVisible();
@@ -205,7 +206,7 @@ test('a pinch started mid-stroke abandons it instead of drawing', async ({ brows
 	const box = await canvasBox(page);
 	const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 
-	await page.getByRole('button', { name: 'Freehand' }).click();
+	await selectTool(page, 'Freehand');
 
 	const client = await page.context().newCDPSession(page);
 	// One finger down and moving: a stroke is now in progress.

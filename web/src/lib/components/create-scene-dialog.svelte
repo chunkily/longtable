@@ -8,13 +8,24 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import AssetPicker from '$lib/components/asset-picker.svelte';
 
+	// `open` is bindable and `trigger` optional so this can be opened from
+	// somewhere that isn't a button of its own — the Scenes dialog offers
+	// New scene from inside itself now that neither is on the toolbar, and
+	// a trigger rendered there would be a button inside a dialog opening a
+	// second dialog over it.
 	let {
 		room,
 		roomSlug,
-		sessionToken
-	}: { room: RoomClient; roomSlug: string; sessionToken: string } = $props();
-
-	let open = $state(false);
+		sessionToken,
+		open = $bindable(false),
+		trigger = true
+	}: {
+		room: RoomClient;
+		roomSlug: string;
+		sessionToken: string;
+		open?: boolean;
+		trigger?: boolean;
+	} = $props();
 	let name = $state('');
 	let gridSize = $state(70);
 	let width = $state(1400);
@@ -65,11 +76,13 @@
 </script>
 
 <Dialog.Root bind:open>
-	<Dialog.Trigger>
-		{#snippet child({ props })}
-			<Button {...props} variant="outline">New scene</Button>
-		{/snippet}
-	</Dialog.Trigger>
+	{#if trigger}
+		<Dialog.Trigger>
+			{#snippet child({ props })}
+				<Button {...props} variant="outline">New scene</Button>
+			{/snippet}
+		</Dialog.Trigger>
+	{/if}
 	<Dialog.Content>
 		<Dialog.Header>
 			<Dialog.Title>New scene</Dialog.Title>

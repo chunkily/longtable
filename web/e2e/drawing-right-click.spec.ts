@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { mapGestureOrigin, openNewSceneDialog, selectTool } from './room';
 
 // Right-dragging used to drive every tool exactly as a left-drag does,
 // because Konva reports all mouse buttons through the same
@@ -47,28 +48,13 @@ async function layerAlpha(page: Page, layer: number): Promise<number> {
 	}, layer);
 }
 
-async function canvasOrigin(page: Page) {
-	const box = await page.locator('canvas').first().boundingBox();
-	if (!box) throw new Error('canvas has no bounding box');
-	return { x: box.x, y: box.y };
-}
-
-async function selectTool(page: Page, name: string) {
-	const button = page.getByRole('button', { name, exact: true });
-	const alreadyActive = await button.evaluate((el) => el.className.includes('bg-primary'));
-	if (!alreadyActive) await button.click();
-	await expect(button).toHaveClass(/bg-primary/);
-}
-
-// The fog button relabels itself rather than just restyling, so the
-// shared selectTool can't wait on it — its locator stops matching the
-// moment the tool becomes active. Waiting on the new label is what proves
-// the switch happened, and the wait matters: handlers are rebound in an
-// effect, so a drag in the same tick still lands on the previous tool.
-async function selectFogTool(page: Page) {
-	await page.getByRole('button', { name: 'Reveal fog', exact: true }).click();
-	await expect(page.getByRole('button', { name: 'Painting fog…', exact: true })).toBeVisible();
-}
+// The fog button used to relabel itself rather than just restyling, so
+// the shared selectTool couldn't wait on it. Since the full-bleed layout
+// it's an icon on the fog family's strip with a stable name, so the
+// shared helper handles it — and still does the waiting that matters,
+// since handlers are rebound in an effect and a drag in the same tick
+// would otherwise land on the previous tool.
+const selectFogTool = (page: Page) => selectTool(page, 'Reveal fog');
 
 async function createRoomWithScene(page: Page, name: string) {
 	await page.goto('/');
@@ -78,7 +64,7 @@ async function createRoomWithScene(page: Page, name: string) {
 	await page.getByRole('button', { name: 'Create room' }).click();
 	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
 
-	await page.getByRole('button', { name: 'New scene' }).click();
+	await openNewSceneDialog(page);
 	await page.getByLabel('Name').fill('Map');
 	await page.getByRole('button', { name: 'Create scene' }).click();
 	await expect(page.locator('canvas').first()).toBeVisible();
@@ -100,7 +86,7 @@ for (const tool of ['Freehand', 'Line', 'Rectangle', 'Ellipse']) {
 	test(`right-dragging with the ${tool} tool neither draws nor previews`, async ({ page }) => {
 		await createRoomWithScene(page, `RightClick ${tool}`);
 		await selectTool(page, tool);
-		const origin = await canvasOrigin(page);
+		const origin = await mapGestureOrigin(page);
 
 		// The same pointer path with no button held. Freehand paints a
 		// cursor ring on the preview layer showing how wide the line will
@@ -135,7 +121,7 @@ test('releasing the right button mid-stroke does not commit the left-button draw
 }) => {
 	await createRoomWithScene(page, 'RightClick Mid');
 	await selectTool(page, 'Line');
-	const origin = await canvasOrigin(page);
+	const origin = await mapGestureOrigin(page);
 
 	await page.mouse.move(origin.x + FROM.x, origin.y + FROM.y);
 	await page.mouse.down();
@@ -156,7 +142,7 @@ test('releasing the right button mid-stroke does not commit the left-button draw
 
 test('right-dragging the eraser leaves the stroke alone', async ({ page }) => {
 	await createRoomWithScene(page, 'RightClick Erase');
-	const origin = await canvasOrigin(page);
+	const origin = await mapGestureOrigin(page);
 
 	await selectTool(page, 'Line');
 	await dragWith(page, 'left', origin);
@@ -176,7 +162,7 @@ test('right-dragging the eraser leaves the stroke alone', async ({ page }) => {
 
 test('right-dragging the fog tool reveals nothing', async ({ page }) => {
 	await createRoomWithScene(page, 'RightClick Fog');
-	const origin = await canvasOrigin(page);
+	const origin = await mapGestureOrigin(page);
 
 	await selectFogTool(page);
 	// Fog starts as a cover over the scene, and revealing takes alpha out
@@ -196,7 +182,7 @@ test('right-dragging the fog tool reveals nothing', async ({ page }) => {
 test('right-clicking the ping tool sends no ping', async ({ page }) => {
 	await createRoomWithScene(page, 'RightClick Ping');
 	await selectTool(page, 'Ping');
-	const origin = await canvasOrigin(page);
+	const origin = await mapGestureOrigin(page);
 
 	await page.mouse.move(origin.x + FROM.x, origin.y + FROM.y);
 	await page.mouse.down({ button: 'right' });
@@ -211,8 +197,8 @@ test('right-clicking the ping tool sends no ping', async ({ page }) => {
 
 test('right-dragging the measure tool measures nothing', async ({ page }) => {
 	await createRoomWithScene(page, 'RightClick Measure');
-	await selectTool(page, 'Measure');
-	const origin = await canvasOrigin(page);
+	await selectTool(page, 'Distance');
+	const origin = await mapGestureOrigin(page);
 
 	await page.mouse.move(origin.x + FROM.x, origin.y + FROM.y);
 	await page.mouse.down({ button: 'right' });

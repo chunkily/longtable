@@ -1,7 +1,7 @@
 ---
 title: Room Member picks tools from a small set, not a wall of them
 created: 2026-08-04
-status: incomplete
+status: done
 ---
 
 As a Room Member

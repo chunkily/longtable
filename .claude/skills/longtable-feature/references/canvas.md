@@ -44,10 +44,22 @@ harmless; the separation is what keeps a stroke from forcing a token re-render.
 ## Tools
 
 `Tool` is `'none' | 'fog-reveal' | 'fog-hide' | DrawingKind | 'ping' | 'eraser' | 'measure' |
-'template-circle' | 'template-cone' | 'template-line' | 'template-cube'`.
-`'none'` is plain pan/token-drag; every other tool takes the stage's pointer exclusively, because
-they all interpret a left-drag differently. The toolbar lives in
-`web/src/routes/r/[slug]/+page.svelte` and toggles — clicking the active tool returns to `'none'`.
+'template-circle' | 'template-cone' | 'template-line' | 'template-cube'`, and lives in
+`web/src/lib/tool-family.ts` rather than in the canvas — the canvas only cares which tool is
+active, never how the toolbar arranges them. `'none'` is plain pan/token-drag; every other tool
+takes the stage's pointer exclusively, because they all interpret a left-drag differently.
+
+The toolbar (`$lib/components/map-toolbar.svelte`) shows **five families** — hand, draw, measure,
+fog, ping — and the active family's variants and settings go on a contextual strip
+(`$lib/components/tool-strip.svelte`) that the room page places separately: floating under the
+tool row on a desktop, docked into the bottom sheet on a phone. `'none'` *is* the hand, so the
+family is **derived** from the active tool (`familyOf`) rather than stored beside it — two pieces
+of state could disagree, and there is no question the pair answers that the tool can't answer
+alone.
+
+Neither family nor variant buttons toggle any more: the Hand is how you stop, so a second click on
+the active family would be a surprising second way to do the same thing. `toolForFamily` remembers
+what each family was last left on, so returning to Draw puts back the shape you were using.
 
 The two fog tools share one branch in `attachToolHandlers`: same sweep over the same cells,
 differing only in which command the gesture ends with and the colour it previews in. Only
@@ -59,17 +71,27 @@ click anywhere on the map.
 
 The four area templates share the *measuring tool's* branch, since they are the same gesture with
 a different shape on the wire (see `$lib/aoe`, and its header comment on why nothing highlights
-the squares a template covers). Their options — snap mode, and a Line's width — live in a row
-that only appears while a template tool is active.
+the squares a template covers). Their options — snap mode, and a Line's width — sit on the measure
+family's strip and appear only once a template is chosen, since neither applies to the plain
+ruler. The ruler's own button is labelled **Distance**, not Measure: the family button is already
+called Measure, and two controls with the same accessible name in one view is ambiguous to a
+screen reader and a test runner alike.
 
 The two ends of a template drag are treated differently, and only for templates. The **origin**
 obeys the snap mode; the **far end** is not snapped but quantised — its direction is taken as
 dragged and its length rounded to the nearest 5 ft, because every printed area is a multiple of
 5. Snapping the far end as well would only coarsen the direction, and the quantise would move it
 off the grid regardless. Note snapping the origin alone never fixed this: a one-square diagonal
-between two corners is 5·√2 ≈ 7.07 ft. Note that row changes the page height, which
-moves the canvas: an e2e spec must re-read `canvasOrigin` after selecting a template tool, or
-every drag it makes is silently offset.
+between two corners is 5·√2 ≈ 7.07 ft.
+
+Since the full-bleed layout the canvas fills the window, so the toolbar and its strip **float over
+the map's top-left corner** — roughly the first 380×110px belongs to the toolbar, not the map. A
+pointer gesture starting inside that lands on a button, which reads as "drawing silently stopped
+working" rather than as a mis-aimed test. `e2e/room.ts` exports `mapGestureOrigin` (the canvas
+corner plus `TOOLBAR_CLEARANCE_Y`) for exactly this; a spec that *also* probes pixels has to add
+the same clearance back on, because the canvas's own buffer still starts at its true corner. The
+strip no longer changes the page height — it floats — so a spec doesn't have to re-read the origin
+after picking a template.
 
 **Anything a handler needs from a prop has to be read in `attachToolHandlers` itself, not inside
 the handler closure.** The function runs inside the `$effect` that rebinds handlers, so only what
@@ -127,10 +149,14 @@ is the deliberate exception — it must end a held gesture whatever the buttons 
 helper tests "is a `MouseEvent` *and* not button 0" rather than `button !== 0`, because
 `TouchEvent` has no `button` at all and the shorter spelling rejects every touch.
 
-Adding a tool: extend the `Tool` union, add a branch in `attachToolHandlers`, add a toolbar button
-with a distinct `aria-label` (the e2e helpers select by accessible name, and assert the active
-styling `bg-primary` before dragging — the rebinding happens in an effect, so a click in the same
-tick can land on the old tool). The rubber-band drawing branch at the end of `attachToolHandlers`
+Adding a tool: extend the `Tool` union in `$lib/tool-family.ts`, put it in a family there (and in
+`DRAW_TOOLS`/`MEASURE_TOOLS`/`FOG_TOOLS` if it belongs to one), add a branch in
+`attachToolHandlers`, and add a button to that family's strip in `tool-strip.svelte` with a
+**distinct** `aria-label` — distinct from the family names too, which is why the ruler is
+`Distance`. The e2e helpers select by accessible name and assert the active styling `bg-primary`
+before dragging, since the rebinding happens in an effect and a click in the same tick can land on
+the old tool; teach `TOOL_FAMILY` in `e2e/room.ts` which family the new tool sits under or
+`selectTool` won't find it. The rubber-band drawing branch at the end of `attachToolHandlers`
 now names `line`/`rect`/`ellipse` explicitly instead of taking whatever is left over: as a
 fall-through, a tool added above without its own branch silently became a drawing tool.
 
@@ -143,8 +169,12 @@ eraser's reach, measurement dashes and label text all do this.
 The consequence: **a zoom changes what those values mean, so it has to re-render them.** That
 whole set lives in **`applyViewChange()`** — `renderGrid`, `renderMeasurements`,
 `renderSelection`, `renderHoverCard`, `refreshCursorOverlay` — and every path that alters the
-stage's scale or position calls it: `handleWheel`, the pinch handler, and `resetView`. A new
-screen-sized overlay gets a line in there, or it silently mis-sizes after the first zoom.
+stage's scale or position calls it: `handleWheel`, the pinch handler, `resetView`, **and the
+`ResizeObserver`**. The observer is on that list since the full-bleed layout: the stage now fills
+the window, so it resizes for reasons that aren't a window drag — the mobile sheet opening, the
+contextual strip appearing — and each of those moves the viewport over the world exactly as a pan
+does. A new screen-sized overlay gets a line in there, or it silently mis-sizes after the first
+zoom.
 
 **`resetView` calls it through `untrack()`, and that matters.** `resetView` runs inside
 `render()`'s effect (on a scene change) *before* its first await, so the reads inside

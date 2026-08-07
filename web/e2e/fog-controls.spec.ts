@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Browser } from '@playwright/test';
+import { mapGestureOrigin, openNewSceneDialog, selectTool, selectToolFamily } from './room';
 
 // Fog beyond revealing: re-hiding a square, wiping a scene back to fully
 // covered, and uncovering it all at once. Every assertion here is made
@@ -28,25 +29,16 @@ async function fogAlpha(page: Page): Promise<number> {
 	}, FOG_LAYER);
 }
 
-async function canvasOrigin(page: Page) {
-	const box = await page.locator('canvas').first().boundingBox();
-	if (!box) throw new Error('canvas has no bounding box');
-	return { x: box.x, y: box.y };
-}
-
-// Both fog tools relabel themselves while active rather than only
-// restyling, so the shared selectTool helper in the other specs can't
-// wait on them — the locator it clicked stops matching the moment the
-// tool goes live. Waiting on the new label is what proves the switch
-// landed, and the wait matters: tool handlers are rebound in an effect,
-// so a drag issued in the same tick still runs under the previous tool.
-async function selectFogTool(page: Page, idle: string, active: string) {
-	await page.getByRole('button', { name: idle, exact: true }).click();
-	await expect(page.getByRole('button', { name: active, exact: true })).toBeVisible();
-}
-
-const selectRevealTool = (page: Page) => selectFogTool(page, 'Reveal fog', 'Painting fog…');
-const selectHideTool = (page: Page) => selectFogTool(page, 'Hide fog', 'Hiding fog…');
+// Both fog tools used to relabel themselves while active ("Reveal fog"
+// became "Painting fog…"), which the shared selectTool helper couldn't
+// wait on — the locator it clicked stopped matching the moment the tool
+// went live. Since the full-bleed layout they're icons on the fog
+// family's contextual strip with stable names, so the shared helper
+// handles them like any other variant. It still does the waiting that
+// matters: tool handlers are rebound in an effect, so a drag issued in
+// the same tick would otherwise run under the previous tool.
+const selectRevealTool = (page: Page) => selectTool(page, 'Reveal fog');
+const selectHideTool = (page: Page) => selectTool(page, 'Hide fog');
 
 // A short drag across a few grid squares. Both fog tools paint per cell
 // crossed, so the same path reveals and re-hides exactly the same set.
@@ -69,7 +61,7 @@ async function createRoomWithScene(browser: Browser, name: string) {
 	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
 	const slug = new URL(page.url()).pathname.split('/').pop()!;
 
-	await page.getByRole('button', { name: 'New scene' }).click();
+	await openNewSceneDialog(page);
 	await page.getByLabel('Name').fill('Map');
 	await page.getByRole('button', { name: 'Create scene' }).click();
 	await expect(page.locator('canvas').first()).toBeVisible();
@@ -99,7 +91,7 @@ test('hiding fog puts revealed squares back under cover for players', async ({ b
 	const covered = await fogAlpha(player.page);
 	expect(covered).toBeGreaterThan(0); // a scene starts fully hidden
 
-	const origin = await canvasOrigin(gm.page);
+	const origin = await mapGestureOrigin(gm.page);
 	await selectRevealTool(gm.page);
 	await paintAcrossCells(gm.page, origin);
 
@@ -126,7 +118,7 @@ test('resetting fog re-hides the whole scene, and it stays reset after a reload'
 
 	const covered = await fogAlpha(player.page);
 
-	const origin = await canvasOrigin(gm.page);
+	const origin = await mapGestureOrigin(gm.page);
 	await selectRevealTool(gm.page);
 	await paintAcrossCells(gm.page, origin);
 	await expect.poll(() => fogAlpha(player.page)).toBeLessThan(covered);
@@ -150,6 +142,10 @@ test('revealing all uncovers the entire scene for players', async ({ browser }) 
 
 	expect(await fogAlpha(player.page)).toBeGreaterThan(0);
 
+	// Reveal all lives on the fog family's strip, so the family has to be
+	// open before the button exists — unlike the tests above, this one
+	// never picks a fog *tool*, so nothing else would have opened it.
+	await selectToolFamily(gm.page, 'Fog');
 	await gm.page.getByRole('button', { name: 'Reveal all', exact: true }).click();
 
 	// Every cell inside the scene's bounds is revealed, and a player's

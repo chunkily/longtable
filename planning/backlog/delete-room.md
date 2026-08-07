@@ -23,3 +23,9 @@ Things it has to decide, none of them settled:
 - What the other people in the room see when it happens under them.
 - Whether the `room` CLI should grow the same command, since a Host cleaning up a server has the
   same need and no room password.
+
+**Its home now exists.** [full-bleed-map-layout](full-bleed-map-layout.md) shipped a
+`Manage room` dialog (`web/src/lib/components/manage-room-dialog.svelte`), opened from the room
+menu and GM-only, holding nothing yet and saying so. This is one of the settings it is waiting
+for: add it there rather than inventing a second place for room settings to live, and delete the
+"nothing to configure yet" paragraph once something is.

@@ -1,4 +1,5 @@
 import { expect, test, type Page, type WebSocketRoute } from '@playwright/test';
+import { TOOLBAR_CLEARANCE_Y, mapGestureOrigin, openNewSceneDialog, selectTool } from './room';
 
 // Drawing renders locally the moment you let go, without waiting for the
 // server. Timing assertions would only prove that the round trip is
@@ -8,6 +9,10 @@ import { expect, test, type Page, type WebSocketRoute } from '@playwright/test';
 
 const DRAWING_LAYER = 3;
 
+// Points come in as gesture coordinates, measured from
+// mapGestureOrigin, which starts below the floating toolbar. The
+// canvas's own pixel buffer starts at the true top-left corner, so the
+// clearance has to be added back on to look where the pointer went.
 async function inkAt(page: Page, point: { x: number; y: number }): Promise<number> {
 	return page.evaluate(
 		({ layer, x, y }) => {
@@ -26,21 +31,8 @@ async function inkAt(page: Page, point: { x: number; y: number }): Promise<numbe
 			for (let i = 3; i < data.length; i += 4) if (data[i] > 0) opaque++;
 			return opaque;
 		},
-		{ layer: DRAWING_LAYER, x: point.x, y: point.y }
+		{ layer: DRAWING_LAYER, x: point.x, y: point.y + TOOLBAR_CLEARANCE_Y }
 	);
-}
-
-async function canvasOrigin(page: Page) {
-	const box = await page.locator('canvas').first().boundingBox();
-	if (!box) throw new Error('canvas has no bounding box');
-	return { x: box.x, y: box.y };
-}
-
-async function selectTool(page: Page, name: string) {
-	const button = page.getByRole('button', { name, exact: true });
-	const alreadyActive = await button.evaluate((el) => el.className.includes('bg-primary'));
-	if (!alreadyActive) await button.click();
-	await expect(button).toHaveClass(/bg-primary/);
 }
 
 async function createRoomWithScene(page: Page, name: string) {
@@ -51,7 +43,7 @@ async function createRoomWithScene(page: Page, name: string) {
 	await page.getByRole('button', { name: 'Create room' }).click();
 	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
 
-	await page.getByRole('button', { name: 'New scene' }).click();
+	await openNewSceneDialog(page);
 	await page.getByLabel('Name').fill('Map');
 	await page.getByRole('button', { name: 'Create scene' }).click();
 	await expect(page.locator('canvas').first()).toBeVisible();
@@ -62,7 +54,7 @@ const MIDPOINT = { x: 200, y: 150 };
 
 async function drawLine(page: Page) {
 	await selectTool(page, 'Line');
-	const origin = await canvasOrigin(page);
+	const origin = await mapGestureOrigin(page);
 	await page.mouse.move(origin.x + LINE.from.x, origin.y + LINE.from.y);
 	await page.mouse.down();
 	await page.mouse.move(origin.x + LINE.to.x, origin.y + LINE.to.y, { steps: 8 });
@@ -159,7 +151,7 @@ test('an erase clears the stroke without waiting, and reverts if refused', async
 	// First erase: the confirmation is dropped, so the stroke can only be
 	// gone because the client removed it itself.
 	await selectTool(page, 'Erase');
-	const origin = await canvasOrigin(page);
+	const origin = await mapGestureOrigin(page);
 	await page.mouse.click(origin.x + MIDPOINT.x, origin.y + MIDPOINT.y);
 	await expect.poll(() => inkAt(page, MIDPOINT)).toBe(0);
 

@@ -30,6 +30,12 @@ password is added or changed. Keeping them is friendlier and is probably right â
 gates joining, not being in the room â€” but it means adding one doesn't evict whoever the GM was
 trying to evict, so it should be said out loud rather than discovered.
 
+**Its home now exists.** [full-bleed-map-layout](full-bleed-map-layout.md) shipped a
+`Manage room` dialog (`web/src/lib/components/manage-room-dialog.svelte`), opened from the room
+menu and GM-only, holding nothing yet and saying so. This is one of the settings it is waiting
+for: add it there rather than inventing a second place for room settings to live, and delete the
+"nothing to configure yet" paragraph once something is.
+
 ## Related user stories
 
 - [gm-set-room-join-password](../user-stories/gm-set-room-join-password.md)

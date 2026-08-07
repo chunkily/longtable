@@ -1,5 +1,6 @@
 import { expect, test, type Page, type Browser } from '@playwright/test';
 import { fixture } from './fixtures';
+import { openAssetsPage, openNewSceneDialog, openScenesDialog } from './room';
 
 // Reaching a scene other than the one you just made. Before this there
 // was no switcher at all, which is why scene.create used to activate
@@ -50,7 +51,7 @@ async function joinAsPlayer(browser: Browser, slug: string) {
 }
 
 async function createScene(page: Page, name: string) {
-	await page.getByRole('button', { name: 'New scene' }).click();
+	await openNewSceneDialog(page);
 	await page.getByLabel('Name').fill(name);
 	await page.getByRole('button', { name: 'Create scene' }).click();
 	// The dialog closing is the signal the command went out; asserting on
@@ -58,8 +59,9 @@ async function createScene(page: Page, name: string) {
 	await expect(page.getByLabel('Name')).toBeHidden();
 }
 
-const openScenes = (page: Page) =>
-	page.getByRole('button', { name: 'Scenes', exact: true }).click();
+// Scenes moved into the room menu with the full-bleed layout, so
+// reaching it is two clicks rather than one.
+const openScenes = (page: Page) => openScenesDialog(page);
 
 test('a second scene waits to be switched to, and switching moves the whole room', async ({
 	browser
@@ -137,7 +139,7 @@ test('replacing a map keeps the tokens already standing on the scene', async ({ 
 
 	// Art is added on the assets page and only picked here — the replace
 	// dialog has no upload of its own any more.
-	await gm.page.getByRole('link', { name: 'Assets' }).click();
+	await openAssetsPage(gm.page);
 	// The tab is chosen before the file is, and it decides what the upload
 	// is filed as — which has to be a map, since that's the half of the
 	// library the replace-map picker opens on.

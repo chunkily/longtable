@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { mapGestureOrigin, openNewSceneDialog, selectTool } from './room';
 
 // Everything a Player does on a LAN address, faked on localhost.
 //
@@ -42,19 +43,6 @@ async function layerInk(page: Page, layer: number): Promise<number> {
 	}, layer);
 }
 
-async function canvasOrigin(page: Page) {
-	const box = await page.locator('canvas').first().boundingBox();
-	if (!box) throw new Error('canvas has no bounding box');
-	return { x: box.x, y: box.y };
-}
-
-async function selectTool(page: Page, name: string) {
-	const button = page.getByRole('button', { name, exact: true });
-	const alreadyActive = await button.evaluate((el) => el.className.includes('bg-primary'));
-	if (!alreadyActive) await button.click();
-	await expect(button).toHaveClass(/bg-primary/);
-}
-
 async function createRoomWithScene(page: Page, name: string) {
 	await page.goto('/');
 	await page.getByLabel('Room name').fill(name);
@@ -63,7 +51,7 @@ async function createRoomWithScene(page: Page, name: string) {
 	await page.getByRole('button', { name: 'Create room' }).click();
 
 	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
-	await page.getByRole('button', { name: 'New scene' }).click();
+	await openNewSceneDialog(page);
 	await page.getByLabel('Name').fill('Map');
 	await page.getByRole('button', { name: 'Create scene' }).click();
 	await expect(page.locator('canvas').first()).toBeVisible();
@@ -81,7 +69,7 @@ test('a stroke drawn without crypto.randomUUID is accepted and kept by the serve
 	expect(await page.evaluate(() => typeof crypto.randomUUID)).toBe('undefined');
 
 	await selectTool(page, 'Line');
-	const origin = await canvasOrigin(page);
+	const origin = await mapGestureOrigin(page);
 	await page.mouse.move(origin.x + 100, origin.y + 150);
 	await page.mouse.down();
 	await page.mouse.move(origin.x + 400, origin.y + 150, { steps: 8 });
@@ -102,7 +90,7 @@ test('a ping is folded in without crypto.randomUUID', async ({ page }) => {
 	await createRoomWithScene(page, 'Insecure Ping');
 
 	await selectTool(page, 'Ping');
-	const origin = await canvasOrigin(page);
+	const origin = await mapGestureOrigin(page);
 	await page.mouse.click(origin.x + 250, origin.y + 150);
 
 	// This one threw on *receipt* rather than on send, so it broke for the

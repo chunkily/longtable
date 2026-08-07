@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
 import { fixture } from './fixtures';
+import { openAssetsPage, openNewSceneDialog } from './room';
 
 // Assets are prepared on their own page and only picked in the room, so
 // this covers the seam between the two: what the assets page stores has
@@ -27,8 +28,7 @@ test('an asset added on the assets page is named, searchable, and offered in bot
 	const pageA = await roomA.newPage();
 	await createRoomAsGM(pageA, 'Library A');
 
-	await pageA.getByRole('link', { name: 'Assets' }).click();
-	await expect(pageA.getByRole('heading', { name: 'Assets' })).toBeVisible();
+	await openAssetsPage(pageA);
 
 	// The name defaults to the filename minus its extension, which is the
 	// point of it being a real editable field rather than a label derived
@@ -91,7 +91,7 @@ test('an asset added on the assets page is named, searchable, and offered in bot
 	// asking for — different components with their own pickers, both
 	// backed by the room's real library.
 	await pageA.getByRole('link', { name: 'Back to the table' }).click();
-	await pageA.getByRole('button', { name: 'New scene' }).click();
+	await openNewSceneDialog(pageA);
 	await expect(pageA.getByRole('button', { name: 'Swamp road' })).toBeVisible();
 	await expect(pageA.getByRole('button', { name: 'Goblin archer' })).toHaveCount(0);
 	// The picker no longer uploads: adding art is the assets page's job, so
@@ -116,7 +116,7 @@ test('an asset added on the assets page is named, searchable, and offered in bot
 	const roomB = await browser.newContext();
 	const pageB = await roomB.newPage();
 	await createRoomAsGM(pageB, 'Library B');
-	await pageB.getByRole('button', { name: 'New scene' }).click();
+	await openNewSceneDialog(pageB);
 	await expect(pageB.getByText('Nothing in the library yet')).toBeVisible();
 	await expect(pageB.getByRole('button', { name: 'Swamp road' })).toHaveCount(0);
 
@@ -128,7 +128,7 @@ test('aligning a map bakes the offset into the image and pre-fills the scene gri
 	page
 }) => {
 	await createRoomAsGM(page, 'Grid Alignment');
-	await page.getByRole('link', { name: 'Assets' }).click();
+	await openAssetsPage(page);
 
 	// Alignment belongs to maps, so it's the Maps tab that offers it — it
 	// used to be the other way round, with aligning the thing that made
@@ -174,7 +174,7 @@ test('aligning a map bakes the offset into the image and pre-fills the scene gri
 	expect(stored).toEqual([15, 15]);
 
 	await page.getByRole('link', { name: 'Back to the table' }).click();
-	await page.getByRole('button', { name: 'New scene' }).click();
+	await openNewSceneDialog(page);
 	await page.getByRole('button', { name: 'Swamp' }).click();
 	await expect(page.getByLabel('Grid size (px)')).toHaveValue('8');
 	// Dimensions still come from the image itself — now the padded one.
@@ -189,7 +189,7 @@ test('a library entry can be renamed, and re-adding the same bytes renames rathe
 	page
 }) => {
 	await createRoomAsGM(page, 'Library Editing');
-	await page.getByRole('link', { name: 'Assets' }).click();
+	await openAssetsPage(page);
 
 	await page.getByLabel('Choose images to add').setInputFiles(fixture('map.png'));
 	await page.getByRole('button', { name: 'Add to library' }).click();
@@ -247,7 +247,7 @@ test('the library keeps tokens and maps apart, shows token art whole, and can be
 	page
 }) => {
 	await createRoomAsGM(page, 'Two Tabs');
-	await page.getByRole('link', { name: 'Assets' }).click();
+	await openAssetsPage(page);
 
 	await page.getByLabel('Choose images to add').setInputFiles(fixture('goblin.png'));
 	await page.getByLabel('Name').fill('Goblin archer');
@@ -304,7 +304,7 @@ test('the library keeps tokens and maps apart, shows token art whole, and can be
 test('a picker links to the half of the assets page it is asking for', async ({ page }) => {
 	await createRoomAsGM(page, 'Picker Link');
 
-	await page.getByRole('button', { name: 'New scene' }).click();
+	await openNewSceneDialog(page);
 	const toMaps = page.getByRole('link', { name: 'Add maps' });
 	await expect(toMaps).toHaveAttribute('href', /\?kind=map$/);
 
@@ -317,7 +317,7 @@ test('a picker links to the half of the assets page it is asking for', async ({ 
 
 	// The token side asks for the other half, from the same component.
 	await page.getByRole('link', { name: 'Back to the table' }).click();
-	await page.getByRole('button', { name: 'New scene' }).click();
+	await openNewSceneDialog(page);
 	await page.getByLabel('Name').fill('Tavern');
 	await page.getByRole('button', { name: 'Create scene' }).click();
 	await page.getByRole('button', { name: 'New token' }).click();
@@ -332,7 +332,7 @@ test('a staged file whose shape disagrees with the open tab says so, and can be 
 	page
 }) => {
 	await createRoomAsGM(page, 'Shape Guess');
-	await page.getByRole('link', { name: 'Assets' }).click();
+	await openAssetsPage(page);
 
 	// Staged on the Tokens tab, so that's what it would be filed as — but
 	// it's 40x12, which is not a shape token art comes in.
@@ -361,7 +361,7 @@ test('a staged file whose shape disagrees with the open tab says so, and can be 
 
 test('an asset can be taken off the room shelf without deleting the picture', async ({ page }) => {
 	await createRoomAsGM(page, 'Asset Removal');
-	await page.getByRole('link', { name: 'Assets' }).click();
+	await openAssetsPage(page);
 
 	await page.getByLabel('Choose images to add').setInputFiles(fixture('goblin.png'));
 	await page.getByLabel('Name').fill('Goblin archer');
@@ -393,6 +393,6 @@ test('an asset can be taken off the room shelf without deleting the picture', as
 	// And it's gone from the pickers in the room too — the same library,
 	// fetched fresh.
 	await page.getByRole('link', { name: 'Back to the table' }).click();
-	await page.getByRole('button', { name: 'New scene' }).click();
+	await openNewSceneDialog(page);
 	await expect(page.getByText('Nothing in the library yet')).toBeVisible();
 });

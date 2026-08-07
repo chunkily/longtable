@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { TOOLBAR_CLEARANCE_Y, mapGestureOrigin, openNewSceneDialog, selectTool } from './room';
 
 // Undo and redo over the real stack: each step is a genuine draw.create
 // or draw.delete to the server, so what these check is that a stroke
@@ -25,26 +26,17 @@ async function inkAt(page: Page, point: { x: number; y: number }): Promise<numbe
 			for (let i = 3; i < data.length; i += 4) if (data[i] > 0) opaque++;
 			return opaque;
 		},
-		{ layer: DRAWING_LAYER, x: point.x, y: point.y }
+		// Gesture coordinates are measured from mapGestureOrigin, below the
+		// floating toolbar; the canvas's pixel buffer starts at its true
+		// corner, so the clearance goes back on to probe where the pointer
+		// actually went.
+		{ layer: DRAWING_LAYER, x: point.x, y: point.y + TOOLBAR_CLEARANCE_Y }
 	);
-}
-
-async function canvasOrigin(page: Page) {
-	const box = await page.locator('canvas').first().boundingBox();
-	if (!box) throw new Error('canvas has no bounding box');
-	return { x: box.x, y: box.y };
-}
-
-async function selectTool(page: Page, name: string) {
-	const button = page.getByRole('button', { name, exact: true });
-	const alreadyActive = await button.evaluate((el) => el.className.includes('bg-primary'));
-	if (!alreadyActive) await button.click();
-	await expect(button).toHaveClass(/bg-primary/);
 }
 
 async function drawLine(page: Page, y: number) {
 	await selectTool(page, 'Line');
-	const origin = await canvasOrigin(page);
+	const origin = await mapGestureOrigin(page);
 	await page.mouse.move(origin.x + 100, origin.y + y);
 	await page.mouse.down();
 	await page.mouse.move(origin.x + 400, origin.y + y, { steps: 8 });
@@ -59,7 +51,7 @@ async function createRoomWithScene(page: Page, name: string) {
 	await page.getByRole('button', { name: 'Create room' }).click();
 
 	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
-	await page.getByRole('button', { name: 'New scene' }).click();
+	await openNewSceneDialog(page);
 	await page.getByLabel('Name').fill('Map');
 	await page.getByRole('button', { name: 'Create scene' }).click();
 	await expect(page.locator('canvas').first()).toBeVisible();
@@ -106,7 +98,7 @@ test('undo puts back a stroke you erased', async ({ page }) => {
 	await expect.poll(() => inkAt(page, FIRST)).toBeGreaterThan(0);
 
 	await selectTool(page, 'Erase');
-	const origin = await canvasOrigin(page);
+	const origin = await mapGestureOrigin(page);
 	await page.mouse.click(origin.x + FIRST.x, origin.y + FIRST.y);
 	await expect.poll(() => inkAt(page, FIRST)).toBe(0);
 

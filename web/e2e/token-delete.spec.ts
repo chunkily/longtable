@@ -1,4 +1,5 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
+import { openNewSceneDialog } from './room';
 
 // Deleting a token has to reach the whole room and be recoverable, and
 // neither half shows up in the DOM: the token is Konva, and "it came
@@ -81,7 +82,7 @@ async function openRoomAsGM(browser: Browser, roomName: string) {
 	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
 	const slug = new URL(page.url()).pathname.split('/').pop()!;
 
-	await page.getByRole('button', { name: 'New scene' }).click();
+	await openNewSceneDialog(page);
 	await page.getByLabel('Name').fill('Map');
 	await page.getByRole('button', { name: 'Create scene' }).click();
 	await expect(page.locator('canvas').first()).toBeVisible();

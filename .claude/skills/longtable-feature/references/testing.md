@@ -85,41 +85,54 @@ That spec is deliberately thin, because the arithmetic behind the gesture lives 
 put the maths in a plain module so the part that has to be *correct* is the part that's cheap to
 test, and leave the spec to prove the wiring.
 
-Two helpers worth copying verbatim rather than rewriting:
+The shared helpers live in **`e2e/room.ts`** — import them, don't re-declare them. They used to be
+copy-pasted per spec, which stopped working the moment the full-bleed layout put tools behind a
+family and scene actions behind a menu: "click the button called X" became two or three steps, in
+twenty files.
 
-- `selectTool(page, name)` — clicks only if not already active, then waits for `bg-primary`.
-  Tool handlers are rebound in a Svelte effect, so a drag sent in the same tick as the click can
-  land on the previous tool.
-- `canvasOrigin(page)` — canvas-relative pixels double as world coordinates, because a fresh scene
-  starts at the identity transform. Don't pan or zoom in a spec that relies on that.
+- `selectTool(page, name)` — opens the tool's family first if it has one (`TOOL_FAMILY` maps
+  variant → family), then clicks it and waits for `bg-primary`. Tool handlers are rebound in a
+  Svelte effect, so a drag sent in the same tick as the click can land on the previous tool.
+  Neither family nor variant buttons toggle, so this leaves the requested tool selected whatever
+  was selected before.
+- `selectToolFamily(page, family)` — for the controls that sit on a family's strip but aren't
+  tools, like fog's `Reveal all` and `Reset fog`.
+- `mapGestureOrigin(page)` — the canvas corner plus `TOOLBAR_CLEARANCE_Y`. The toolbar floats over
+  the map's top-left corner now, so a gesture starting at the true origin lands on a button
+  instead of the map. **A spec that also probes pixels has to add `TOOLBAR_CLEARANCE_Y` back on**,
+  because the canvas's own buffer still starts at its true corner — this is the single most common
+  way to update a drawing spec wrongly and have it fail with "expected > 0, received 0".
+  Canvas-relative pixels still double as world coordinates, because a fresh scene starts at the
+  identity transform; don't pan or zoom in a spec that relies on that.
+- `openRoomMenu` / `openNewSceneDialog` / `openScenesDialog` / `openAssetsPage` — Scenes, New
+  scene and Assets all moved into the menu behind the third icon at the foot of the side panel.
 
 Two more that bite once a spec drives *two* browsers:
 
-- **Each page needs its own canvas box.** A GM's toolbar carries scene, token and fog controls a
-  Player's doesn't, so the two canvases are neither the same size nor at the same page offset. The
-  world point is shared; `box.x + point.x` is not. Reusing one page's box for the other page's
-  mouse lands the drag several rows off, and the failure looks like the drag being ignored rather
-  than like a coordinate bug. `token-move-undo.spec.ts` takes both boxes and names them.
+- **Each page needs its own canvas box.** This used to be load-bearing for a different reason: a
+  GM's toolbar carried scene, token and fog controls a Player's didn't, so the two canvases were
+  neither the same size nor at the same page offset, and reusing one page's box for the other's
+  mouse landed the drag several rows off. The full-bleed layout removed that particular hazard —
+  the toolbar floats *over* the map rather than pushing it down, so both roles now get a canvas of
+  the same size at the same offset.
 
-  **Some specs violate this and pass anyway**, which is what makes it easy to copy the wrong
-  pattern: the offset is currently 44px against a 70px grid, so a **2×2** token is wide enough to
-  absorb it and only a **1×1** one misses. `token-edit.spec.ts` shares one box across both pages
-  and gets away with it for exactly that reason. Don't read that as permission — a 1×1 token is
-  the default, and the symptom is a click that selects nothing with no error anywhere.
-  `token-trackers.spec.ts`'s `selectToken` re-reads the box from the page it is about to click,
-  which is the version worth copying.
+  Keep re-reading the box per page anyway. It costs nothing, it's what
+  `token-trackers.spec.ts`'s `selectToken` and `token-move-undo.spec.ts` already do, and the
+  property it relies on — that the two layouts stay identical across roles — is exactly the kind
+  of thing the next layout change breaks silently. The old symptom is worth remembering: a click
+  that selects nothing, with no error anywhere.
 - **Don't grab a token that is still sliding.** A move made in another browser arrives as a 0.22s
   tween (`TOKEN_MOVE_SECONDS`), and ink shows up under a probe partway through it — so polling for
   the token at its destination returns *before* it has settled. A drag started in that window
   fights the tween and leaves the token where it was. Poll, then wait out the slide; that spec's
   `settleAt` does both.
 
-`selectTool` does **not** work for either fog tool, both of which relabel themselves (`Reveal
-fog` → `Painting fog…`, `Hide fog` → `Hiding fog…`) rather than only restyling: the locator stops
-matching the moment the tool goes active, so the wait can never pass. `drawing-right-click.spec.ts`
-has a `selectFogTool` for the reveal tool and `fog-controls.spec.ts` a two-label version covering
-both, either of which clicks the old label and waits on the new one — which is what proves the
-switch happened.
+`selectTool` used **not** to work for either fog tool, both of which relabelled themselves
+(`Reveal fog` → `Painting fog…`) rather than only restyling, so the locator stopped matching the
+moment the tool went active and the wait could never pass. Since the full-bleed layout they're
+icons on the fog family's strip with stable names, and the shared helper handles them like any
+other variant — `fog-controls.spec.ts` and `drawing-right-click.spec.ts` keep one-line aliases
+over it and a note saying why they no longer need their own.
 
 Two things that quietly make a pixel assertion measure nothing:
 

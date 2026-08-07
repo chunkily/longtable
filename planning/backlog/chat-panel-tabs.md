@@ -23,8 +23,12 @@ behaviour on the mobile sheet as on the desktop panel.
 
 Two decisions made here that survived into it, and are worth not re-litigating: an event-log tab
 was considered and dropped as redundant with chat, and the who's-connected badges stay outside the
-switched region rather than scrolling away with the chat. The second is recorded as a comment in
-`+page.svelte` next to the `whoIsHere` snippet, which is where it'll actually be read.
+switched region rather than scrolling away with the chat.
+
+Both still hold as of the full-bleed layout shipping (2026-08-07), though the second moved: there
+is no `whoIsHere` snippet any more. The badges are part of the `sessionInfo` snippet in
+`+page.svelte`, which sits above the switchable region in the rail — outside it, as intended — and
+carries the comment.
 
 ## Related user stories
 

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { TOOLBAR_CLEARANCE_Y, mapGestureOrigin, openNewSceneDialog, selectTool } from './room';
 
 // The eraser is the one drawing feature whose rules can't be checked
 // from the DOM: what it erases depends on Konva hit-testing against a
@@ -23,6 +24,11 @@ const PLAYER_LINE_MIDPOINT = { x: 550, y: 340 };
 
 // Opaque pixel count in a small box around a point of the drawings
 // layer — "is there a stroke here?" without caring about antialiasing.
+//
+// Points come in as gesture coordinates, measured from mapGestureOrigin,
+// which starts below the floating toolbar. The canvas's own pixel buffer
+// starts at the true top-left corner, so the clearance has to be added
+// back on to look in the place the pointer actually went.
 async function inkAt(page: Page, point: { x: number; y: number }): Promise<number> {
 	return page.evaluate(
 		({ layer, x, y }) => {
@@ -41,30 +47,8 @@ async function inkAt(page: Page, point: { x: number; y: number }): Promise<numbe
 			for (let i = 3; i < data.length; i += 4) if (data[i] > 0) opaque++;
 			return opaque;
 		},
-		{ layer: DRAWING_LAYER, x: point.x, y: point.y }
+		{ layer: DRAWING_LAYER, x: point.x, y: point.y + TOOLBAR_CLEARANCE_Y }
 	);
-}
-
-async function canvasOrigin(page: Page): Promise<{ x: number; y: number }> {
-	const box = await page.locator('canvas').first().boundingBox();
-	if (!box) throw new Error('canvas has no bounding box');
-	return { x: box.x, y: box.y };
-}
-
-// Selecting a tool is what rebinds the canvas's pointer handlers, and
-// that happens in a Svelte effect — so a click sent in the same
-// millisecond as the button press can land before the new tool is
-// listening. Waiting for the button's own active styling is the
-// observable signal that the state change has been applied.
-//
-// The toolbar buttons toggle, so clicking the tool that is already
-// selected turns it off; this leaves the requested tool selected either
-// way rather than depending on what was selected before.
-async function selectTool(page: Page, name: string) {
-	const button = page.getByRole('button', { name, exact: true });
-	const alreadyActive = await button.evaluate((el) => el.className.includes('bg-primary'));
-	if (!alreadyActive) await button.click();
-	await expect(button).toHaveClass(/bg-primary/);
 }
 
 async function dragWithTool(
@@ -73,7 +57,7 @@ async function dragWithTool(
 	shape: { from: { x: number; y: number }; to: { x: number; y: number } }
 ) {
 	await selectTool(page, tool);
-	const origin = await canvasOrigin(page);
+	const origin = await mapGestureOrigin(page);
 	await page.mouse.move(origin.x + shape.from.x, origin.y + shape.from.y);
 	await page.mouse.down();
 	await page.mouse.move(origin.x + shape.to.x, origin.y + shape.to.y, { steps: 8 });
@@ -93,7 +77,7 @@ async function eraseAt(page: Page, point: { x: number; y: number }) {
 	// it arrive on someone else's screen isn't enough.
 	await expect.poll(() => inkAt(page, point)).toBeGreaterThan(0);
 	await selectTool(page, 'Erase');
-	const origin = await canvasOrigin(page);
+	const origin = await mapGestureOrigin(page);
 	await page.mouse.click(origin.x + point.x, origin.y + point.y);
 }
 
@@ -110,7 +94,7 @@ test('a GM erases anyone drawing, a player only their own', async ({ browser }) 
 	await expect(gmPage).toHaveURL(/\/r\/[a-z0-9]+/);
 	const slug = new URL(gmPage.url()).pathname.split('/').pop()!;
 
-	await gmPage.getByRole('button', { name: 'New scene' }).click();
+	await openNewSceneDialog(gmPage);
 	await gmPage.getByLabel('Name').fill('Map');
 	await gmPage.getByRole('button', { name: 'Create scene' }).click();
 	await expect(gmPage.locator('canvas').first()).toBeVisible();
@@ -170,7 +154,7 @@ test('the ellipse tool fills the box it is dragged out in', async ({ page }) => 
 	await page.getByRole('button', { name: 'Create room' }).click();
 
 	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
-	await page.getByRole('button', { name: 'New scene' }).click();
+	await openNewSceneDialog(page);
 	await page.getByLabel('Name').fill('Map');
 	await page.getByRole('button', { name: 'Create scene' }).click();
 	await expect(page.locator('canvas').first()).toBeVisible();
@@ -187,7 +171,7 @@ test('the ellipse tool fills the box it is dragged out in', async ({ page }) => 
 	expect(await inkAt(page, centre)).toBe(0);
 
 	await selectTool(page, 'Erase');
-	const origin = await canvasOrigin(page);
+	const origin = await mapGestureOrigin(page);
 	await page.mouse.click(origin.x + centre.x, origin.y + centre.y);
 	await page.waitForTimeout(500);
 	expect(await inkAt(page, top)).toBeGreaterThan(0);
@@ -211,7 +195,7 @@ test('the eraser clears every stroke it is dragged across', async ({ page }) => 
 	await page.getByRole('button', { name: 'Create room' }).click();
 
 	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
-	await page.getByRole('button', { name: 'New scene' }).click();
+	await openNewSceneDialog(page);
 	await page.getByLabel('Name').fill('Map');
 	await page.getByRole('button', { name: 'Create scene' }).click();
 	await expect(page.locator('canvas').first()).toBeVisible();
@@ -225,7 +209,7 @@ test('the eraser clears every stroke it is dragged across', async ({ page }) => 
 	}
 
 	await selectTool(page, 'Erase');
-	const origin = await canvasOrigin(page);
+	const origin = await mapGestureOrigin(page);
 	// Press clear of every line, then cross all three in one move.
 	await page.mouse.move(origin.x + 250, origin.y + 60);
 	await page.mouse.down();
@@ -245,7 +229,7 @@ test('the eraser grabs a stroke from beside it, not only dead-on', async ({ page
 	await page.getByRole('button', { name: 'Create room' }).click();
 
 	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
-	await page.getByRole('button', { name: 'New scene' }).click();
+	await openNewSceneDialog(page);
 	await page.getByLabel('Name').fill('Map');
 	await page.getByRole('button', { name: 'Create scene' }).click();
 	await expect(page.locator('canvas').first()).toBeVisible();
@@ -258,7 +242,7 @@ test('the eraser grabs a stroke from beside it, not only dead-on', async ({ page
 	// eraser's reach. GM_LINE runs (100,100) → (300,200), so (-4, 8) is
 	// square to it.
 	await selectTool(page, 'Erase');
-	const origin = await canvasOrigin(page);
+	const origin = await mapGestureOrigin(page);
 	await page.mouse.click(origin.x + GM_LINE_MIDPOINT.x - 4, origin.y + GM_LINE_MIDPOINT.y + 8);
 	await expect.poll(() => inkAt(page, GM_LINE_MIDPOINT)).toBe(0);
 });

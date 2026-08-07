@@ -11,13 +11,23 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import AssetPicker from '$lib/components/asset-picker.svelte';
 
+	// Bindable `open` and an optional trigger, so the room menu can open
+	// this without a toolbar button of its own — neither Scenes nor New
+	// scene is on the toolbar since the full-bleed layout.
 	let {
 		room,
 		roomSlug,
-		sessionToken
-	}: { room: RoomClient; roomSlug: string; sessionToken: string } = $props();
+		sessionToken,
+		open = $bindable(false),
+		trigger = true
+	}: {
+		room: RoomClient;
+		roomSlug: string;
+		sessionToken: string;
+		open?: boolean;
+		trigger?: boolean;
+	} = $props();
 
-	let open = $state(false);
 	// The scene whose map is being replaced, which swaps the dialog over
 	// to the picker — one job on screen at a time, rather than a picker
 	// expanding inside a row of a list that also has delete buttons.
@@ -87,11 +97,13 @@
 </script>
 
 <Dialog.Root bind:open>
-	<Dialog.Trigger>
-		{#snippet child({ props })}
-			<Button {...props} variant="outline">Scenes</Button>
-		{/snippet}
-	</Dialog.Trigger>
+	{#if trigger}
+		<Dialog.Trigger>
+			{#snippet child({ props })}
+				<Button {...props} variant="outline">Scenes</Button>
+			{/snippet}
+		</Dialog.Trigger>
+	{/if}
 	<Dialog.Content>
 		{#if replacing}
 			<Dialog.Header>

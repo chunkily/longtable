@@ -1,7 +1,7 @@
 ---
 title: Contextual drawing controls
 created: 2026-07-29
-status: open
+status: done
 tags: [drawing, ui]
 story: room-member-contextual-drawing-controls
 ---
@@ -17,3 +17,12 @@ strip at all because neither has options.
 
 Keep this item open only until that one lands. If the layout work is picked up first, close this
 one out pointing at it rather than building the drawing-only version twice.
+
+## What shipped
+
+Exactly that: [full-bleed-map-layout](full-bleed-map-layout.md) landed first and this closes out
+against it, unbuilt in its own right. The generalised version is in
+`$lib/components/tool-strip.svelte` — one strip below the tool row carrying the active family's
+variants and settings and nothing else. Draw's holds the four shapes, the eraser and the colour
+swatches; measure's the ruler, four templates, snap mode and a line's width; fog's the two paint
+tools and the two bulk actions. Hand and ping render no strip at all, since neither has options.

@@ -1,39 +1,33 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
 	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
 	import { gmLogin, joinRoom, type Session } from '$lib/api';
-	import { loadSession, saveSession, touchSession } from '$lib/session';
+	import { clearSession, loadSession, saveSession, touchSession } from '$lib/session';
 	import { RoomClient, type Token } from '$lib/room.svelte';
-	import { DEFAULT_LINE_WIDTH_FEET, LINE_WIDTH_CHOICES_FEET, type SnapMode } from '$lib/aoe';
+	import { DEFAULT_LINE_WIDTH_FEET, type SnapMode } from '$lib/aoe';
+	import { familyHasStrip, familyOf, type Tool } from '$lib/tool-family';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Badge } from '$lib/components/ui/badge';
 	import * as Card from '$lib/components/ui/card';
-	import ChevronUpIcon from '@lucide/svelte/icons/chevron-up';
-	import GameCanvas, { type Tool } from '$lib/components/game-canvas.svelte';
-	import CreateSceneDialog from '$lib/components/create-scene-dialog.svelte';
+	import GameCanvas from '$lib/components/game-canvas.svelte';
+	import MapToolbar from '$lib/components/map-toolbar.svelte';
+	import ToolStrip from '$lib/components/tool-strip.svelte';
+	import RoomMenu from '$lib/components/room-menu.svelte';
+	import ManageRoomDialog from '$lib/components/manage-room-dialog.svelte';
 	import SceneManagerDialog from '$lib/components/scene-manager-dialog.svelte';
+	import CreateSceneDialog from '$lib/components/create-scene-dialog.svelte';
 	import CreateTokenDialog from '$lib/components/create-token-dialog.svelte';
 	import TokenDetailDialog from '$lib/components/token-detail-dialog.svelte';
 	import TokenTrackerStrip from '$lib/components/token-tracker-strip.svelte';
-	import Pen from '@lucide/svelte/icons/pen';
-	import Slash from '@lucide/svelte/icons/slash';
-	import RectangleHorizontal from '@lucide/svelte/icons/rectangle-horizontal';
-	import Circle from '@lucide/svelte/icons/circle';
-	import MapPin from '@lucide/svelte/icons/map-pin';
-	import Eraser from '@lucide/svelte/icons/eraser';
-	import Ruler from '@lucide/svelte/icons/ruler';
-	import Undo from '@lucide/svelte/icons/undo';
-	import Redo from '@lucide/svelte/icons/redo';
-	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
-	import CircleDot from '@lucide/svelte/icons/circle-dot';
-	import Cone from '@lucide/svelte/icons/cone';
-	import Minus from '@lucide/svelte/icons/minus';
-	import Square from '@lucide/svelte/icons/square';
+	import MessageSquare from '@lucide/svelte/icons/message-square';
+	import Swords from '@lucide/svelte/icons/swords';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import ChevronUpIcon from '@lucide/svelte/icons/chevron-up';
 
 	const slug = $derived(page.params.slug ?? '');
 
@@ -50,12 +44,10 @@
 
 	let chatText = $state('');
 
-	// The map toolbar: 'none' is plain pan/token-drag mode. Fog stays
-	// GM-only (gated in the template below); drawing, pinging, measuring
-	// and erasing are open to everyone, since they're meant as a shared
-	// pointer/annotation tool rather than GM-only map control. The
-	// eraser is offered to everyone but reaches different drawings per
-	// role: a GM can erase anyone's, a Player only their own.
+	// The active map tool. 'none' is the hand — pan and token selection.
+	// The toolbar groups these into five families for display; the
+	// grouping is derived from this value rather than stored beside it,
+	// so the two can't disagree. See $lib/tool-family.
 	let activeTool = $state<Tool>('none');
 	// Where an area template's points may land. A setting rather than a
 	// rule because tables genuinely differ — some put a burst on a cell
@@ -63,32 +55,28 @@
 	// leaves this client: the points that go on the wire are already
 	// snapped, so nobody else needs to know which convention made them.
 	let snapMode = $state<SnapMode>('intersections');
-	const SNAP_MODES: { value: SnapMode; label: string }[] = [
-		{ value: 'intersections', label: 'Corners' },
-		{ value: 'centres', label: 'Centres' },
-		{ value: 'free', label: 'Free' }
-	];
 	// A Line is the one shape a single drag can't describe: the drag
 	// gives length and direction, never width.
 	let lineWidthFeet = $state(DEFAULT_LINE_WIDTH_FEET);
-	const isTemplateTool = $derived(activeTool.startsWith('template-'));
-	const STROKE_COLORS = [
-		{ label: 'Black', value: '#000000' },
-		{ label: 'Red', value: '#cc0000' },
-		{ label: 'Green', value: '#008000' },
-		{ label: 'Blue', value: '#0033cc' }
-	];
-	let strokeColor = $state(STROKE_COLORS[0].value);
+	let strokeColor = $state('#000000');
 
-	function selectTool(tool: Tool) {
-		activeTool = activeTool === tool ? 'none' : tool;
-	}
+	// Which of the two switchable panels the side rail is showing. The
+	// menu is the third foot icon but isn't a panel — it opens over
+	// whichever of these is on screen.
+	let panel = $state<'chat' | 'initiative'>('chat');
+	// Below lg the rail is a bottom sheet, shut by default so the map gets
+	// the whole screen until something is wanted from it.
+	let sheetOpen = $state(false);
+
+	let scenesOpen = $state(false);
+	let newSceneOpen = $state(false);
+	let manageRoomOpen = $state(false);
 
 	// Which token this client is looking at. Local to this browser and
 	// nothing more: it never goes on the wire, so two people can have
 	// different tokens selected, and a reload starts with none. Owned here
-	// rather than inside the canvas because the details section below
-	// chat reads it too — the canvas binds it so a click can set it.
+	// rather than inside the canvas because the side panel reads it too —
+	// the canvas binds it so a click can set it.
 	let selectedTokenId = $state<string | null>(null);
 	// Derived rather than kept in step by an effect. A selection whose
 	// token has gone — the scene changed under it, or it was removed —
@@ -98,6 +86,7 @@
 	const selectedToken = $derived<Token | null>(
 		client?.tokens.find((t) => t.id === selectedTokenId) ?? null
 	);
+
 	/**
 	 * The owner's display name for the details panel. Falls back to a
 	 * neutral phrase rather than the raw id: the roster holds everyone who
@@ -108,11 +97,6 @@
 		const owner = room.participants.find((p) => p.id === participantId);
 		return owner ? `${owner.displayName}'s token` : 'Owned by someone no longer listed';
 	}
-
-	// Below the lg breakpoint the chat panel isn't shown inline — it's a
-	// bottom sheet toggled by the "Chat" bar, since there isn't room for
-	// canvas + chat side by side there (see viewport-layout discussion).
-	let mobileChatOpen = $state(false);
 
 	onMount(() => {
 		const existing = loadSession(slug);
@@ -164,6 +148,19 @@
 		chatText = '';
 	}
 
+	// Leaving is the in-room twin of "Forget" on the home page, and does
+	// the same thing: a session in localStorage is the whole record of
+	// being in a room, so dropping it is the whole of leaving. It
+	// deliberately doesn't tell the room — the roster is everyone who has
+	// *ever* joined, and the protocol has no way to express removal from
+	// it. Disconnecting first so the others see the presence drop straight
+	// away rather than when the socket eventually times out.
+	function handleLeave() {
+		client?.disconnect();
+		clearSession(slug);
+		goto(resolve('/'));
+	}
+
 	// Undo/redo shortcuts. Bound to the window rather than the canvas,
 	// which never holds focus — but that means catching keystrokes meant
 	// for whatever the user is actually typing in, so anything with a
@@ -198,7 +195,10 @@
 	);
 	// A dropped socket used to be invisible beyond the small status badge,
 	// while every command silently did nothing. The banner is the one
-	// place that says so plainly.
+	// place that says so plainly — and it stays a banner across the top of
+	// the map rather than becoming the status dot in session info, because
+	// it is the one thing a Room Member must not miss and a dot in a
+	// corner is missable.
 	const showConnectionBanner = $derived(
 		!!client && client.status !== 'open' && client.status !== 'connecting'
 	);
@@ -211,6 +211,7 @@
 		!!selectedToken &&
 			(isGM || (!!client?.you && selectedToken.ownerParticipantId === client.you.participantId))
 	);
+	const showStrip = $derived(familyHasStrip(familyOf(activeTool)));
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -258,485 +259,434 @@
 		</Card.Root>
 	</div>
 {:else}
-	{#snippet chatMessages(room: RoomClient, maxHeightClass: string)}
-		<ul class={['flex flex-col gap-2 overflow-y-auto', maxHeightClass]}>
-			{#each room.messages as msg (msg.id)}
-				{@const canDelete =
-					!!room.you && (room.you.role === 'gm' || msg.participantId === room.you.participantId)}
-				<!-- The server redacts per recipient, not this component: an
-				     empty body on a deleted message means this client is a
-				     bystander, and anything else means it's the author or the
-				     one who deleted it, still allowed to see what they wrote
-				     or removed — struck through rather than hidden outright. -->
-				{@const isRedacted = msg.deleted && !msg.body && !msg.rollExpression}
-				<li
-					class={[
-						'flex items-start gap-1 rounded-md px-2 py-1 text-sm',
-						msg.kind === 'roll' && !isRedacted && 'bg-accent text-accent-foreground'
-					]}
-				>
-					<div class="min-w-0 flex-1">
-						{#if isRedacted}
-							<span class="text-muted-foreground italic">This message has been deleted.</span>
-						{:else}
-							<span class={msg.deleted ? 'line-through opacity-60' : undefined}>
-								<strong>{msg.participantName}:</strong>
-								{#if msg.kind === 'roll'}
-									{msg.body} → <strong>{msg.rollResult}</strong>
-									<span class="text-xs text-muted-foreground">({msg.rollBreakdown})</span>
-								{:else}
-									{msg.body}
-								{/if}
-							</span>
-						{/if}
-					</div>
-					<!-- chat.delete folds both stages into one command — the hub
-					     decides from the message's current state whether this
-					     click leaves a placeholder or purges it, so the button
-					     never has to track which stage a message is on. -->
-					{#if canDelete}
-						<Button
-							variant="ghost"
-							size="sm"
-							class="h-5 w-5 shrink-0 p-0"
-							aria-label={msg.deleted ? 'Remove message permanently' : 'Delete message'}
-							title={msg.deleted
-								? 'Remove this message permanently'
-								: 'Delete this message (click again to remove it permanently)'}
-							onclick={() => room.deleteMessage(msg.id)}
-						>
-							<Trash2 class="h-3 w-3" />
-						</Button>
-					{/if}
-				</li>
-			{/each}
-		</ul>
-	{/snippet}
-
-	<!-- Who is actually at the table right now, which is a different list
-	     from everyone who has ever joined: someone who played last week
-	     and isn't online doesn't appear. Fixed above the chat in both
-	     layouts, so it stays put when the panel grows tabs. -->
-	{#snippet whoIsHere(room: RoomClient)}
-		<section aria-label="Who's connected" class="flex flex-wrap items-center gap-1">
-			{#each room.connectedParticipants as participant (participant.id)}
-				<Badge variant={participant.role === 'gm' ? 'default' : 'secondary'}>
-					{participant.displayName}{participant.role === 'gm' ? ' (GM)' : ''}
-				</Badge>
-			{:else}
-				<!-- Only reachable before the first sync lands: you are always
-				     connected to your own room. -->
-				<span class="text-xs text-muted-foreground">Nobody connected.</span>
-			{/each}
-		</section>
-	{/snippet}
-
-	<!-- Fixed above the message list in both layouts — the desktop sidebar
-	     and the mobile sheet — rather than scrolling away with the chat. -->
-	{#snippet tokenDetails(room: RoomClient, token: Token | null)}
-		<section aria-label="Selected token" class="flex items-center gap-2 rounded-md border p-2">
-			{#if token}
-				<div class="min-w-0 flex-1">
-					<p class="truncate text-sm font-medium">{token.name}</p>
-					<p class="text-xs text-muted-foreground">
-						{token.width}×{token.height} squares{token.visibility === 'hidden'
-							? ' · hidden from players'
-							: ''}
-					</p>
-					<!-- Shown to everyone, not just the GM: whose token is whose is
-					     the point of an owner, and it's the roster that turns the
-					     stored id back into a name. Silent when nobody owns it —
-					     most tokens are monsters, and "Owner: nobody" on every one
-					     of them is noise. -->
-					{#if token.ownerParticipantId}
-						<p class="truncate text-xs text-muted-foreground">
-							{ownerName(room, token.ownerParticipantId)}
-						</p>
-					{/if}
-					<!-- Values editable in place for whoever may edit the token at
-					     all — the same rule the Edit button follows. Labels and
-					     conditions stay in the dialog; damage is what changes
-					     every round and what shouldn't cost a dialog to change. -->
-					<TokenTrackerStrip {room} {token} editable={canEditSelected} />
-				</div>
-				{#if canEditSelected && session}
-					<TokenDetailDialog
-						{room}
-						{token}
-						roomSlug={session.roomSlug}
-						sessionToken={session.sessionToken}
-						canEditAll={isGM}
-					/>
-				{/if}
-				<!-- Deletion stays GM-only even though editing no longer is: a
-				     token is a piece of the GM's scene that a Player may be
-				     allowed to move and now to take damage on, which is a long
-				     way from being allowed to remove it. token.delete enforces
-				     the same rule.
-
-				     Not behind a confirmation, unlike deleting a scene: the
-				     deletion is undoable, which is the cheaper answer to a
-				     misclick than a dialog on every deliberate one. -->
-				{#if isGM}
-					<Button
-						variant="outline"
-						size="sm"
-						aria-label="Delete token"
-						title="Delete this token (Ctrl+Z to bring it back)"
-						onclick={() => room.deleteToken(token.id)}
+	{#snippet chatPanel(room: RoomClient)}
+		<div class="flex min-h-0 flex-1 flex-col gap-2">
+			<ul class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
+				{#each room.messages as msg (msg.id)}
+					{@const canDelete =
+						!!room.you && (room.you.role === 'gm' || msg.participantId === room.you.participantId)}
+					<!-- The server redacts per recipient, not this component: an
+					     empty body on a deleted message means this client is a
+					     bystander, and anything else means it's the author or the
+					     one who deleted it, still allowed to see what they wrote
+					     or removed — struck through rather than hidden outright. -->
+					{@const isRedacted = msg.deleted && !msg.body && !msg.rollExpression}
+					<li
+						class={[
+							'flex items-start gap-1 rounded-md px-2 py-1 text-sm',
+							msg.kind === 'roll' && !isRedacted && 'bg-accent text-accent-foreground'
+						]}
 					>
-						<Trash2 class="h-4 w-4" />
-					</Button>
-				{/if}
-			{:else}
-				<p class="text-sm text-muted-foreground">No token selected — click one on the map.</p>
-			{/if}
-		</section>
-	{/snippet}
-
-	{#snippet chatForm()}
-		<form class="flex gap-2" onsubmit={handleSendChat}>
-			<Input
-				bind:value={chatText}
-				placeholder="Say something, or /roll 2d6+3"
-				autocomplete="off"
-				class="flex-1"
-			/>
-			<Button type="submit">Send</Button>
-		</form>
-	{/snippet}
-
-	<div class="flex flex-col gap-4 p-6 pb-16 lg:pb-6">
-		<header class="flex flex-wrap items-center gap-2">
-			<h1 class="text-2xl font-bold tracking-tight">{client.roomName || slug}</h1>
-			<Badge variant="outline">{client.you?.role}</Badge>
-			<Badge variant={statusVariant}>{client.status}</Badge>
-			<span class="text-sm text-muted-foreground">
-				playing as <strong>{client.you?.displayName}</strong>
-			</span>
-			<span class="flex-1"></span>
-			<!-- Anyone in the room, not just the GM: players bring their own
-			     token art, and the library is shared. -->
-			<a class="text-sm underline underline-offset-2" href={resolve('/r/[slug]/assets', { slug })}>
-				Assets
-			</a>
-		</header>
-
-		{#if showConnectionBanner}
-			<div
-				role="status"
-				class="flex flex-wrap items-center gap-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm"
-			>
-				{#if client.sessionExpired}
-					<span>
-						This session is no longer valid — the room may have been reset. Rejoin to carry on.
-					</span>
-					<Button variant="outline" size="sm" onclick={() => location.reload()}>Rejoin</Button>
-				{:else if client.reconnectExhausted}
-					<span>Can't reach the table. Nothing you do will reach the others until it's back.</span>
-					<Button variant="outline" size="sm" onclick={() => client?.reconnect()}>Try again</Button>
-				{:else}
-					<span>Reconnecting to the table…</span>
-				{/if}
-			</div>
-		{/if}
-
-		<div class="flex flex-col gap-4 lg:flex-row lg:items-start">
-			<div class="flex min-w-0 flex-1 flex-col gap-2">
-				{#if isGM}
-					<div class="flex flex-wrap gap-2">
-						<CreateSceneDialog
-							room={client}
-							roomSlug={session.roomSlug}
-							sessionToken={session.sessionToken}
-						/>
-						<SceneManagerDialog
-							room={client}
-							roomSlug={session.roomSlug}
-							sessionToken={session.sessionToken}
-						/>
-						{#if client.scene}
-							<!-- Captured here because the handlers below read it inside a
-							     closure, where the {#if}'s narrowing doesn't reach. -->
-							{@const sceneId = client.scene.id}
-							<CreateTokenDialog
-								room={client}
-								{sceneId}
-								roomSlug={session.roomSlug}
-								sessionToken={session.sessionToken}
-								spawnCell={() => canvasRef?.viewCenterCell() ?? { x: 0, y: 0 }}
-							/>
-							<Button
-								variant={activeTool === 'fog-reveal' ? 'default' : 'outline'}
-								onclick={() => selectTool('fog-reveal')}
-							>
-								{activeTool === 'fog-reveal' ? 'Painting fog…' : 'Reveal fog'}
-							</Button>
-							<Button
-								variant={activeTool === 'fog-hide' ? 'default' : 'outline'}
-								onclick={() => selectTool('fog-hide')}
-								title="Drag over revealed squares to cover them again"
-							>
-								{activeTool === 'fog-hide' ? 'Hiding fog…' : 'Hide fog'}
-							</Button>
-							<!-- The two bulk actions are one-shot buttons rather than
-							     tools: neither has a gesture to make, so making them
-							     modes would mean arming something that fires on the
-							     next click anywhere on the map. -->
-							<Button variant="outline" onclick={() => client?.revealAllFog(sceneId)}>
-								Reveal all
-							</Button>
-							<!-- Deliberately not behind a confirmation. The story asks
-							     for a single action, and the room has no confirm dialog
-							     to borrow; the cost is that a misclick here drops a
-							     session's worth of revealed fog with no undo, which is
-							     worth fixing the first time someone actually hits it. -->
-							<Button variant="outline" onclick={() => client?.resetFog(sceneId)}>Reset fog</Button>
-						{/if}
-					</div>
-				{/if}
-				{#if client.scene}
-					<div class="flex flex-wrap items-center justify-between gap-2">
-						<div class="flex flex-wrap gap-2">
-							<Button
-								variant={activeTool === 'freehand' ? 'default' : 'outline'}
-								size="sm"
-								aria-label="Freehand"
-								onclick={() => selectTool('freehand')}
-								title="Freehand drawing"
-							>
-								<Pen class="h-4 w-4" />
-							</Button>
-							<Button
-								variant={activeTool === 'line' ? 'default' : 'outline'}
-								size="sm"
-								aria-label="Line"
-								onclick={() => selectTool('line')}
-								title="Straight line drawing"
-							>
-								<Slash class="h-4 w-4" />
-							</Button>
-							<Button
-								variant={activeTool === 'rect' ? 'default' : 'outline'}
-								size="sm"
-								aria-label="Rectangle"
-								onclick={() => selectTool('rect')}
-								title="Rectangle drawing"
-							>
-								<RectangleHorizontal class="h-4 w-4" />
-							</Button>
-							<Button
-								variant={activeTool === 'ellipse' ? 'default' : 'outline'}
-								size="sm"
-								aria-label="Ellipse"
-								onclick={() => selectTool('ellipse')}
-								title="Ellipse drawing"
-							>
-								<Circle class="h-4 w-4" />
-							</Button>
-							<Button
-								variant={activeTool === 'ping' ? 'default' : 'outline'}
-								size="sm"
-								aria-label="Ping"
-								onclick={() => selectTool('ping')}
-								title="Ping the map"
-							>
-								<MapPin class="h-4 w-4" />
-							</Button>
-							<Button
-								variant={activeTool === 'measure' ? 'default' : 'outline'}
-								size="sm"
-								aria-label="Measure"
-								onclick={() => selectTool('measure')}
-								title="Drag to measure a distance in feet"
-							>
-								<Ruler class="h-4 w-4" />
-							</Button>
-							<!-- The four area templates. Six shapes in the rules, but
-							     Sphere, Cylinder and Emanation are all a circle seen
-							     from above, so they share one tool. -->
-							<Button
-								variant={activeTool === 'template-circle' ? 'default' : 'outline'}
-								size="sm"
-								aria-label="Circle template"
-								onclick={() => selectTool('template-circle')}
-								title="Sphere, cylinder or emanation — drag from the centre"
-							>
-								<CircleDot class="h-4 w-4" />
-							</Button>
-							<Button
-								variant={activeTool === 'template-cone' ? 'default' : 'outline'}
-								size="sm"
-								aria-label="Cone template"
-								onclick={() => selectTool('template-cone')}
-								title="Cone — drag from the point of origin"
-							>
-								<Cone class="h-4 w-4" />
-							</Button>
-							<Button
-								variant={activeTool === 'template-line' ? 'default' : 'outline'}
-								size="sm"
-								aria-label="Line template"
-								onclick={() => selectTool('template-line')}
-								title="Line — drag its length; set its width below"
-							>
-								<Minus class="h-4 w-4" />
-							</Button>
-							<Button
-								variant={activeTool === 'template-cube' ? 'default' : 'outline'}
-								size="sm"
-								aria-label="Cube template"
-								onclick={() => selectTool('template-cube')}
-								title="Cube — drag one corner to the opposite corner"
-							>
-								<Square class="h-4 w-4" />
-							</Button>
-							<Button
-								variant={activeTool === 'eraser' ? 'default' : 'outline'}
-								size="sm"
-								title={isGM
-									? 'Click a drawing to erase it'
-									: 'Click one of your own drawings to erase it'}
-								aria-label="Erase"
-								onclick={() => selectTool('eraser')}
-							>
-								<Eraser class="h-4 w-4" />
-							</Button>
-							<!-- The selected swatch is ringed rather than bordered: an
-							     outline is drawn outside the element, so it never covers
-							     the colour it is marking and can't sit between the swatch
-							     and the pointer. Light blue reads against every colour in
-							     the palette, black included, and against the toolbar. -->
-							<div class="flex items-center gap-2 px-2">
-								{#each STROKE_COLORS as opt (opt.value)}
-									<button
-										type="button"
-										aria-label={opt.label}
-										aria-pressed={strokeColor === opt.value}
-										title={opt.label}
-										class={[
-											'h-6 w-6 rounded-full',
-											strokeColor === opt.value && 'outline-2 outline-offset-2 outline-sky-400'
-										]}
-										style="background-color: {opt.value}"
-										onclick={() => (strokeColor = opt.value)}
-									></button>
-								{/each}
-							</div>
-						</div>
-						<div class="flex flex-wrap gap-2">
-							<Button
-								variant="outline"
-								size="sm"
-								disabled={!client.canUndo}
-								title="Undo your last drawing, erase, token move or deletion (Ctrl+Z)"
-								aria-label="Undo"
-								onclick={() => client?.undo()}
-							>
-								<Undo class="h-4 w-4" />
-							</Button>
-							<Button
-								variant="outline"
-								size="sm"
-								disabled={!client.canRedo}
-								title="Redo (Ctrl+Shift+Z)"
-								aria-label="Redo"
-								onclick={() => client?.redo()}
-							>
-								<Redo class="h-4 w-4" />
-							</Button>
-							<Button
-								variant="outline"
-								size="sm"
-								aria-label="Reset view"
-								onclick={() => canvasRef?.resetView()}
-								title="Reset view"
-							>
-								<RefreshCw class="h-4 w-4" />
-							</Button>
-						</div>
-					</div>
-					<!-- Template options appear only while a template tool is
-					     active: they mean nothing otherwise, and the tool row is
-					     long enough already. -->
-					{#if isTemplateTool}
-						<div class="flex flex-wrap items-center gap-3 rounded-md border p-2">
-							<div class="flex items-center gap-2">
-								<span class="text-xs text-muted-foreground">Snap to</span>
-								{#each SNAP_MODES as mode (mode.value)}
-									<Button
-										variant={snapMode === mode.value ? 'default' : 'outline'}
-										size="sm"
-										aria-pressed={snapMode === mode.value}
-										onclick={() => (snapMode = mode.value)}
-									>
-										{mode.label}
-									</Button>
-								{/each}
-							</div>
-							{#if activeTool === 'template-line'}
-								<div class="flex items-center gap-2">
-									<span class="text-xs text-muted-foreground">Line width</span>
-									{#each LINE_WIDTH_CHOICES_FEET as feet (feet)}
-										<Button
-											variant={lineWidthFeet === feet ? 'default' : 'outline'}
-											size="sm"
-											aria-label="{feet} foot wide line"
-											aria-pressed={lineWidthFeet === feet}
-											onclick={() => (lineWidthFeet = feet)}
-										>
-											{feet} ft
-										</Button>
-									{/each}
-								</div>
+						<div class="min-w-0 flex-1">
+							{#if isRedacted}
+								<span class="text-muted-foreground italic">This message has been deleted.</span>
+							{:else}
+								<span class={msg.deleted ? 'line-through opacity-60' : undefined}>
+									<strong>{msg.participantName}:</strong>
+									{#if msg.kind === 'roll'}
+										{msg.body} → <strong>{msg.rollResult}</strong>
+										<span class="text-xs text-muted-foreground">({msg.rollBreakdown})</span>
+									{:else}
+										{msg.body}
+									{/if}
+								</span>
 							{/if}
 						</div>
-					{/if}
-					<GameCanvas
-						room={client}
-						{activeTool}
-						{strokeColor}
-						{snapMode}
-						{lineWidthFeet}
-						bind:selectedTokenId
-						bind:this={canvasRef}
-					/>
+						<!-- chat.delete folds both stages into one command — the hub
+						     decides from the message's current state whether this
+						     click leaves a placeholder or purges it, so the button
+						     never has to track which stage a message is on. -->
+						{#if canDelete}
+							<Button
+								variant="ghost"
+								size="sm"
+								class="h-5 w-5 shrink-0 p-0"
+								aria-label={msg.deleted ? 'Remove message permanently' : 'Delete message'}
+								title={msg.deleted
+									? 'Remove this message permanently'
+									: 'Delete this message (click again to remove it permanently)'}
+								onclick={() => room.deleteMessage(msg.id)}
+							>
+								<Trash2 class="h-3 w-3" />
+							</Button>
+						{/if}
+					</li>
+				{/each}
+			</ul>
+			<form class="flex gap-2" onsubmit={handleSendChat}>
+				<Input
+					bind:value={chatText}
+					placeholder="Say something, or /roll 2d6+3"
+					autocomplete="off"
+					class="flex-1"
+				/>
+				<Button type="submit">Send</Button>
+			</form>
+		</div>
+	{/snippet}
+
+	<!-- The tracker itself is still an open backlog item. The panel is
+	     here because the switcher is part of the layout being built, and a
+	     third icon appearing later is harder to notice than a panel whose
+	     contents fill in — but it says plainly that it does nothing yet
+	     rather than pretending to be an empty initiative order. -->
+	{#snippet initiativePanel()}
+		<div class="flex min-h-0 flex-1 items-center justify-center p-4 text-center">
+			<p class="text-sm text-muted-foreground">
+				The initiative tracker isn't built yet. Roll initiative in chat with
+				<code>/roll 1d20+2</code> for now.
+			</p>
+		</div>
+	{/snippet}
+
+	<!-- Room name, who you are, and whether the socket is up. There is no
+	     page header any more, so this is the only place these live. -->
+	{#snippet sessionInfo(room: RoomClient)}
+		<section aria-label="Session info" class="flex flex-col gap-2 border-b p-3">
+			<div class="flex flex-wrap items-center gap-2">
+				<h1 class="min-w-0 flex-1 truncate text-sm font-semibold">{room.roomName || slug}</h1>
+				<Badge variant={statusVariant}>{room.status}</Badge>
+			</div>
+			<p class="text-xs text-muted-foreground">
+				playing as <strong>{room.you?.displayName}</strong>
+				<Badge variant="outline" class="ml-1">{room.you?.role}</Badge>
+			</p>
+			<!-- Who is actually at the table right now, which is a different
+			     list from everyone who has ever joined: someone who played last
+			     week and isn't online doesn't appear.
+
+			     A <section>, not a <div>: the accessible name only gives it a
+			     landmark role on a sectioning element, and that role is how
+			     the presence specs find it. -->
+			<section aria-label="Who's connected" class="flex flex-wrap items-center gap-1">
+				{#each room.connectedParticipants as participant (participant.id)}
+					<Badge variant={participant.role === 'gm' ? 'default' : 'secondary'}>
+						{participant.displayName}{participant.role === 'gm' ? ' (GM)' : ''}
+					</Badge>
 				{:else}
-					<Card.Root class="flex h-64 w-full items-center justify-center">
-						<p class="text-sm text-muted-foreground">
-							{isGM ? 'Create a scene to get started.' : 'Waiting for the GM to start a scene…'}
-						</p>
-					</Card.Root>
+					<!-- Only reachable before the first sync lands: you are always
+					     connected to your own room. -->
+					<span class="text-xs text-muted-foreground">Nobody connected.</span>
+				{/each}
+			</section>
+		</section>
+	{/snippet}
+
+	{#snippet tokenDetails(room: RoomClient, token: Token)}
+		<div class="flex items-center gap-2">
+			<div class="min-w-0 flex-1">
+				<p class="truncate text-sm font-medium">{token.name}</p>
+				<p class="text-xs text-muted-foreground">
+					{token.width}×{token.height} squares{token.visibility === 'hidden'
+						? ' · hidden from players'
+						: ''}
+				</p>
+				<!-- Shown to everyone, not just the GM: whose token is whose is
+				     the point of an owner, and it's the roster that turns the
+				     stored id back into a name. Silent when nobody owns it —
+				     most tokens are monsters, and "Owner: nobody" on every one
+				     of them is noise. -->
+				{#if token.ownerParticipantId}
+					<p class="truncate text-xs text-muted-foreground">
+						{ownerName(room, token.ownerParticipantId)}
+					</p>
 				{/if}
+				<!-- Values editable in place for whoever may edit the token at
+				     all — the same rule the Edit button follows. Labels and
+				     conditions stay in the dialog; damage is what changes
+				     every round and what shouldn't cost a dialog to change. -->
+				<TokenTrackerStrip {room} {token} editable={canEditSelected} />
+			</div>
+			{#if canEditSelected && session}
+				<TokenDetailDialog
+					{room}
+					{token}
+					roomSlug={session.roomSlug}
+					sessionToken={session.sessionToken}
+					canEditAll={isGM}
+				/>
+			{/if}
+			<!-- Deletion stays GM-only even though editing no longer is: a
+			     token is a piece of the GM's scene that a Player may be
+			     allowed to move and now to take damage on, which is a long
+			     way from being allowed to remove it. token.delete enforces
+			     the same rule.
+
+			     Not behind a confirmation, unlike deleting a scene: the
+			     deletion is undoable, which is the cheaper answer to a
+			     misclick than a dialog on every deliberate one. -->
+			{#if isGM}
+				<Button
+					variant="outline"
+					size="sm"
+					aria-label="Delete token"
+					title="Delete this token (Ctrl+Z to bring it back)"
+					onclick={() => room.deleteToken(token.id)}
+				>
+					<Trash2 class="h-4 w-4" />
+				</Button>
+			{/if}
+		</div>
+	{/snippet}
+
+	<!-- The three icons at the foot of the panel. Rendered in the rail on a
+	     desktop and in the pinned bottom bar on a phone; only one of the
+	     two is ever displayed, so the duplicate accessible names never
+	     both reach the accessibility tree. -->
+	{#snippet panelIcons(room: RoomClient)}
+		<div class="flex items-center justify-around border-t p-1">
+			<Button
+				variant={panel === 'chat' ? 'default' : 'ghost'}
+				size="sm"
+				aria-label="Chat"
+				aria-pressed={panel === 'chat'}
+				title="Chat"
+				onclick={() => {
+					panel = 'chat';
+					sheetOpen = true;
+				}}
+			>
+				<MessageSquare class="h-4 w-4" />
+			</Button>
+			<Button
+				variant={panel === 'initiative' ? 'default' : 'ghost'}
+				size="sm"
+				aria-label="Initiative"
+				aria-pressed={panel === 'initiative'}
+				title="Initiative tracker"
+				onclick={() => {
+					panel = 'initiative';
+					sheetOpen = true;
+				}}
+			>
+				<Swords class="h-4 w-4" />
+			</Button>
+			<RoomMenu
+				{room}
+				{slug}
+				{isGM}
+				onOpenScenes={() => (scenesOpen = true)}
+				onOpenNewScene={() => (newSceneOpen = true)}
+				onOpenManageRoom={() => (manageRoomOpen = true)}
+				onLeave={handleLeave}
+				onResetView={() => canvasRef?.resetView()}
+			/>
+		</div>
+	{/snippet}
+
+	<!-- Both dialogs are opened from the menu rather than from a trigger of
+	     their own, so they live out here at the top level rather than
+	     inside whichever copy of the icon bar is on screen. -->
+	{#if isGM && session}
+		<SceneManagerDialog
+			room={client}
+			roomSlug={session.roomSlug}
+			sessionToken={session.sessionToken}
+			bind:open={scenesOpen}
+			trigger={false}
+		/>
+		<CreateSceneDialog
+			room={client}
+			roomSlug={session.roomSlug}
+			sessionToken={session.sessionToken}
+			bind:open={newSceneOpen}
+			trigger={false}
+		/>
+		<ManageRoomDialog bind:open={manageRoomOpen} />
+	{/if}
+
+	<div class="fixed inset-0 flex flex-col lg:flex-row">
+		<!-- The map. Everything else either floats over it or sits in the
+		     rail beside it; there is no padding, no card and no header. -->
+		<div class="relative min-h-0 min-w-0 flex-1">
+			{#if client.scene}
+				<GameCanvas
+					room={client}
+					{activeTool}
+					{strokeColor}
+					{snapMode}
+					{lineWidthFeet}
+					bind:selectedTokenId
+					bind:this={canvasRef}
+				/>
+			{:else}
+				<div class="flex h-full items-center justify-center bg-muted p-6">
+					<p class="text-sm text-muted-foreground">
+						{isGM
+							? 'Create a scene to get started — Scenes, in the menu.'
+							: 'Waiting for the GM to start a scene…'}
+					</p>
+				</div>
+			{/if}
+
+			{#if showConnectionBanner}
+				<div
+					role="status"
+					class="absolute inset-x-0 top-0 z-30 flex flex-wrap items-center gap-3 border-b border-destructive/40 bg-destructive/10 p-3 text-sm backdrop-blur"
+				>
+					{#if client.sessionExpired}
+						<span>
+							This session is no longer valid — the room may have been reset. Rejoin to carry on.
+						</span>
+						<Button variant="outline" size="sm" onclick={() => location.reload()}>Rejoin</Button>
+					{:else if client.reconnectExhausted}
+						<span>Can't reach the table. Nothing you do will reach the others until it's back.</span
+						>
+						<Button variant="outline" size="sm" onclick={() => client?.reconnect()}
+							>Try again</Button
+						>
+					{:else}
+						<span>Reconnecting to the table…</span>
+					{/if}
+				</div>
+			{/if}
+
+			{#if client.scene}
+				<!-- Both captured here because the snippet below reads them
+				     inside a closure, where the {#if}'s narrowing doesn't
+				     reach. -->
+				{@const sceneId = client.scene.id}
+				{@const room = client}
+				{@const joined = session}
+				<div
+					class={[
+						'absolute left-2 z-20 flex flex-col items-start gap-2',
+						showConnectionBanner ? 'top-16' : 'top-2'
+					]}
+				>
+					<MapToolbar {room} bind:activeTool {isGM} onResetView={() => canvasRef?.resetView()}>
+						{#snippet newToken()}
+							{#if isGM && joined}
+								<CreateTokenDialog
+									{room}
+									{sceneId}
+									roomSlug={joined.roomSlug}
+									sessionToken={joined.sessionToken}
+									spawnCell={() => canvasRef?.viewCenterCell() ?? { x: 0, y: 0 }}
+								/>
+							{/if}
+						{/snippet}
+					</MapToolbar>
+					<!-- Floats under the toolbar on a desktop; below lg the same
+					     strip is rendered inside the sheet instead. -->
+					<div class="hidden lg:block">
+						<ToolStrip
+							room={client}
+							{sceneId}
+							bind:activeTool
+							bind:strokeColor
+							bind:snapMode
+							bind:lineWidthFeet
+							{isGM}
+						/>
+					</div>
+				</div>
+			{/if}
+		</div>
+
+		<!-- The rail. Static: the panel switcher lives inside it, so a
+		     collapsible one would need something left behind on the map to
+		     bring it back, and the map is still most of the screen without
+		     that complication. -->
+		<aside class="hidden w-[368px] shrink-0 flex-col border-l bg-background lg:flex">
+			<!-- Holds its height with nothing selected, so the rest of the rail
+			     doesn't jump every time you click empty map. -->
+			<section aria-label="Selected token" class="flex h-28 shrink-0 items-center border-b p-3">
+				{#if selectedToken}
+					<div class="w-full">{@render tokenDetails(client, selectedToken)}</div>
+				{:else}
+					<p class="w-full text-center text-sm text-muted-foreground">
+						No token selected — click one on the map.
+					</p>
+				{/if}
+			</section>
+
+			{@render sessionInfo(client)}
+
+			<!-- Both panels stay mounted and are hidden with CSS rather than
+			     swapped out: switching to the tracker and back must not lose a
+			     half-typed message or the scroll position in the log. -->
+			<div class="flex min-h-0 flex-1 flex-col p-3">
+				<div class={['flex min-h-0 flex-1 flex-col', panel !== 'chat' && 'hidden']}>
+					{@render chatPanel(client)}
+				</div>
+				<div class={['flex min-h-0 flex-1 flex-col', panel !== 'initiative' && 'hidden']}>
+					{@render initiativePanel()}
+				</div>
 			</div>
 
-			<Card.Root class="hidden w-full lg:flex lg:max-w-sm">
-				<Card.Content class="flex flex-col gap-3">
-					{@render whoIsHere(client)}
-					{@render tokenDetails(client, selectedToken)}
-					{@render chatMessages(client, 'max-h-96')}
-					{@render chatForm()}
-				</Card.Content>
-			</Card.Root>
-		</div>
+			{@render panelIcons(client)}
+		</aside>
 	</div>
 
-	<div class="fixed inset-x-0 bottom-0 lg:hidden">
-		{#if mobileChatOpen}
-			<div class="flex max-h-[60vh] flex-col gap-3 border-t bg-background p-4 shadow-lg">
-				{@render whoIsHere(client)}
-				{@render tokenDetails(client, selectedToken)}
-				{@render chatMessages(client, 'flex-1')}
-				{@render chatForm()}
+	<!-- Below lg the rail becomes a sheet coming up from the bottom, with
+	     the icons pinned along the bottom edge whether it's open or shut.
+	     A right-hand drawer sliding over the map was the alternative and
+	     was rejected: it buys one sidebar implementation by covering the
+	     thing you're looking at. -->
+	<div class="fixed inset-x-0 bottom-0 z-30 lg:hidden">
+		{#if sheetOpen}
+			<div class="flex max-h-[60vh] flex-col border-t bg-background shadow-lg">
+				<div class="flex items-center justify-end p-1">
+					<Button
+						variant="ghost"
+						size="sm"
+						aria-label="Close panel"
+						title="Give the screen back to the map"
+						onclick={() => (sheetOpen = false)}
+					>
+						<ChevronUpIcon class="h-4 w-4 rotate-180" />
+					</Button>
+				</div>
+				{@render sessionInfo(client)}
+				<div class="flex min-h-0 flex-1 flex-col p-3">
+					<div class={['flex min-h-0 flex-1 flex-col', panel !== 'chat' && 'hidden']}>
+						{@render chatPanel(client)}
+					</div>
+					<div class={['flex min-h-0 flex-1 flex-col', panel !== 'initiative' && 'hidden']}>
+						{@render initiativePanel()}
+					</div>
+				</div>
 			</div>
 		{/if}
-		<button
-			type="button"
-			class="flex w-full items-center justify-center gap-2 border-t bg-background py-2 text-sm font-medium"
-			onclick={() => (mobileChatOpen = !mobileChatOpen)}
-		>
-			<ChevronUpIcon class={mobileChatOpen ? 'rotate-180' : ''} />
-			Chat
-		</button>
+
+		<!-- The contextual strip docks here rather than floating over the
+		     map: draw's is borderline at 375px and measure's doesn't fit,
+		     and a horizontally scrolling bar over a pannable canvas is a
+		     gesture conflict. Flagged in the design as the decision most
+		     likely to be revisited once a real table has used it. -->
+		{#if client.scene && showStrip}
+			{@const sceneId = client.scene.id}
+			<div class="overflow-x-auto border-t bg-background p-1">
+				<ToolStrip
+					room={client}
+					{sceneId}
+					bind:activeTool
+					bind:strokeColor
+					bind:snapMode
+					bind:lineWidthFeet
+					{isGM}
+				/>
+			</div>
+		{/if}
+
+		<!-- The selected token becomes a bar pinned above the icons, shown
+		     only when something is selected — it leaves the sheet entirely,
+		     and unlike the rail it holds no space when nothing is selected.
+		     Anchoring it to the token itself was the first idea and was
+		     rejected: it tracks a target you're dragging under your own
+		     thumb, covers the squares around it, and needs world→screen
+		     conversion every frame because the card is DOM and the token is
+		     Konva. The selection ring already says *which* token; this only
+		     has to say *what*. -->
+		{#if selectedToken}
+			<section aria-label="Selected token" class="border-t bg-background p-2">
+				{@render tokenDetails(client, selectedToken)}
+			</section>
+		{/if}
+
+		<div class="bg-background">
+			{@render panelIcons(client)}
+		</div>
 	</div>
 {/if}

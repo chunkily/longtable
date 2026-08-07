@@ -25,7 +25,11 @@ architecture and current state live here instead**, and keeping them true is par
 | `web/src/lib/api.ts`, `session.ts` | REST client; per-room session in `localStorage` |
 | `web/src/lib/room.svelte.ts` | `RoomClient`: the WS protocol wrapped in Svelte 5 runes state |
 | `web/src/lib/components/game-canvas.svelte` | the whole Konva map: layers, tools, rendering |
-| `web/src/routes/r/[slug]/+page.svelte` | the room page — join form, toolbar, chat |
+| `web/src/lib/tool-family.ts` | the `Tool` union, and the rules grouping it into the toolbar's five families |
+| `web/src/lib/components/map-toolbar.svelte`, `tool-strip.svelte` | the floating tool row, and the active family's contextual strip |
+| `web/src/lib/components/room-menu.svelte` | the menu behind the side panel's third icon: Scenes, New scene, Assets, Manage room, Leave room |
+| `web/src/routes/r/[slug]/+page.svelte` | the room page — join form, then the full-bleed shell: map, floating toolbar, side rail (or bottom sheet) |
+| `web/e2e/room.ts` | shared Playwright helpers for driving the room — family-aware `selectTool`, the menu, `mapGestureOrigin` |
 | `web/src/routes/r/[slug]/assets/+page.svelte` | the assets page — the only way art enters a room's library, and the only way one leaves: tabbed by token/map, with name, credit, grid alignment, search |
 | `web/e2e/` | Playwright specs; several read canvas pixels because Konva has no DOM |
 | `planning/` | backlog, user stories, ADRs (`decisions/`), role glossary |
@@ -68,8 +72,22 @@ only their own — the first delete leaves the room seeing "this message has bee
 the author and whoever just deleted it still see the original text struck through; a second
 delete on that same message purges it outright for everyone), and a live list of who's connected
 (distinct from the room's roster of everyone who has ever joined, which `state.sync` also
-carries). A dropped socket reconnects on
-its own with backoff, and says so on screen while it's down. Art enters a room only through the
+carries).
+
+**The room page is built around the map**: the canvas fills the window, with no page padding, no
+card and no header. The toolbar floats over its top-left as five tool *families* — hand, draw,
+measure, fog, ping — with `New token` alongside and a contextual strip below carrying only the
+active family's variants and settings (the eraser is inside draw; the templates inside measure).
+Everything else lives in a fixed full-height rail down the right: the selected token at the top
+(holding its height when nothing is selected, so the rail doesn't jump), session info under it,
+then chat or the initiative tracker filling the rest, and three icons at the foot switching
+between chat, initiative and a menu holding Scenes, New scene, Assets, Manage room and Leave
+room. Below `lg` the rail becomes a bottom sheet with those icons pinned to the bottom edge, the
+contextual strip docks into it rather than floating, the selected token becomes a bar above the
+icons shown only when something is selected, and redo and reset view move from the toolbar into
+the menu. A dropped socket reconnects on
+its own with backoff, and says so on a banner across the top of the map while it's down — the one
+thing a Room Member must not miss, and a status dot in a corner is missable. Art enters a room only through the
 assets page at `/r/{slug}/assets`. That page is tabbed by kind, Tokens and Maps, and the tab
 governs all of it: what the library grid shows, and what anything added from there is filed as —
 chosen before the file dialog opens rather than asked for afterwards. An upload is named
@@ -87,11 +105,14 @@ through, and joins the uploading room's library — content-addressed globally s
 share one file, but a room only ever sees what it added itself, under its own name and credit.
 All of it syncs live; everything but pings and measurements persists.
 
-Known gaps, which is also roughly the queue: no initiative tracker, ownership governs a token's
-trackers and conditions but nothing else (anyone can still move anyone's token),
-fog has no automatic vision from tokens, no prebuilt releases, no way for a Host to
-remove a moderated asset server-wide or cap upload sizes per room (a room removing something from
-its own library is a different, smaller thing, and does exist).
+Known gaps, which is also roughly the queue: no initiative tracker — the side panel switches to it
+and says so, which is the shape waiting for the feature; `Manage room` is likewise an empty
+container for settings that don't exist yet (room privacy, the token ownership lock, deleting a
+room). Ownership governs a token's trackers and conditions but nothing else (anyone can still move
+anyone's token), fog has no automatic vision from tokens, no prebuilt releases, no way for a Host
+to remove a moderated asset server-wide or cap upload sizes per room (a room removing something
+from its own library is a different, smaller thing, and does exist). The drawing tools still have
+no stroke-width or fill control; both are open items and both now have a strip to land on.
 
 Two bugs used to bite specifically when the app was used the way it's meant to be — a GM hosting
 and everyone else on `http://192.168.x.x:8080` from their own device — while never showing up on

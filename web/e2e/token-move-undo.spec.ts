@@ -1,4 +1,5 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
+import { openNewSceneDialog } from './room';
 
 // Undoing a token move over the real stack. Both halves need a browser:
 // the move is a drag on a Konva canvas with no DOM to assert on, and the
@@ -87,7 +88,7 @@ async function openRoomAsGM(browser: Browser, roomName: string) {
 	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
 	const slug = new URL(page.url()).pathname.split('/').pop()!;
 
-	await page.getByRole('button', { name: 'New scene' }).click();
+	await openNewSceneDialog(page);
 	await page.getByLabel('Name').fill('Map');
 	await page.getByRole('button', { name: 'Create scene' }).click();
 	await expect(page.locator('canvas').first()).toBeVisible();

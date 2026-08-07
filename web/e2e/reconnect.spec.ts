@@ -1,4 +1,5 @@
 import { expect, test, type Page, type WebSocketRoute } from '@playwright/test';
+import { openNewSceneDialog } from './room';
 
 // A dropped socket used to end the session until someone reloaded, with
 // every command silently doing nothing and only a small status badge to
@@ -50,7 +51,7 @@ async function createRoomWithScene(page: Page, name: string) {
 	await page.getByRole('button', { name: 'Create room' }).click();
 	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
 
-	await page.getByRole('button', { name: 'New scene' }).click();
+	await openNewSceneDialog(page);
 	await page.getByLabel('Name').fill('Map');
 	await page.getByRole('button', { name: 'Create scene' }).click();
 	await expect(page.locator('canvas').first()).toBeVisible();

@@ -1,7 +1,7 @@
 ---
 title: Room Member sees the map fill the screen
 created: 2026-08-04
-status: incomplete
+status: done
 ---
 
 As a Room Member

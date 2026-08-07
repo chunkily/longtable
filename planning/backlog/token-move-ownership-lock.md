@@ -38,6 +38,12 @@ something: a Player-made token is owned by its creator without anyone choosing a
 that turns the lock on gets sensible behaviour by default rather than needing the GM to assign
 every token first.
 
+**Its home now exists.** [full-bleed-map-layout](full-bleed-map-layout.md) shipped a
+`Manage room` dialog (`web/src/lib/components/manage-room-dialog.svelte`), opened from the room
+menu and GM-only, holding nothing yet and saying so. This is one of the settings it is waiting
+for: add it there rather than inventing a second place for room settings to live, and delete the
+"nothing to configure yet" paragraph once something is.
+
 ## Related user stories
 
 - [gm-toggle-token-owner-only-movement](../user-stories/gm-toggle-token-owner-only-movement.md)

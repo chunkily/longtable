@@ -1,7 +1,7 @@
 ---
 title: Full-bleed map layout
 created: 2026-08-04
-status: open
+status: done
 tags: [ui, layout]
 ---
 
@@ -131,3 +131,58 @@ the same thing wearing different clothes.
 - [room-member-map-tool-families](../user-stories/room-member-map-tool-families.md)
 - [room-member-room-side-panel](../user-stories/room-member-room-side-panel.md)
 - [room-member-mobile-room-layout](../user-stories/room-member-mobile-room-layout.md)
+
+## What shipped
+
+The whole shape above, desktop and mobile, in one pass. New files: `$lib/tool-family.ts` (the
+`Tool` union plus the family rules, with unit tests), `map-toolbar.svelte`, `tool-strip.svelte`,
+`room-menu.svelte`, `manage-room-dialog.svelte`, and `e2e/room.ts`. `+page.svelte` was rebuilt
+around a `fixed inset-0` shell; the canvas container lost its `h-[70vh]` and border and now just
+fills whatever box it's given.
+
+Three decisions worth not rediscovering:
+
+- **The active family is derived from the active tool, never stored beside it.** `familyOf` is
+  total over the union and `'none'` *is* the hand, so there is always exactly one family to
+  highlight and no way for the strip and the canvas to disagree. `toolForFamily` remembers what
+  each family was last left on so coming back to Draw restores your shape. Neither family nor
+  variant buttons toggle: there's an explicit Hand button to stop with, so a second click on the
+  active family would only be a surprising way to lose the strip you were reaching for.
+- **New scene went into the menu as a second entry, not inside the Scenes dialog.** The item's
+  toolbar section says both live under the menu, which is what got built; the side-panel story
+  lists four entries and there are five. Opening the create dialog from inside the Scenes dialog
+  was tried first and left two stacked modals with two focus traps, and the list underneath isn't
+  something you're still reading while naming a new scene.
+- **The ruler's button is `Distance`, not `Measure`.** The family button is already Measure, and
+  two controls sharing an accessible name in one view is ambiguous to a screen reader and to
+  Playwright alike.
+
+Two things the change exposed rather than caused, both fixed here:
+
+- **A token-layer rebuild stranded `hoveredTokenId`.** The rebuild destroys every group, so the
+  old one can't fire `mouseleave` and the new one fires no `mouseenter` — the hover card outlived
+  the pointer and never cleared. The stage's own `mouseleave` used to paper over it, which is why
+  nobody had seen it: before the map filled the window there was plenty of page outside the canvas
+  to move onto. `renderTokens` now ends with `syncHoverToPointer()`, re-deriving hover from where
+  the pointer actually is. `token-trackers.spec.ts` had been passing only because its "move away"
+  point landed off the smaller canvas.
+- **The `ResizeObserver` only called `renderGrid`.** The stage now resizes for reasons that aren't
+  a window drag — the sheet opening, the strip appearing — and each moves the viewport over the
+  world exactly as a pan does, so it calls `applyViewChange()` like every other view change. The
+  item's own note about `applyViewChange` predicted this.
+
+The e2e suite (79 specs) needed real work and now shares `e2e/room.ts`: a family-aware
+`selectTool`, `selectToolFamily` for the fog family's one-shot buttons, menu helpers for Scenes /
+New scene / Assets, and `mapGestureOrigin`. That last one is the trap most likely to catch the
+next person — the toolbar floats over the map's top-left, so a drag from the true canvas origin
+lands on a button, and **a spec that also probes pixels has to add `TOOLBAR_CLEARANCE_Y` back on**
+because the canvas buffer still starts at its true corner. The failure mode is "expected > 0,
+received 0", which reads like a broken feature rather than a mis-aimed test.
+
+Two pieces are shape-without-substance on purpose, and both say so on screen: the initiative panel
+(see [initiative-tracker](initiative-tracker.md)) and `Manage room`, whose three intended settings
+are each still open items. Building the switcher and the menu now means those land as contents
+rather than as a new icon nobody notices.
+
+Not done, and deliberately: the rail is a fixed 368px, since resizable-with-a-remembered-width was
+discussed at the design session and left undecided.
