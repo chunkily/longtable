@@ -18,6 +18,12 @@ export interface ChatMessage {
 	rollResult: number | null;
 	rollBreakdown: string | null;
 	createdAt: string;
+	// Set once the first of the two delete stages has happened: body and
+	// the roll fields are already cleared server-side, so this is the
+	// only thing that tells the placeholder apart from an ordinary empty
+	// message. A second delete removes the message from `messages`
+	// entirely rather than ever setting this a second time.
+	deleted: boolean;
 }
 
 // One of a token's three numeric slots. `value` is null for an empty
@@ -489,6 +495,13 @@ export class RoomClient {
 
 	sendChat(text: string) {
 		this.send('chat.send', { text });
+	}
+
+	// Sent for both delete stages — the hub decides which one applies
+	// from the message's current state, so the client never has to track
+	// which stage a message is on before asking to delete it again.
+	deleteMessage(messageId: string) {
+		this.send('chat.delete', { messageId });
 	}
 
 	// The square the token came from is worked out here rather than passed
@@ -1028,6 +1041,26 @@ export class RoomClient {
 			case 'chat.posted':
 				this.messages = [...this.messages, env.payload as ChatMessage];
 				break;
+
+			// The first delete stage: swap the message in place for whatever
+			// the server sent — the row survives, and the server has already
+			// decided per recipient whether this client is the author or the
+			// deleter (full content, struck through client-side) or a
+			// bystander (blanked fields, rendered as the generic
+			// placeholder). The client never redacts on its own.
+			case 'chat.deleted': {
+				const updated = env.payload as ChatMessage;
+				this.messages = this.messages.map((m) => (m.id === updated.id ? updated : m));
+				break;
+			}
+
+			// The second delete stage: gone for good, so it comes out of the
+			// log entirely instead of staying as a placeholder.
+			case 'chat.purged': {
+				const payload = env.payload as { messageId: string };
+				this.messages = this.messages.filter((m) => m.id !== payload.messageId);
+				break;
+			}
 
 			case 'token.created':
 				this.tokens = [...this.tokens, env.payload as Token];

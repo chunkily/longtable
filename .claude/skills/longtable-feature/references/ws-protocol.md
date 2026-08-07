@@ -21,6 +21,7 @@ Envelope both ways:
 | Command | Who | Persists | Broadcast |
 | --- | --- | --- | --- |
 | `chat.send` | anyone | yes | `chat.posted` |
+| `chat.delete` | author, or any GM | yes | `chat.deleted` (first call) or `chat.purged` (second) |
 | `token.create` | GM only | yes | `token.created` (GM-only if hidden) |
 | `token.move` | anyone | yes | `token.moved` |
 | `token.update` | GM, or the token's owner for trackers/conditions | yes | `token.updated` (+ `token.deleted` to Players on hiding) |
@@ -54,6 +55,28 @@ snap convention produced them, or that the length was rounded at all.
 Unknown command types get an `error` back naming the type. `chat.send` text starting with `/` is
 routed to `handleSlashCommand` (only `/roll` and `/r` today; unknown commands error back to the
 sender and never enter the chat log).
+
+`chat.delete` folds two delete stages into one command, the way `token.update` folds several
+permission levels into one: which one fires depends on the message's current state, not on
+anything the client sends. The first call stamps `deleted_at` and `deleted_by_participant_id` but
+leaves the row's content alone, broadcasting `chat.deleted` **per client** — same technique as a
+hidden token's broadcast — so the author and whoever just deleted it keep seeing the original
+body (and roll fields, for a `/roll`) struck through client-side, while everyone else gets a
+payload with those fields blanked and renders the generic "this message has been deleted"
+placeholder instead. A second call on that same message purges the row outright and broadcasts
+`chat.purged` — one payload for everyone this time, since there's no content left to redact.
+
+Authorization for *both* stages is the same author-or-GM check against `Message.ParticipantID` —
+that's who's allowed to *act*. Who's still allowed to *see* the content after the first stage is a
+different question, decided by `messagePayload`'s `messageVisibleTo`: the author or
+`Message.DeletedByParticipantID`, which is not always the same person — a GM moderating someone
+else's message is a deleter who isn't the author, and stays privileged without that making the
+message privileged for GMs generally. The row surviving the first stage is what makes any of this
+possible: purging immediately would leave the second delete with nothing to check authorship
+against, forcing it to fall back to GM-only and quietly taking a Player's own second click away
+from them, and would leave `messageVisibleTo` with no content to redact selectively in the first
+place. A message with no recorded author (like an unattributed drawing) is nobody's to delete but
+a GM's, at either stage — and once deleted, the GM who did it is the only one still privileged.
 
 `fog.revealAll` deliberately broadcasts `fog.revealed` rather than an event of its own: it
 enumerates the scene's cells server-side (`sceneFogCells`) and sends them as an ordinary reveal,
@@ -209,15 +232,20 @@ picture and `resetAfterSync` drops anything in flight, so a reconnect converges 
 
 ## Events (server → client)
 
-`state.sync`, `chat.posted`, `token.created`, `token.moved`, `token.updated`, `token.deleted`,
-`participant.connected`, `participant.disconnected`, `fog.revealed`, `fog.hidden`,
-`fog.reset`, `scene.activated`, `scene.created`, `scene.updated`, `scene.deleted`,
-`drawing.created`, `drawing.deleted`, `ping`, `measure.updated`, `measure.ended`, `error`.
+`state.sync`, `chat.posted`, `chat.deleted`, `chat.purged`, `token.created`, `token.moved`,
+`token.updated`, `token.deleted`, `participant.connected`, `participant.disconnected`,
+`fog.revealed`, `fog.hidden`, `fog.reset`, `scene.activated`, `scene.created`, `scene.updated`,
+`scene.deleted`, `drawing.created`, `drawing.deleted`, `ping`, `measure.updated`,
+`measure.ended`, `error`.
 
 `state.sync` and `scene.activated` both carry the same full picture — `{scene, tokens, fogCells,
 drawings}` built by `sceneStatePayload` — so a client can render immediately without another
-round trip. `state.sync` adds `room`, `you`, the last 50 chat messages (newest first; the
-client reverses them), and `scenes`: every scene in the room, for the picker.
+round trip. `state.sync` adds `room`, `you`, the last 50 chat messages (newest first; the client
+reverses them), and `scenes`: every scene in the room, for the picker. `messagePayloads` builds
+that list against the connecting client's own participant id, so a message soft-deleted before it
+connects arrives already redacted (or not) exactly as it would have live — the author or deleter
+sees the original content, everyone else `deleted: true` with the fields blanked. A purged one is
+gone from the table and simply isn't among the 50.
 
 `scene.created` and `scene.updated` carry **only** `{scene}` — deliberately not the full picture.
 A map swap changes the backdrop and nothing else, and sending `scene.activated` for it would make

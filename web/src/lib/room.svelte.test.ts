@@ -367,6 +367,85 @@ describe('RoomClient', () => {
 		expect(JSON.parse(socket.sent[0])).toEqual({ type: 'chat.send', payload: { text: 'hello' } });
 	});
 
+	it('sends chat.delete with the message id', () => {
+		const { client, socket } = connectedClient();
+		client.deleteMessage('m1');
+		expect(socket.sent).toHaveLength(1);
+		expect(JSON.parse(socket.sent[0])).toEqual({
+			type: 'chat.delete',
+			payload: { messageId: 'm1' }
+		});
+	});
+
+	// The server decides per recipient whether this client is privileged
+	// (author or deleter — full content) or a bystander (blanked fields).
+	// RoomClient's job on chat.deleted is just to take whatever arrives.
+	it('takes the server-provided content as-is on chat.deleted (bystander case)', () => {
+		const { client, socket } = connectedClient();
+		socket.emit({
+			type: 'state.sync',
+			payload: {
+				room: { slug: 'abc123', name: 'Room' },
+				you: { participantId: 'p1', displayName: 'A', role: 'gm' },
+				messages: [
+					{
+						id: 'm1',
+						createdAt: '1',
+						body: 'hi',
+						rollExpression: null,
+						rollResult: null,
+						rollBreakdown: null,
+						deleted: false
+					}
+				]
+			}
+		});
+
+		socket.emit({
+			type: 'chat.deleted',
+			payload: { id: 'm1', createdAt: '1', body: '', deleted: true }
+		});
+
+		expect(client.messages).toHaveLength(1);
+		expect(client.messages[0]).toMatchObject({ id: 'm1', body: '', deleted: true });
+	});
+
+	it('keeps the original content when this client is the author or deleter', () => {
+		const { client, socket } = connectedClient();
+		socket.emit({
+			type: 'state.sync',
+			payload: {
+				room: { slug: 'abc123', name: 'Room' },
+				you: { participantId: 'p1', displayName: 'A', role: 'gm' },
+				messages: [{ id: 'm1', createdAt: '1', body: 'hi', deleted: false }]
+			}
+		});
+
+		socket.emit({
+			type: 'chat.deleted',
+			payload: { id: 'm1', createdAt: '1', body: 'hi', deleted: true }
+		});
+
+		expect(client.messages).toHaveLength(1);
+		expect(client.messages[0]).toMatchObject({ id: 'm1', body: 'hi', deleted: true });
+	});
+
+	it('removes a message entirely on chat.purged', () => {
+		const { client, socket } = connectedClient();
+		socket.emit({
+			type: 'state.sync',
+			payload: {
+				room: { slug: 'abc123', name: 'Room' },
+				you: { participantId: 'p1', displayName: 'A', role: 'gm' },
+				messages: [{ id: 'm1', createdAt: '1', body: 'hi', deleted: false }]
+			}
+		});
+
+		socket.emit({ type: 'chat.purged', payload: { messageId: 'm1' } });
+
+		expect(client.messages).toHaveLength(0);
+	});
+
 	it('loads drawings from state.sync and appends drawing.created events', () => {
 		const { client, socket } = connectedClient();
 		socket.emit({

@@ -63,8 +63,12 @@ drawing, erasing, token deletion and token moves (an undo passes over a token so
 moved since, rather than dragging it back out from under them),
 pings, distance measuring, area-of-effect templates (circle/cone/line/cube, origin on a snap
 mode and size in whole 5 ft steps),
-chat with `/roll`, and a live list of who's connected (distinct from the room's roster of
-everyone who has ever joined, which `state.sync` also carries). A dropped socket reconnects on
+chat with `/roll` and a two-stage delete (a GM may delete or purge any message, everyone else
+only their own — the first delete leaves the room seeing "this message has been deleted", while
+the author and whoever just deleted it still see the original text struck through; a second
+delete on that same message purges it outright for everyone), and a live list of who's connected
+(distinct from the room's roster of everyone who has ever joined, which `state.sync` also
+carries). A dropped socket reconnects on
 its own with backoff, and says so on screen while it's down. Art enters a room only through the
 assets page at `/r/{slug}/assets`. That page is tabbed by kind, Tokens and Maps, and the tab
 governs all of it: what the library grid shows, and what anything added from there is filed as —

@@ -41,7 +41,7 @@ func (h *Hub) sendStateSync(ctx context.Context, c *client, room store.Room) {
 	if err != nil {
 		slog.Error("ws: list recent messages failed", "error", err)
 	} else {
-		payload["messages"] = messagePayloads(messages)
+		payload["messages"] = messagePayloads(messages, c.participant.ID)
 	}
 
 	// Every scene in the room, not just the active one: the scene picker
@@ -219,24 +219,51 @@ func drawingPayloads(drawings []store.Drawing) []map[string]any {
 	return out
 }
 
-func messagePayload(m store.Message) map[string]any {
+// messagePayload builds a message's payload for a specific viewer. A
+// deleted message is redacted (body and roll fields blanked) unless the
+// viewer is the one who wrote it or the one who deleted it — the same
+// two people who can still make sense of an "undo" of their own action
+// — mirroring how a hidden token is withheld from everyone but the GM.
+// viewerParticipantID is ignored while the message isn't deleted, since
+// there's nothing to redact yet.
+func messagePayload(m store.Message, viewerParticipantID string) map[string]any {
+	body, rollExpression, rollResult, rollBreakdown := m.Body, m.RollExpression, m.RollResult, m.RollBreakdown
+	if m.DeletedAt != nil && !messageVisibleTo(m, viewerParticipantID) {
+		body, rollExpression, rollResult, rollBreakdown = "", nil, nil, nil
+	}
 	return map[string]any{
 		"id":              m.ID,
 		"participantId":   m.ParticipantID,
 		"participantName": m.ParticipantName,
 		"kind":            string(m.Kind),
-		"body":            m.Body,
-		"rollExpression":  m.RollExpression,
-		"rollResult":      m.RollResult,
-		"rollBreakdown":   m.RollBreakdown,
+		"body":            body,
+		"rollExpression":  rollExpression,
+		"rollResult":      rollResult,
+		"rollBreakdown":   rollBreakdown,
 		"createdAt":       m.CreatedAt,
+		"deleted":         m.DeletedAt != nil,
 	}
 }
 
-func messagePayloads(messages []store.Message) []map[string]any {
+// messageVisibleTo reports whether a deleted message's original content
+// may still be shown to viewerParticipantID: whoever wrote it, or
+// whoever deleted it. Those aren't always the same person — a GM may
+// delete a Player's message, and that GM should still see what they
+// just removed.
+func messageVisibleTo(m store.Message, viewerParticipantID string) bool {
+	if viewerParticipantID == "" {
+		return false
+	}
+	if m.ParticipantID != nil && *m.ParticipantID == viewerParticipantID {
+		return true
+	}
+	return m.DeletedByParticipantID != nil && *m.DeletedByParticipantID == viewerParticipantID
+}
+
+func messagePayloads(messages []store.Message, viewerParticipantID string) []map[string]any {
 	out := make([]map[string]any, len(messages))
 	for i, m := range messages {
-		out[i] = messagePayload(m)
+		out[i] = messagePayload(m, viewerParticipantID)
 	}
 	return out
 }

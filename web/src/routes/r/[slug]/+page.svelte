@@ -261,18 +261,52 @@
 	{#snippet chatMessages(room: RoomClient, maxHeightClass: string)}
 		<ul class={['flex flex-col gap-2 overflow-y-auto', maxHeightClass]}>
 			{#each room.messages as msg (msg.id)}
+				{@const canDelete =
+					!!room.you && (room.you.role === 'gm' || msg.participantId === room.you.participantId)}
+				<!-- The server redacts per recipient, not this component: an
+				     empty body on a deleted message means this client is a
+				     bystander, and anything else means it's the author or the
+				     one who deleted it, still allowed to see what they wrote
+				     or removed — struck through rather than hidden outright. -->
+				{@const isRedacted = msg.deleted && !msg.body && !msg.rollExpression}
 				<li
 					class={[
-						'rounded-md px-2 py-1 text-sm',
-						msg.kind === 'roll' && 'bg-accent text-accent-foreground'
+						'flex items-start gap-1 rounded-md px-2 py-1 text-sm',
+						msg.kind === 'roll' && !isRedacted && 'bg-accent text-accent-foreground'
 					]}
 				>
-					<strong>{msg.participantName}:</strong>
-					{#if msg.kind === 'roll'}
-						{msg.body} → <strong>{msg.rollResult}</strong>
-						<span class="text-xs text-muted-foreground">({msg.rollBreakdown})</span>
-					{:else}
-						{msg.body}
+					<div class="min-w-0 flex-1">
+						{#if isRedacted}
+							<span class="text-muted-foreground italic">This message has been deleted.</span>
+						{:else}
+							<span class={msg.deleted ? 'line-through opacity-60' : undefined}>
+								<strong>{msg.participantName}:</strong>
+								{#if msg.kind === 'roll'}
+									{msg.body} → <strong>{msg.rollResult}</strong>
+									<span class="text-xs text-muted-foreground">({msg.rollBreakdown})</span>
+								{:else}
+									{msg.body}
+								{/if}
+							</span>
+						{/if}
+					</div>
+					<!-- chat.delete folds both stages into one command — the hub
+					     decides from the message's current state whether this
+					     click leaves a placeholder or purges it, so the button
+					     never has to track which stage a message is on. -->
+					{#if canDelete}
+						<Button
+							variant="ghost"
+							size="sm"
+							class="h-5 w-5 shrink-0 p-0"
+							aria-label={msg.deleted ? 'Remove message permanently' : 'Delete message'}
+							title={msg.deleted
+								? 'Remove this message permanently'
+								: 'Delete this message (click again to remove it permanently)'}
+							onclick={() => room.deleteMessage(msg.id)}
+						>
+							<Trash2 class="h-3 w-3" />
+						</Button>
 					{/if}
 				</li>
 			{/each}

@@ -305,6 +305,8 @@ func (h *Hub) handleMessage(ctx context.Context, c *client, data []byte) {
 		h.handleSceneSetMap(ctx, c, env.Payload)
 	case "chat.send":
 		h.handleChatSend(ctx, c, env.Payload)
+	case "chat.delete":
+		h.handleChatDelete(ctx, c, env.Payload)
 	case "draw.create":
 		h.handleDrawCreate(ctx, c, env.Payload)
 	case "draw.delete":
@@ -1607,7 +1609,9 @@ func (h *Hub) handleRollCommand(ctx context.Context, c *client, rawText, express
 	})
 }
 
-// postMessage persists and broadcasts a chat log entry.
+// postMessage persists and broadcasts a chat log entry. viewerParticipantID
+// is irrelevant to messagePayload until the message is deleted, so a fresh
+// message goes out identically to everyone.
 func (h *Hub) postMessage(ctx context.Context, c *client, m store.Message) {
 	msg, err := h.store.InsertMessage(m)
 	if err != nil {
@@ -1615,5 +1619,74 @@ func (h *Hub) postMessage(ctx context.Context, c *client, m store.Message) {
 		h.sendError(ctx, c, "failed to send message")
 		return
 	}
-	h.broadcast(ctx, c.roomID, "chat.posted", messagePayload(msg))
+	h.broadcast(ctx, c.roomID, "chat.posted", messagePayload(msg, ""))
+}
+
+type chatDeleteRequest struct {
+	MessageID string `json:"messageId"`
+}
+
+// handleChatDelete folds two delete stages into one command. The first
+// call on a message soft-deletes it: the author and whoever just
+// deleted it keep seeing the original content struck through, everyone
+// else gets a generic placeholder — chat.deleted goes out per-client,
+// same technique as a hidden token's broadcast. A second call, sent
+// again once it's already deleted, purges the row outright for
+// everyone. Authorization is the same author-or-GM check both times,
+// against the row's original author, which is why the row has to
+// survive the first stage rather than being wiped immediately: a purge
+// with nothing left to check authorship against would have to fall back
+// to GM-only, silently taking the second click away from the Player who
+// made the first.
+func (h *Hub) handleChatDelete(ctx context.Context, c *client, raw json.RawMessage) {
+	var req chatDeleteRequest
+	if err := decodePayload(raw, &req); err != nil || req.MessageID == "" {
+		h.sendError(ctx, c, "invalid chat.delete payload")
+		return
+	}
+
+	msg, err := h.store.GetMessage(req.MessageID)
+	// A message in another room answers identically to one that doesn't
+	// exist, same as sceneInRoom elsewhere — a client can't use this to
+	// probe what's in a room it isn't in.
+	if err != nil || msg.RoomID != c.roomID {
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			slog.Error("ws: lookup message failed", "error", err)
+		}
+		h.sendError(ctx, c, "message not found")
+		return
+	}
+
+	if c.participant.Role != store.RoleGM {
+		if msg.ParticipantID == nil || *msg.ParticipantID != c.participant.ID {
+			h.sendError(ctx, c, "you can only delete messages you sent")
+			return
+		}
+	}
+
+	if msg.DeletedAt == nil {
+		if err := h.store.SoftDeleteMessage(msg.ID, c.participant.ID); err != nil {
+			slog.Error("ws: soft-delete message failed", "error", err)
+			h.sendError(ctx, c, "failed to delete message")
+			return
+		}
+		// messagePayload only redacts once it sees DeletedAt set, so the
+		// in-memory copy needs both fields the store just persisted —
+		// its exact value doesn't matter, only that it's non-nil.
+		deletedAt := time.Now().UTC().Format(time.RFC3339Nano)
+		msg.DeletedAt = &deletedAt
+		deletedBy := c.participant.ID
+		msg.DeletedByParticipantID = &deletedBy
+		h.broadcastPerClient(ctx, c.roomID, "chat.deleted", func(recipient *client) any {
+			return messagePayload(msg, recipient.participant.ID)
+		})
+		return
+	}
+
+	if err := h.store.DeleteMessage(msg.ID); err != nil {
+		slog.Error("ws: purge message failed", "error", err)
+		h.sendError(ctx, c, "failed to delete message")
+		return
+	}
+	h.broadcast(ctx, c.roomID, "chat.purged", map[string]any{"messageId": msg.ID})
 }

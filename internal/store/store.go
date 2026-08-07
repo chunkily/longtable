@@ -53,6 +53,13 @@ func (s *Store) migrate() error {
 	if _, err := s.addColumnIfMissing("token", "conditions", `TEXT NOT NULL DEFAULT '[]'`); err != nil {
 		return err
 	}
+	if _, err := s.addColumnIfMissing("message", "deleted_at", `TEXT`); err != nil {
+		return err
+	}
+	if _, err := s.addColumnIfMissing("message", "deleted_by_participant_id",
+		`TEXT REFERENCES participant(id) ON DELETE SET NULL`); err != nil {
+		return err
+	}
 	return s.migrateCircleDrawingsToEllipse()
 }
 
@@ -173,7 +180,9 @@ func (s *Store) createTables() error {
 			roll_expression    TEXT,
 			roll_result        INTEGER,
 			roll_breakdown     TEXT,
-			created_at         TEXT NOT NULL
+			created_at         TEXT NOT NULL,
+			deleted_at         TEXT,
+			deleted_by_participant_id TEXT REFERENCES participant(id) ON DELETE SET NULL
 		);
 		CREATE INDEX IF NOT EXISTS idx_message_room ON message(room_id);
 	`)
