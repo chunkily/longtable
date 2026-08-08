@@ -17,7 +17,8 @@
 		value,
 		label,
 		ariaLabel,
-		oncommit
+		oncommit,
+		readonly = false
 	}: {
 		/** The room's value for this slot, or null when it's unset. */
 		value: number | null;
@@ -35,6 +36,14 @@
 		 * broadcast a one-point total on the way past.
 		 */
 		oncommit: (next: number | null) => void;
+		/**
+		 * A Player looking at a token they don't own gets this box too —
+		 * same size, same font, so an enemy's HP is exactly as legible as
+		 * its owner's — just with the step panel and every path to `send`
+		 * turned off. Not a second component: the two views would drift in
+		 * a way this bug already came from once.
+		 */
+		readonly?: boolean;
 	} = $props();
 
 	// What the box shows. Held locally rather than read straight off the
@@ -97,6 +106,7 @@
 	}
 
 	function send(next: number | null) {
+		if (readonly) return;
 		if (next === lastSent) return;
 		lastSent = next;
 		oncommit(next);
@@ -136,6 +146,7 @@
 	// so a step commits on the spot. Waiting for a blur would mean the
 	// first of "−7, then −3, then −5" never landed.
 	function step(direction: 1 | -1) {
+		if (readonly) return;
 		const next = (parse(draft) ?? 0) + direction * (parse(amount) ?? 1);
 		draft = next;
 		send(next);
@@ -144,8 +155,11 @@
 	// Scrolling over the value box is a step, same as the buttons the panel
 	// already has — only while it's focused, so scrolling the sidebar past
 	// an unfocused box doesn't quietly edit a tracker underneath the cursor.
+	// Readonly skips preventDefault too, rather than just no-opping past it:
+	// a Player resting the wheel on someone else's HP box should scroll the
+	// sidebar, not silently swallow the scroll for a step that never lands.
 	function handleWheel(event: WheelEvent) {
-		if (!focused) return;
+		if (!focused || readonly) return;
 		event.preventDefault();
 		step(event.deltaY < 0 ? 1 : -1);
 	}
@@ -179,6 +193,7 @@
 	     desktop, where the reader is furthest from the screen. -->
 	<Input
 		bind:ref={referenceEl}
+		{readonly}
 		type="number"
 		inputmode="numeric"
 		aria-label={ariaLabel}
@@ -190,7 +205,7 @@
 		class="h-11 [appearance:textfield] px-1 text-center font-mono text-lg md:text-lg [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
 	/>
 
-	{#if focused}
+	{#if focused && !readonly}
 		<div
 			bind:this={floatingEl}
 			class="absolute z-50 flex w-max items-center gap-1 rounded-md border bg-popover p-1 shadow-md"

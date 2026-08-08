@@ -96,11 +96,12 @@ async function addCondition(page: Page, text: string) {
 	await page.getByRole('button', { name: 'Add condition' }).click();
 }
 
-// A tracker's box in the details panel, for a client that may edit the
-// token. Scoped to the panel and named "… current value" so it can't
-// collide with the dialog's own "Tracker N value" fields — the panel is
-// rendered twice (desktop sidebar and mobile sheet) and the dialog may
-// be open at the same time.
+// A tracker's box in the details panel — the same element whether this
+// client may edit the token or not, readonly toggling only whether it
+// takes a step. Scoped to the panel and named "… current value" so it
+// can't collide with the dialog's own "Tracker N value" fields — the
+// panel is rendered twice (desktop sidebar and mobile sheet) and the
+// dialog may be open at the same time.
 //
 // `label` is whatever the slot is called, or "Tracker N" while it has no
 // label yet, which is what the panel shows in that case too.
@@ -177,10 +178,10 @@ test('a GM sets trackers and conditions, and the whole room can read them', asyn
 	await expect(trackerBox(gm.page, 'Tracker 3')).toHaveValue('');
 	await expect(detailsSection(gm.page)).toContainText('Prone');
 
-	// The Player owns nothing here, so they get the read-only rendering —
-	// and an unset slot reads as a dash rather than disappearing.
-	await expect(detailsSection(player.page)).toContainText('HP 7');
-	await expect(detailsSection(player.page)).toContainText('AC 15');
+	// The Player owns nothing here, so their boxes are readonly — same
+	// element, same aria-label, just one that won't take a step from them.
+	await expect(trackerBox(player.page, 'HP')).toHaveValue('7');
+	await expect(trackerBox(player.page, 'AC')).toHaveValue('15');
 	await expect(detailsSection(player.page)).toContainText('Prone');
 
 	// The other half of the acceptance criteria: the same numbers readable
@@ -236,7 +237,7 @@ test('a number typed into the panel reaches the room, and takes nothing else wit
 	await trackerBox(gm.page, 'HP').fill('12');
 	await trackerBox(gm.page, 'HP').blur();
 
-	await expect(detailsSection(player.page)).toContainText('HP 12');
+	await expect(trackerBox(player.page, 'HP')).toHaveValue('12');
 
 	// Everything the panel never asked about survived being sent back with
 	// it: the name, and the size that came from a picker in another form.
@@ -248,11 +249,11 @@ test('a number typed into the panel reaches the room, and takes nothing else wit
 	// whole nullable value exists for.
 	await trackerBox(gm.page, 'HP').fill('0');
 	await trackerBox(gm.page, 'HP').blur();
-	await expect(detailsSection(player.page)).toContainText('HP 0');
+	await expect(trackerBox(player.page, 'HP')).toHaveValue('0');
 
 	await trackerBox(gm.page, 'HP').fill('');
 	await trackerBox(gm.page, 'HP').blur();
-	await expect(detailsSection(player.page)).toContainText('HP —');
+	await expect(trackerBox(player.page, 'HP')).toHaveValue('');
 
 	// And it is really on the server, not just on two canvases.
 	await gm.page.reload();
@@ -302,19 +303,19 @@ test('the step control appears on focus, adjusts by what it is told, and survive
 	// An unset "by how much" means one, so the common case costs no
 	// typing at all.
 	await decrease.click();
-	await expect(detailsSection(player.page)).toContainText('HP 29');
+	await expect(trackerBox(player.page, 'HP')).toHaveValue('29');
 
 	// Clicking again without touching the box first is the point: focus
 	// never left it, so the control is still there.
 	await decrease.click();
-	await expect(detailsSection(player.page)).toContainText('HP 28');
+	await expect(trackerBox(player.page, 'HP')).toHaveValue('28');
 
 	// And the box beside them sets the size of the step.
 	await gm.page.getByLabel('Adjust HP by').fill('7');
 	await decrease.click();
-	await expect(detailsSection(player.page)).toContainText('HP 21');
+	await expect(trackerBox(player.page, 'HP')).toHaveValue('21');
 	await increase.click();
-	await expect(detailsSection(player.page)).toContainText('HP 28');
+	await expect(trackerBox(player.page, 'HP')).toHaveValue('28');
 
 	// Focus leaving the control takes it away again, and doesn't undo or
 	// re-send anything the buttons already committed. It's the by-box that
@@ -322,7 +323,7 @@ test('the step control appears on focus, adjusts by what it is told, and survive
 	// itself the proof that clicking the buttons never stole it.
 	await gm.page.getByLabel('Adjust HP by').blur();
 	await expect(decrease).toBeHidden();
-	await expect(detailsSection(player.page)).toContainText('HP 28');
+	await expect(trackerBox(player.page, 'HP')).toHaveValue('28');
 
 	// An empty slot steps from zero rather than refusing — a creature
 	// that has taken damage before anyone wrote down its total is a

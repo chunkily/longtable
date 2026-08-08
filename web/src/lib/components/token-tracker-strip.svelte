@@ -8,7 +8,7 @@
 	// once when a creature arrives and then read all evening, and putting
 	// a text box for it here would double the width of a strip that has to
 	// fit beside the token's name.
-	import { tokenTrackers, trackerText, type RoomClient, type Token } from '$lib/room.svelte';
+	import { tokenTrackers, type RoomClient, type Token } from '$lib/room.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import FloatingNumberInput from '$lib/components/floating-number-input.svelte';
 
@@ -22,7 +22,9 @@
 		/**
 		 * Whether this client may change the values — a GM on any token, a
 		 * Player on one they own. The server enforces it either way; this
-		 * only decides between a box and a badge.
+		 * only turns the box's own readonly flag on or off, so a Player
+		 * sizing up a token they don't own reads the same box its owner
+		 * would, just one that won't take a step from them.
 		 */
 		editable: boolean;
 	} = $props();
@@ -45,29 +47,23 @@
      is what makes it scannable — a box that appeared and shifted its
      neighbours along as slots were filled in would not be. Keyed by
      index for the same reason: a slot's identity is its position, and
-     three empty ones are otherwise indistinguishable. -->
-{#if editable}
-	<!-- A fixed three-column grid rather than a wrapping row: the slots
-	     keep the same three positions whatever they're called, and each
-	     box gets an equal, predictable share of a sidebar that is only so
-	     wide. -->
-	<div class="mt-1.5 grid grid-cols-3 gap-1.5">
-		{#each trackers as tracker, i (i)}
-			<FloatingNumberInput
-				value={tracker.value}
-				label={tracker.label || `Tracker ${i + 1}`}
-				ariaLabel="{tracker.label || `Tracker ${i + 1}`} current value"
-				oncommit={(next) => commit(i, next)}
-			/>
-		{/each}
-	</div>
-{:else}
-	<div class="mt-1 flex flex-wrap items-center gap-1">
-		{#each trackers as tracker, i (i)}
-			<Badge variant="outline" class="font-mono text-xs">{trackerText(tracker)}</Badge>
-		{/each}
-	</div>
-{/if}
+     three empty ones are otherwise indistinguishable.
+
+     One template for both roles, too — a Player who can't touch this
+     token gets the identical box its owner does, just with `readonly`
+     set, rather than a second, smaller rendering kept in step with the
+     first by hand. -->
+<div class="mt-1.5 grid grid-cols-3 gap-1.5">
+	{#each trackers as tracker, i (i)}
+		<FloatingNumberInput
+			value={tracker.value}
+			label={tracker.label || `Tracker ${i + 1}`}
+			ariaLabel="{tracker.label || `Tracker ${i + 1}`} current value"
+			readonly={!editable}
+			oncommit={(next) => commit(i, next)}
+		/>
+	{/each}
+</div>
 
 {#if (token.conditions ?? []).length > 0}
 	<div class="mt-1.5 flex flex-wrap items-center gap-1">
