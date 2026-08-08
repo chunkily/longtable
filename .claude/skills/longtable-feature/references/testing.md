@@ -118,6 +118,14 @@ twenty files.
   identity transform; don't pan or zoom in a spec that relies on that.
 - `openRoomMenu` / `openNewSceneDialog` / `openScenesDialog` / `openAssetsPage` — Scenes, New
   scene and Assets all moved into the menu behind the third icon at the foot of the side panel.
+- `joinAsNewPlayer(page, name)` / `takeSeat(page, seatName)` / `joinAsGM(page, name, password)` /
+  `openSeatPicker(page)` — the pre-join screen asks which side of the screen you're on before it
+  asks anything else, so getting into a room is never one `fill` and one click any more. Filling
+  `Your name` straight after `goto('/r/…')` finds no such field: it's two steps in on the Player
+  path (Player → I'm new here) and one on the GM's. `openSeatPicker` waits for the `I'm new here`
+  slot, which is the one control that renders whatever the seat list comes back with — that wait
+  matters for the specs asserting a seat is *absent*, since an unanswered fetch looks exactly like
+  a table nobody has sat down at.
 
 Two more that bite once a spec drives *two* browsers:
 

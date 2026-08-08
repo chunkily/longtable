@@ -1,4 +1,5 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
+import { joinAsNewPlayer } from './room';
 
 // Who is at the table right now exists only in the server's memory —
 // there is no row to check and no way to see it from one browser. So
@@ -25,8 +26,7 @@ async function joinRoomAsPlayer(browser: Browser, slug: string, name: string) {
 	const page = await context.newPage();
 
 	await page.goto(`/r/${slug}`);
-	await page.getByLabel('Your name').fill(name);
-	await page.getByRole('button', { name: 'Join' }).click();
+	await joinAsNewPlayer(page, name);
 	await expect(page.getByRole('region', { name: "Who's connected" }).first()).toBeVisible();
 
 	return { context, page };

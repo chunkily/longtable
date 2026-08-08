@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { joinAsNewPlayer } from './room';
 
 // Exercises the full stack for real: Go store + WS hub + frontend
 // reducer, via two separate browser contexts (so each gets its own
@@ -16,7 +17,10 @@ test('GM creates a room and a player joins and syncs chat live', async ({ browse
 	await expect(gmPage).toHaveURL(/\/r\/[a-z0-9]+/);
 	const slug = new URL(gmPage.url()).pathname.split('/').pop()!;
 
-	await expect(gmPage.getByText('Curse of Strahd')).toBeVisible();
+	// By role rather than by text: since every page got a real <title>,
+	// SvelteKit's live-region announcer holds "Curse of Strahd —
+	// Longtable" too, and a bare text match resolves to two elements.
+	await expect(gmPage.getByRole('heading', { name: 'Curse of Strahd' })).toBeVisible();
 	await expect(gmPage.getByText('gm', { exact: true })).toBeVisible();
 
 	// A second browser context has no session for this room, so it
@@ -26,8 +30,7 @@ test('GM creates a room and a player joins and syncs chat live', async ({ browse
 
 	await playerPage.goto(`/r/${slug}`);
 	await expect(playerPage.getByRole('button', { name: 'Player' })).toBeVisible();
-	await playerPage.getByLabel('Your name').fill('Bob');
-	await playerPage.getByRole('button', { name: 'Join' }).click();
+	await joinAsNewPlayer(playerPage, 'Bob');
 
 	await expect(playerPage.getByText('player', { exact: true })).toBeVisible();
 

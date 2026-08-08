@@ -12,6 +12,52 @@ import { expect, type Page } from '@playwright/test';
  */
 
 /**
+ * The pre-join screen asks which side of the screen you're on before it
+ * asks anything else, so every arrival is at least two clicks now. These
+ * three helpers are the three ways in; specs should use them rather than
+ * spelling the steps out, because the next change to that flow should be
+ * one edit here.
+ */
+
+/** Opens the Player side of the pre-join screen: the room's seats. */
+export async function openSeatPicker(page: Page) {
+	await page.getByRole('button', { name: 'Player', exact: true }).click();
+	// Waits on the "I'm new here" slot rather than on a seat: the list is
+	// fetched, that slot is the one thing on it that renders whatever
+	// comes back, and specs asserting a seat is *absent* would otherwise
+	// pass against a list that simply hadn't arrived.
+	await expect(page.getByRole('button', { name: "I'm new here" })).toBeVisible();
+}
+
+/** Takes a seat someone has already sat in, by the name on it. */
+export async function takeSeat(page: Page, seatName: string) {
+	await openSeatPicker(page);
+	await page.getByRole('button', { name: `Take ${seatName}'s seat` }).click();
+	await expect(page.getByText('playing as')).toBeVisible();
+}
+
+/** Joins as someone the room has never seen: Player → I'm new here. */
+export async function joinAsNewPlayer(page: Page, name: string) {
+	await openSeatPicker(page);
+	await page.getByRole('button', { name: "I'm new here" }).click();
+	await page.getByLabel('Your name').fill(name);
+	await page.getByRole('button', { name: 'Join', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'Join', exact: true })).toBeHidden();
+}
+
+/**
+ * Signs in to the room's GM seat with the room password — the one seat
+ * that is never on the picker, because it's a role boundary.
+ */
+export async function joinAsGM(page: Page, name: string, password: string) {
+	await page.getByRole('button', { name: "I'm the GM" }).click();
+	await page.getByLabel('Your name').fill(name);
+	await page.getByLabel('GM password').fill(password);
+	await page.getByRole('button', { name: 'Join', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'Join', exact: true })).toBeHidden();
+}
+
+/**
  * Which family a tool variant lives under, for the tools that are only
  * reachable once their family is picked. A tool that *is* a family —
  * Hand, Ping — isn't here: clicking it on the tool row selects it

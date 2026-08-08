@@ -1,5 +1,11 @@
 import { expect, test, type Page } from '@playwright/test';
-import { TOOLBAR_CLEARANCE_Y, mapGestureOrigin, openNewSceneDialog, selectTool } from './room';
+import {
+	TOOLBAR_CLEARANCE_Y,
+	joinAsNewPlayer,
+	mapGestureOrigin,
+	openNewSceneDialog,
+	selectTool
+} from './room';
 
 // The eraser is the one drawing feature whose rules can't be checked
 // from the DOM: what it erases depends on Konva hit-testing against a
@@ -105,8 +111,7 @@ test('a GM erases anyone drawing, a player only their own', async ({ browser }) 
 	const playerContext = await browser.newContext();
 	const playerPage = await playerContext.newPage();
 	await playerPage.goto(`/r/${slug}`);
-	await playerPage.getByLabel('Your name').fill('Bob');
-	await playerPage.getByRole('button', { name: 'Join' }).click();
+	await joinAsNewPlayer(playerPage, 'Bob');
 	await expect(playerPage.locator('canvas').first()).toBeVisible();
 
 	// The GM's line reaches the player, who then can't erase it.

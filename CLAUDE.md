@@ -42,7 +42,11 @@ authoritative; the client never writes to the database.
 ## Where things stand
 
 Working today: rooms with a GM password and player join (the generated join slug is re-rolled if
-it happens to spell something offensive). **Identity in a room is a seat, not a browser**: a
+it happens to spell something offensive). **The join screen asks one question at a time**, and the
+first is which side of the screen you're on: `I'm the GM` leads to a name and the room password,
+`Player` leads to the room's seats with `I'm new here` as a dashed slot at the foot of that list,
+which is what leads to a name box. Every step but the first can go back. **Identity in a room is a
+seat, not a browser**: a
 device with no stored session gets the room's seats and takes one, which brings back the tokens
 that seat owns and its name — so a cleared browser or a borrowed laptop costs a session rather
 than an identity, and one person on a phone and a laptop is two sessions and one entry in the

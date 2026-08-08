@@ -2,9 +2,9 @@
 	"version": "0.0.1",
 	"configurations": [
 		{
-			"name": "backend",
+			"name": "app",
 			"runtimeExecutable": "node",
-			"runtimeArgs": ["web/e2e/run-backend.mjs"],
+			"runtimeArgs": ["web/e2e/run-app.mjs"],
 			"port": 8080
 		},
 		{

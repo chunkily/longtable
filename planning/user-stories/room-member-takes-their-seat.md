@@ -10,7 +10,8 @@ So that a cleared browser or a borrowed laptop doesn't cost me my tokens, my col
 
 ## Acceptance criteria
 
-- [ ] Opening a room on a device with no stored session shows the room's seats, and I can take one
+- [ ] Opening a room on a device with no stored session offers me the room's seats, and I can take
+      one
 - [ ] Taking a seat I had before restores everything attached to it — the tokens I own, my display
       name, and my colour once that exists
 - [ ] I can instead say I'm new, give a name, and get a seat of my own
@@ -50,3 +51,12 @@ join screen, above the name box, because on a device that doesn't remember you i
 what you want. Joining fresh when your old seat is sitting there is the mistake this feature was
 built to stop, so the shape of the screen argues against it rather than merely allowing the right
 answer.
+
+## Updated 2026-08-08
+
+Still true, one screen later. [join-flow-role-first](../backlog/join-flow-role-first.md) put a role
+question ahead of everything — Player or GM — so the seats are what the *Player* side opens on
+rather than what the whole screen opens on, and the first criterion is worded "offers me" instead
+of "shows me" to match. The argument the note above makes is unchanged and is now made twice: the
+seats are the first thing on that side, and `I'm new here` is a slot at the foot of the list rather
+than a route around it.

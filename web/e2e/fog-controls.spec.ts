@@ -1,5 +1,11 @@
 import { expect, test, type Page, type Browser } from '@playwright/test';
-import { mapGestureOrigin, openNewSceneDialog, selectTool, selectToolFamily } from './room';
+import {
+	joinAsNewPlayer,
+	mapGestureOrigin,
+	openNewSceneDialog,
+	selectTool,
+	selectToolFamily
+} from './room';
 
 // Fog beyond revealing: re-hiding a square, wiping a scene back to fully
 // covered, and uncovering it all at once. Every assertion here is made
@@ -76,8 +82,7 @@ async function joinAsPlayer(browser: Browser, slug: string) {
 	const page = await context.newPage();
 
 	await page.goto(`/r/${slug}`);
-	await page.getByLabel('Your name').fill('Bob');
-	await page.getByRole('button', { name: 'Join' }).click();
+	await joinAsNewPlayer(page, 'Bob');
 	await expect(page.getByText('player', { exact: true })).toBeVisible();
 	await expect(page.locator('canvas').first()).toBeVisible();
 

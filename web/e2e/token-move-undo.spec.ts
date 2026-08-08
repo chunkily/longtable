@@ -1,5 +1,5 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
-import { openNewSceneDialog } from './room';
+import { joinAsNewPlayer, openNewSceneDialog } from './room';
 
 // Undoing a token move over the real stack. Both halves need a browser:
 // the move is a drag on a Konva canvas with no DOM to assert on, and the
@@ -101,8 +101,7 @@ async function joinRoomAsPlayer(browser: Browser, slug: string, name = 'Bob') {
 	const page = await context.newPage();
 
 	await page.goto(`/r/${slug}`);
-	await page.getByLabel('Your name').fill(name);
-	await page.getByRole('button', { name: 'Join' }).click();
+	await joinAsNewPlayer(page, name);
 	await expect(page.locator('canvas').first()).toBeVisible();
 
 	return { context, page };

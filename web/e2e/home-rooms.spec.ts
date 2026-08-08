@@ -1,4 +1,5 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
+import { joinAsGM, joinAsNewPlayer } from './room';
 
 // The home page lists the rooms this browser has been in, and nothing
 // else. The half that needs a real browser is the privacy one: a second
@@ -20,8 +21,7 @@ async function joinRoom(browser: Browser, slug: string, name: string) {
 	const context = await browser.newContext();
 	const page = await context.newPage();
 	await page.goto(`/r/${slug}`);
-	await page.getByLabel('Your name').fill(name);
-	await page.getByRole('button', { name: 'Join' }).click();
+	await joinAsNewPlayer(page, name);
 	// Waits on the roster rather than the canvas: these rooms have no
 	// scene, so there is nothing for a canvas to draw.
 	await expect(page.getByRole('region', { name: "Who's connected" })).toBeVisible();
@@ -125,10 +125,7 @@ test('forgetting a room drops it from this list and leaves the room alone', asyn
 	// The room itself is untouched — the link still works, and a GM who
 	// forgot it can log back in with the password.
 	await gmPage.goto(`/r/${slug}`);
-	await gmPage.getByRole('button', { name: "I'm the GM" }).click();
-	await gmPage.getByLabel('Your name').fill('Alice');
-	await gmPage.getByLabel('GM password').fill('hunter2');
-	await gmPage.getByRole('button', { name: 'Join' }).click();
+	await joinAsGM(gmPage, 'Alice', 'hunter2');
 	await expect(gmPage.getByRole('region', { name: "Who's connected" })).toBeVisible();
 
 	await gm.close();

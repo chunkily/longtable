@@ -1,5 +1,12 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
-import { openNewSceneDialog, openRoomMenu } from './room';
+import {
+	joinAsGM,
+	joinAsNewPlayer,
+	openNewSceneDialog,
+	openRoomMenu,
+	openSeatPicker,
+	takeSeat
+} from './room';
 
 // Taking a seat, from a device that doesn't remember you.
 //
@@ -56,14 +63,13 @@ async function openRoomAsGM(browser: Browser, roomName: string) {
 	return { context, page, slug };
 }
 
-/** Joins as someone new, which is what joining was before seats. */
-async function joinAsNewPlayer(browser: Browser, slug: string, name: string) {
+/** A device arriving as someone the room has never seen. */
+async function newPlayerDevice(browser: Browser, slug: string, name: string) {
 	const context = await browser.newContext();
 	const page = await context.newPage();
 
 	await page.goto(`/r/${slug}`);
-	await page.getByLabel('Your name').fill(name);
-	await page.getByRole('button', { name: 'Join' }).click();
+	await joinAsNewPlayer(page, name);
 	await expect(page.getByText('player', { exact: true })).toBeVisible();
 
 	return { context, page };
@@ -81,7 +87,7 @@ async function openFreshDevice(browser: Browser, slug: string) {
 // session, not the tokens you own.
 test('a new device takes a seat and gets back the tokens it owns', async ({ browser }) => {
 	const gm = await openRoomAsGM(browser, 'Seat Claim');
-	const bob = await joinAsNewPlayer(browser, gm.slug, 'Bob');
+	const bob = await newPlayerDevice(browser, gm.slug, 'Bob');
 
 	await gm.page.getByRole('button', { name: 'New token' }).click();
 	await gm.page.getByLabel('Name').fill("Bob's Fighter");
@@ -92,8 +98,7 @@ test('a new device takes a seat and gets back the tokens it owns', async ({ brow
 
 	// Bob's laptop is gone; this is his phone, which has never been here.
 	const phone = await openFreshDevice(browser, gm.slug);
-	await expect(phone.page.getByText('Take your seat')).toBeVisible();
-	await phone.page.getByRole('button', { name: "Take Bob's seat" }).click();
+	await takeSeat(phone.page, 'Bob');
 
 	// He is Bob, not a second person called Bob.
 	await expect(phone.page.getByText('playing as')).toContainText('Bob');
@@ -122,10 +127,10 @@ test('a new device takes a seat and gets back the tokens it owns', async ({ brow
 // because it only shows up with two real devices.
 test('two devices on one seat are one person to everyone else', async ({ browser }) => {
 	const gm = await openRoomAsGM(browser, 'Seat Two Devices');
-	const laptop = await joinAsNewPlayer(browser, gm.slug, 'Bob');
+	const laptop = await newPlayerDevice(browser, gm.slug, 'Bob');
 
 	const phone = await openFreshDevice(browser, gm.slug);
-	await phone.page.getByRole('button', { name: "Take Bob's seat" }).click();
+	await takeSeat(phone.page, 'Bob');
 	await expect(phone.page.getByText('playing as')).toContainText('Bob');
 
 	// Both of Bob's devices are connected at once. The roster shows Alice
@@ -151,22 +156,23 @@ test('two devices on one seat are one person to everyone else', async ({ browser
 // never on the list of chairs anyone can sit in.
 test('the GM seat is not offered on the seat picker', async ({ browser }) => {
 	const gm = await openRoomAsGM(browser, 'Seat GM Excluded');
-	const bob = await joinAsNewPlayer(browser, gm.slug, 'Bob');
+	const bob = await newPlayerDevice(browser, gm.slug, 'Bob');
 
 	const fresh = await openFreshDevice(browser, gm.slug);
+	await openSeatPicker(fresh.page);
 	await expect(fresh.page.getByRole('button', { name: "Take Bob's seat" })).toBeVisible();
 	await expect(fresh.page.getByRole('button', { name: "Take Alice's seat" })).toHaveCount(0);
 
-	// The password field is how you get that seat, and it still works.
-	await fresh.page.getByRole('button', { name: "I'm the GM" }).click();
-	await fresh.page.getByLabel('Your name').fill('Alice');
-	await fresh.page.getByLabel('GM password').fill('hunter2');
-	await fresh.page.getByRole('button', { name: 'Join' }).click();
+	// The GM side of the first question is how you get that seat, and it
+	// still works.
+	await fresh.page.getByRole('button', { name: 'Back' }).click();
+	await joinAsGM(fresh.page, 'Alice', 'hunter2');
 	await expect(fresh.page.getByText('gm', { exact: true })).toBeVisible();
 
 	// And logging in again took the same seat rather than adding one:
 	// the picker still offers only Bob's.
 	const another = await openFreshDevice(browser, gm.slug);
+	await openSeatPicker(another.page);
 	await expect(another.page.getByRole('button', { name: "Take Bob's seat" })).toBeVisible();
 	await expect(another.page.getByRole('button', { name: /Take .*'s seat/ })).toHaveCount(1);
 
@@ -191,7 +197,7 @@ test('a GM adds a seat for someone who has not arrived, and removes one', async 
 	// Carol's chair is waiting for her, and taking it makes her Carol
 	// rather than asking her to type a name.
 	const carol = await openFreshDevice(browser, gm.slug);
-	await carol.page.getByRole('button', { name: "Take Carol's seat" }).click();
+	await takeSeat(carol.page, 'Carol');
 	await expect(carol.page.getByText('playing as')).toContainText('Carol');
 	await carol.context.close();
 
@@ -214,7 +220,7 @@ test('a GM adds a seat for someone who has not arrived, and removes one', async 
 // picker with everything still attached to it.
 test('leaving a room leaves the seat behind to come back to', async ({ browser }) => {
 	const gm = await openRoomAsGM(browser, 'Seat Leave');
-	const bob = await joinAsNewPlayer(browser, gm.slug, 'Bob');
+	const bob = await newPlayerDevice(browser, gm.slug, 'Bob');
 
 	await openRoomMenu(bob.page);
 	await bob.page.getByRole('button', { name: 'Leave room' }).click();
@@ -224,6 +230,7 @@ test('leaving a room leaves the seat behind to come back to', async ({ browser }
 	// Same browser, back at the room: its session is gone, so it gets the
 	// picker — and Bob's chair is still on it.
 	await bob.page.goto(`/r/${gm.slug}`);
+	await openSeatPicker(bob.page);
 	await expect(bob.page.getByRole('button', { name: "Take Bob's seat" })).toBeVisible();
 
 	await gm.context.close();

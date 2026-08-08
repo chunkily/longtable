@@ -1,5 +1,11 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
-import { TOOLBAR_CLEARANCE_Y, mapGestureOrigin, openNewSceneDialog, selectTool } from './room';
+import {
+	TOOLBAR_CLEARANCE_Y,
+	joinAsNewPlayer,
+	mapGestureOrigin,
+	openNewSceneDialog,
+	selectTool
+} from './room';
 
 // Area templates are the measuring tool's gesture wearing a different
 // shape: ephemeral, one per participant, gone when the drag ends. None
@@ -57,8 +63,7 @@ async function joinRoomAsPlayer(browser: Browser, slug: string) {
 	const page = await context.newPage();
 
 	await page.goto(`/r/${slug}`);
-	await page.getByLabel('Your name').fill('Bob');
-	await page.getByRole('button', { name: 'Join' }).click();
+	await joinAsNewPlayer(page, 'Bob');
 	await expect(page.locator('canvas').first()).toBeVisible();
 
 	return { context, page };

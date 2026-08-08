@@ -1,5 +1,5 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
-import { openNewSceneDialog } from './room';
+import { joinAsNewPlayer, openNewSceneDialog } from './room';
 
 // Everything a token carries beyond its name and position — size,
 // owner, visibility — set both when it's created and when it's edited.
@@ -70,8 +70,7 @@ async function joinRoomAsPlayer(browser: Browser, slug: string) {
 	const page = await context.newPage();
 
 	await page.goto(`/r/${slug}`);
-	await page.getByLabel('Your name').fill('Bob');
-	await page.getByRole('button', { name: 'Join' }).click();
+	await joinAsNewPlayer(page, 'Bob');
 	await expect(page.locator('canvas').first()).toBeVisible();
 
 	return { context, page };
