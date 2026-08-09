@@ -65,7 +65,9 @@ a time — a batch is numbered `Monkey 1`…`Monkey 8` and spreads over free squ
 stacking, and each one is its own undo. A GM's dialog carries name, art, size, owner and
 visibility; a Player's is the same minus the last two, because a token they make is theirs and
 hiding one is a GM power. A GM edits and deletes anything, an owner edits and deletes their own,
-anyone drags, hidden ones withheld from players; a token someone else moves slides to its new square rather than jumping;
+anyone drags — unless the GM has set `Manage room`'s **Moving tokens** to `Only the owner`, which
+holds every Player to their own tokens and leaves the GM able to move anything; a token someone
+else moves slides to its new square rather than jumping;
 anyone can click one to select it, which rings it on the map and shows its
 details above chat, whose token it is included, with Edit and Delete beside them for a GM or for
 whoever owns it — the
@@ -121,12 +123,9 @@ share one file, but a room only ever sees what it added itself, under its own na
 All of it syncs live; everything but pings and measurements persists.
 
 Known gaps, which is also roughly the queue: no initiative tracker — the side panel switches to it
-and says so, which is the shape waiting for the feature; `Manage room` is likewise an empty
-container for settings that don't exist yet (room privacy, the token ownership lock, deleting a
-room, and a switch to turn Player token creation off). Ownership now governs a token's trackers,
-its conditions, its deletion and who a Player's new token belongs to — but not moving it (anyone
-can still move anyone's token), and nothing caps how many tokens one Player may have standing.
-Fog has no automatic vision from tokens, no prebuilt releases, no way for a Host
+and says so, which is the shape waiting for the feature; `Manage room` holds seats and the
+movement lock, and is still waiting on room privacy, deleting a room, and a switch to turn Player
+token creation off. Nothing caps how many tokens one Player may have standing. Fog has no automatic vision from tokens, no prebuilt releases, no way for a Host
 to remove a moderated asset server-wide or cap upload sizes per room (a room removing something
 from its own library is a different, smaller thing, and does exist). The drawing tools still have
 no stroke-width or fill control; both are open items and both now have a strip to land on.

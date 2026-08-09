@@ -1169,6 +1169,74 @@ describe('RoomClient', () => {
 		visibility: 'visible'
 	};
 
+	// The room's movement lock, as the canvas asks it: what may this
+	// client pick up? The hub enforces the same rule — this is only about
+	// what gets a drag handle.
+	describe('the movement lock', () => {
+		function playerIn(tokens: unknown[], role: 'gm' | 'player', ownerOnlyMovement: boolean) {
+			const { client, socket } = connectedClient();
+			socket.emit({
+				type: 'state.sync',
+				payload: {
+					room: { slug: 'abc123', name: 'Room', ownerOnlyMovement },
+					you: { participantId: 'p1', displayName: 'A', role },
+					scene: { id: 's1', gridSize: 70 },
+					tokens
+				}
+			});
+			return { client, socket };
+		}
+
+		// An open table is the default and what an older payload without
+		// the field has to mean: assuming locked would take everyone's
+		// tokens away for the first moments of a session.
+		it('lets anyone move anything while the room is unlocked', () => {
+			const { client } = playerIn([goblin], 'player', false);
+
+			expect(client.canMoveToken(client.tokens[0])).toBe(true);
+		});
+
+		it('holds a player to their own tokens once the room is locked', () => {
+			const mine = { ...goblin, id: 't2', ownerParticipantId: 'p1' };
+			const { client } = playerIn([goblin, mine], 'player', true);
+
+			expect(client.canMoveToken(client.tokens[0])).toBe(false);
+			expect(client.canMoveToken(client.tokens[1])).toBe(true);
+		});
+
+		it('leaves the GM outside the lock they set', () => {
+			const { client } = playerIn([goblin], 'gm', true);
+
+			expect(client.canMoveToken(client.tokens[0])).toBe(true);
+		});
+
+		// The GM flipping it mid-session has to reach everyone now, not at
+		// their next reload — which is the whole reason it's an event.
+		it('takes hold of tokens the moment room.updated arrives', () => {
+			const { client, socket } = playerIn([goblin], 'player', false);
+			expect(client.canMoveToken(client.tokens[0])).toBe(true);
+
+			socket.emit({
+				type: 'room.updated',
+				payload: { room: { slug: 'abc123', name: 'Room', ownerOnlyMovement: true } }
+			});
+
+			expect(client.ownerOnlyMovement).toBe(true);
+			expect(client.canMoveToken(client.tokens[0])).toBe(false);
+		});
+
+		it('sends the setting as a room command', () => {
+			const { client, socket } = playerIn([], 'gm', false);
+
+			client.setOwnerOnlyMovement(true);
+
+			expect(JSON.parse(socket.sent[0])).toEqual({
+				type: 'room.setOwnerOnlyMovement',
+				payload: { ownerOnlyMovement: true }
+			});
+		});
+	});
+
 	it('replaces a token it already holds on token.updated', () => {
 		const { client, socket } = roomWithTokens([goblin, { ...goblin, id: 't2' }]);
 

@@ -473,8 +473,12 @@
 	// *here* rather than alongside render() because token draggability is
 	// the only thing in the whole render path that reads it, so pairing
 	// it with the full rebuild made every tool switch redraw the map too.
+	//
+	// ownerOnlyMovement is tracked for exactly the same reason and is the
+	// case that would be missed: a GM flipping the lock mid-session has to
+	// take hold of everyone else's tokens *now*, not at their next reload.
 	$effect(() => {
-		track(room.tokens, room.scene, activeTool);
+		track(room.tokens, room.scene, activeTool, room.ownerOnlyMovement, room.you);
 		const gridSize = room.scene?.gridSize;
 		if (stage && gridSize) renderTokens(gridSize);
 	});
@@ -1760,10 +1764,17 @@
 			const slide = animate && moved;
 			renderedPositions.set(token.id, to);
 
+			// The room's movement lock is taken away here as well as refused
+			// by the hub. Without it a Player drags a locked token around,
+			// the drop is refused, and the group sits where the pointer left
+			// it until something forces a rebuild — a token that looks moved
+			// to them and hasn't moved for anyone else.
+			const movable = room.canMoveToken(token);
+
 			const group = new Konva.Group({
 				x: slide ? from.x : to.x,
 				y: slide ? from.y : to.y,
-				draggable: activeTool === 'none',
+				draggable: activeTool === 'none' && movable,
 				// Named and tagged so a click on whatever is inside — the
 				// image, or the placeholder circle and its initials — can be
 				// walked back up to the token it landed on.
@@ -1808,6 +1819,17 @@
 			// position — the group moves under the pointer but the token's
 			// stored square doesn't change until the drop.
 			group.on('dragstart', () => (hoveredTokenId = null));
+
+			// A locked token swallows the press rather than merely ignoring
+			// it. Konva starts the *stage* drag from whatever pointerdown
+			// bubbles up to it, so a token that simply isn't draggable hands
+			// the gesture to the map and pans the whole scene — which reads
+			// as the app misbehaving rather than as "this one isn't yours".
+			// `click` is a separate event and still bubbles, so a locked
+			// token can be selected and inspected as before.
+			if (!movable) {
+				group.on('mousedown.lock touchstart.lock', (e) => (e.cancelBubble = true));
+			}
 
 			group.on('dragmove', () => moveSelectionRing(token.id, group.x(), group.y(), w, h));
 

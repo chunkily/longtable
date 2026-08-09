@@ -310,6 +310,8 @@ func (h *Hub) handleMessage(ctx context.Context, c *client, data []byte) {
 		h.handleSceneDelete(ctx, c, env.Payload)
 	case "scene.setMap":
 		h.handleSceneSetMap(ctx, c, env.Payload)
+	case "room.setOwnerOnlyMovement":
+		h.handleRoomSetOwnerOnlyMovement(ctx, c, env.Payload)
 	case "chat.send":
 		h.handleChatSend(ctx, c, env.Payload)
 	case "chat.delete":
@@ -430,6 +432,15 @@ type tokenMoveRequest struct {
 	Y       float64 `json:"y"`
 }
 
+// handleTokenMove drags a token to a new square.
+//
+// Open to everyone by default — an open table is what Longtable is
+// (ADR-0007) — but a room can be locked to owner-only movement, and then
+// a non-GM may move only a token they own. The check lives here rather
+// than anywhere else on purpose: **undoing a move is an ordinary
+// token.move**, so whatever this handler enforces governs the undo for
+// free, and a Player can't walk a locked token backwards through their
+// history.
 func (h *Hub) handleTokenMove(ctx context.Context, c *client, raw json.RawMessage) {
 	var req tokenMoveRequest
 	if err := decodePayload(raw, &req); err != nil || req.TokenID == "" {
@@ -450,6 +461,10 @@ func (h *Hub) handleTokenMove(ctx context.Context, c *client, raw json.RawMessag
 		return
 	}
 
+	if !h.mayMoveToken(ctx, c, req.TokenID) {
+		return
+	}
+
 	if err := h.store.MoveToken(req.TokenID, req.X, req.Y); err != nil {
 		slog.Error("ws: move token failed", "error", err)
 		h.sendError(ctx, c, "failed to move token")
@@ -461,6 +476,91 @@ func (h *Hub) handleTokenMove(ctx context.Context, c *client, raw json.RawMessag
 		"x":       req.X,
 		"y":       req.Y,
 	})
+}
+
+// mayMoveToken answers the room's movement lock, reporting the refusal
+// itself so the caller reads as one line.
+//
+// Nothing is loaded at all in the common case: a GM is allowed
+// regardless, and an unlocked room is the default, so an ordinary table
+// pays one cheap room read per drag and no token read.
+func (h *Hub) mayMoveToken(ctx context.Context, c *client, tokenID string) bool {
+	if c.participant.Role == store.RoleGM {
+		return true
+	}
+
+	room, err := h.store.GetRoomByID(c.roomID)
+	if err != nil {
+		slog.Error("ws: lookup room for move failed", "error", err)
+		h.sendError(ctx, c, "failed to move token")
+		return false
+	}
+	if !room.OwnerOnlyMovement {
+		return true
+	}
+
+	token, err := h.store.GetToken(tokenID)
+	if err != nil {
+		if !errors.Is(err, store.ErrNotFound) {
+			slog.Error("ws: lookup token failed", "error", err)
+		}
+		h.sendError(ctx, c, "token not found")
+		return false
+	}
+	// A hidden token is refused in the words of one that isn't there,
+	// including to its own owner — the same sentence handleTokenUpdate and
+	// handleTokenDelete use, and for the same reason: a GM can prep an
+	// ambush with a Player's character, and an error that told the two
+	// apart is how they'd find out. Only reachable with the lock on; an
+	// open room has never checked visibility on a move, and turning that
+	// into a refusal here would be a second, unasked-for feature.
+	if token.Visibility == store.VisibilityHidden {
+		h.sendError(ctx, c, "token not found")
+		return false
+	}
+	if token.OwnerParticipantID == nil || *token.OwnerParticipantID != c.participant.ID {
+		h.sendError(ctx, c, "this table only lets you move your own tokens")
+		return false
+	}
+	return true
+}
+
+type roomOwnerOnlyMovementRequest struct {
+	OwnerOnlyMovement bool `json:"ownerOnlyMovement"`
+}
+
+// handleRoomSetOwnerOnlyMovement flips the room's movement lock. GM-only,
+// and takes effect immediately for everyone: the broadcast is what makes
+// a Player's tokens stop being draggable mid-session rather than at their
+// next reload.
+func (h *Hub) handleRoomSetOwnerOnlyMovement(ctx context.Context, c *client, raw json.RawMessage) {
+	if !h.requireGM(ctx, c) {
+		return
+	}
+
+	var req roomOwnerOnlyMovementRequest
+	if err := decodePayload(raw, &req); err != nil {
+		h.sendError(ctx, c, "invalid room.setOwnerOnlyMovement payload")
+		return
+	}
+
+	if err := h.store.SetOwnerOnlyMovement(c.roomID, req.OwnerOnlyMovement); err != nil {
+		slog.Error("ws: set owner-only movement failed", "error", err)
+		h.sendError(ctx, c, "failed to save that setting")
+		return
+	}
+
+	room, err := h.store.GetRoomByID(c.roomID)
+	if err != nil {
+		slog.Error("ws: lookup room after settings change failed", "error", err)
+		h.sendError(ctx, c, "failed to save that setting")
+		return
+	}
+	// The whole room rather than the one field that changed, like
+	// scene.updated carries the whole scene: the next setting to land here
+	// then needs no new event, and a client that reloads sees the same
+	// shape it got from state.sync.
+	h.broadcast(ctx, c.roomID, "room.updated", map[string]any{"room": roomPayload(room)})
 }
 
 // Bounds on the free text a token carries. Neither is a storage

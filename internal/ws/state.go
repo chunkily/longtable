@@ -11,12 +11,21 @@ import (
 // current state: the active scene (if any) with its tokens and
 // revealed fog, plus recent chat history, so it doesn't need to replay
 // every event that has ever happened in the room.
+// roomPayload is the room as every client is told about it — never the
+// password hash, and exhaustive rather than a marshalled struct, for the
+// same reason participantPayload is. Shared by state.sync and
+// room.updated so a setting can't arrive on one and not the other.
+func roomPayload(room store.Room) map[string]any {
+	return map[string]any{
+		"slug":              room.Slug,
+		"name":              room.Name,
+		"ownerOnlyMovement": room.OwnerOnlyMovement,
+	}
+}
+
 func (h *Hub) sendStateSync(ctx context.Context, c *client, room store.Room) {
 	payload := map[string]any{
-		"room": map[string]any{
-			"slug": room.Slug,
-			"name": room.Name,
-		},
+		"room": roomPayload(room),
 		"you": map[string]any{
 			"participantId": c.participant.ID,
 			"displayName":   c.participant.DisplayName,

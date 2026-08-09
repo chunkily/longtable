@@ -28,8 +28,18 @@ type Room struct {
 	Name           string
 	GMPasswordHash string
 	ActiveSceneID  *string
-	CreatedAt      string
+	// When set, only a token's owner (and the GM) may move it. Off by
+	// default: an open table is what Longtable has always been, and
+	// ADR-0007 is the reason it stays the default rather than becoming
+	// one.
+	OwnerOnlyMovement bool
+	CreatedAt         string
 }
+
+// roomColumns is the select list every room read shares, so a new column
+// can't be added to one query and forgotten in another — which is
+// exactly how a setting ends up reading as its zero value on one path.
+const roomColumns = `id, slug, name, gm_password_hash, active_scene_id, owner_only_movement, created_at`
 
 // CreateRoom creates a room and its founding GM participant in one
 // transaction, retrying on the rare slug collision.
@@ -93,20 +103,18 @@ func (s *Store) tryCreateRoom(slug, name, passwordHash, gmDisplayName string) (R
 }
 
 func (s *Store) GetRoomBySlug(slug string) (Room, error) {
-	return s.scanRoom(s.db.QueryRow(
-		`SELECT id, slug, name, gm_password_hash, active_scene_id, created_at FROM room WHERE slug = ?`, slug,
-	))
+	return s.scanRoom(s.db.QueryRow(`SELECT `+roomColumns+` FROM room WHERE slug = ?`, slug))
 }
 
 func (s *Store) GetRoomByID(id string) (Room, error) {
-	return s.scanRoom(s.db.QueryRow(
-		`SELECT id, slug, name, gm_password_hash, active_scene_id, created_at FROM room WHERE id = ?`, id,
-	))
+	return s.scanRoom(s.db.QueryRow(`SELECT `+roomColumns+` FROM room WHERE id = ?`, id))
 }
 
 func (s *Store) scanRoom(row *sql.Row) (Room, error) {
 	var r Room
-	if err := row.Scan(&r.ID, &r.Slug, &r.Name, &r.GMPasswordHash, &r.ActiveSceneID, &r.CreatedAt); err != nil {
+	if err := row.Scan(
+		&r.ID, &r.Slug, &r.Name, &r.GMPasswordHash, &r.ActiveSceneID, &r.OwnerOnlyMovement, &r.CreatedAt,
+	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Room{}, ErrNotFound
 		}
@@ -117,7 +125,7 @@ func (s *Store) scanRoom(row *sql.Row) (Room, error) {
 
 // ListRooms returns every room, most recently created first.
 func (s *Store) ListRooms() ([]Room, error) {
-	rows, err := s.db.Query(`SELECT id, slug, name, gm_password_hash, active_scene_id, created_at FROM room ORDER BY created_at DESC`)
+	rows, err := s.db.Query(`SELECT ` + roomColumns + ` FROM room ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -126,12 +134,20 @@ func (s *Store) ListRooms() ([]Room, error) {
 	var rooms []Room
 	for rows.Next() {
 		var r Room
-		if err := rows.Scan(&r.ID, &r.Slug, &r.Name, &r.GMPasswordHash, &r.ActiveSceneID, &r.CreatedAt); err != nil {
+		if err := rows.Scan(
+			&r.ID, &r.Slug, &r.Name, &r.GMPasswordHash, &r.ActiveSceneID, &r.OwnerOnlyMovement, &r.CreatedAt,
+		); err != nil {
 			return nil, err
 		}
 		rooms = append(rooms, r)
 	}
 	return rooms, rows.Err()
+}
+
+// SetOwnerOnlyMovement turns the room's movement lock on or off.
+func (s *Store) SetOwnerOnlyMovement(roomID string, ownerOnly bool) error {
+	_, err := s.db.Exec(`UPDATE room SET owner_only_movement = ? WHERE id = ?`, ownerOnly, roomID)
+	return err
 }
 
 // SetGMPassword overwrites a room's GM password (used by both the

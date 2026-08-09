@@ -23,12 +23,18 @@ func New(db *sql.DB) (*Store, error) {
 func (s *Store) createTables() error {
 	_, err := s.db.Exec(`
 		CREATE TABLE IF NOT EXISTS room (
-			id                TEXT PRIMARY KEY,
-			slug              TEXT NOT NULL UNIQUE,
-			name              TEXT NOT NULL,
-			gm_password_hash  TEXT NOT NULL,
-			active_scene_id   TEXT,
-			created_at        TEXT NOT NULL
+			id                   TEXT PRIMARY KEY,
+			slug                 TEXT NOT NULL UNIQUE,
+			name                 TEXT NOT NULL,
+			gm_password_hash     TEXT NOT NULL,
+			active_scene_id      TEXT,
+			-- The room's first real setting. 0 is the open table Longtable
+			-- has always been: anyone may drag anyone's token. Defaulted in
+			-- the column rather than in Go so a row written by any path —
+			-- including a future one — is open rather than accidentally
+			-- locked, which is the direction that fails safely.
+			owner_only_movement  INTEGER NOT NULL DEFAULT 0,
+			created_at           TEXT NOT NULL
 		);
 
 		-- A participant is a *seat*: the durable half of an identity, and

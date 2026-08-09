@@ -30,7 +30,7 @@ Envelope both ways:
 | `chat.send` | anyone | yes | `chat.posted` |
 | `chat.delete` | author, or any GM | yes | `chat.deleted` (first call) or `chat.purged` (second) |
 | `token.create` | anyone; a non-GM's is theirs and visible | yes | one `token.created` per token (GM-only if hidden) |
-| `token.move` | anyone | yes | `token.moved` |
+| `token.move` | anyone, or owners only when the room is locked | yes | `token.moved` |
 | `token.update` | GM, or the token's owner for trackers/conditions | yes | `token.updated` (+ `token.deleted` to Players on hiding) |
 | `token.delete` | GM, or the token's owner | yes | `token.deleted` (GM-only if hidden) |
 | `fog.reveal` | GM only | yes | `fog.revealed` |
@@ -41,6 +41,7 @@ Envelope both ways:
 | `scene.setActive` | GM only | yes | `scene.activated` |
 | `scene.delete` | GM only | yes | `scene.deleted` |
 | `scene.setMap` | GM only | yes | `scene.updated` |
+| `room.setOwnerOnlyMovement` | GM only | yes | `room.updated` |
 | `draw.create` | anyone | yes | `drawing.created` |
 | `draw.delete` | author, or any GM | yes | `drawing.deleted` |
 | `ping` | anyone | no | `ping` |
@@ -125,8 +126,22 @@ words of one that doesn't exist, *including to its owner*, exactly as in `token.
 broadcast is withheld from Players when the token was hidden, exactly as its creation was; an id
 they were never told about turning up in a deletion is itself the leak.
 
+`room.setOwnerOnlyMovement` is the room's first real setting, and `room.updated` carries the
+**whole room** (`roomPayload`, shared with `state.sync`) rather than the field that changed — so
+the next setting to land needs no new event and a reloading client sees one shape. It is built
+field by field, like `participantPayload`, so the password hash can't ride along to every client.
+
+`token.move` is open to everyone by default. When the room's `ownerOnlyMovement` is set, a non-GM
+may move only a token they own; the GM is outside it, or turning the lock on would take the
+monsters away from the only person who moves them. `mayMoveToken` loads nothing at all for a GM
+and only the room for an unlocked table, so the common case pays one cheap read per drag. A hidden
+token is refused as a missing one, the same sentence `token.update` and `token.delete` use — but
+only when the lock is on, since an open room has never checked visibility on a move and turning
+that into a refusal here would be a second, unasked-for feature.
+
 `token.move` is also how a move is *undone* — the client sends the token back to the square it
-came from, so any permission check added to `handleTokenMove` governs the undo for free. The
+came from, so any permission check added to `handleTokenMove` governs the undo for free (there is
+a test asserting exactly that for the lock). The
 broadcast carries no sender, which is why the client's history has to decide "was that my move?"
 from the position rather than from the event: see `sendMoveToken` in `room.svelte.ts`.
 
@@ -203,12 +218,12 @@ still exists — from their side that is exactly what happened, since a hidden t
 something a Player is told about. A dedicated `token.hidden` event would be more precise and buy
 the client nothing.
 
-Notable gaps as of the last pass: there is no way to move a token with an ownership lock — note
-that ownership now governs three things (`token.update`'s trackers and conditions, `token.delete`,
-and who a Player's new token belongs to), so `token-move-ownership-lock` has a worked precedent to
-copy rather than a rule to invent. There is also no GM switch to turn Player token creation off,
-and no cap on how many tokens one Player may have standing at once — twenty at a time, as many
-times as they like. See `planning/backlog/`.
+Ownership now governs four things: `token.update`'s trackers and conditions, `token.delete`, who a
+Player's new token belongs to, and — when the room is locked — `token.move`.
+
+Notable gaps as of the last pass: there is no GM switch to turn Player token creation off, and no
+cap on how many tokens one Player may have standing at once — twenty at a time, as many times as
+they like. See `planning/backlog/`.
 
 ## Presence
 
@@ -267,7 +282,7 @@ picture and `resetAfterSync` drops anything in flight, so a reconnect converges 
 `state.sync`, `chat.posted`, `chat.deleted`, `chat.purged`, `token.created`, `token.moved`,
 `token.updated`, `token.deleted`, `participant.connected`, `participant.disconnected`,
 `fog.revealed`, `fog.hidden`, `fog.reset`, `scene.activated`, `scene.created`, `scene.updated`,
-`scene.deleted`, `drawing.created`, `drawing.deleted`, `ping`, `measure.updated`,
+`scene.deleted`, `room.updated`, `drawing.created`, `drawing.deleted`, `ping`, `measure.updated`,
 `measure.ended`, `error`.
 
 `state.sync` and `scene.activated` both carry the same full picture — `{scene, tokens, fogCells,

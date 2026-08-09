@@ -1,7 +1,7 @@
 ---
 title: Token move ownership lock
 created: 2026-07-29
-status: open
+status: done
 tags: [tokens]
 ---
 
@@ -56,3 +56,42 @@ for: add it there rather than inventing a second place for room settings to live
 
 - [gm-toggle-token-owner-only-movement](../user-stories/gm-toggle-token-owner-only-movement.md)
 - [player-move-owned-token-when-locked](../user-stories/player-move-owned-token-when-locked.md)
+
+## What shipped
+
+`room.owner_only_movement`, off by default in the column rather than in Go — a row written by any
+path, including one that doesn't exist yet, is then open rather than accidentally locked, which is
+the direction that fails safely. `room.setOwnerOnlyMovement` (GM-only) flips it and broadcasts
+`room.updated` carrying the **whole room** via a new shared `roomPayload`, the same map
+`state.sync` opens with. The next setting to land in `Manage room` needs no new event, and — like
+`participantPayload` — it is built field by field so the password hash can't ride along.
+
+`mayMoveToken` is the check, and it is ordered to cost nothing on an ordinary table: a GM returns
+immediately with nothing loaded, an unlocked room after one cheap room read, and only a locked
+room's non-GM move pays for the token. A hidden token is refused as a missing one — the same
+sentence `token.update` and `token.delete` use — but **only when the lock is on**: an open room
+has never checked visibility on a move, and quietly making it do so would be a second feature
+nobody asked for.
+
+**The undo came free, exactly as this item predicted.** Undoing a move is an ordinary
+`token.move`, so the check governs it with nothing extra written; there's a test asserting it,
+because "free" is the kind of claim that stops being true silently.
+
+**The part that wasn't free was the canvas, and it is the thing to know before touching this
+again.** Making a locked token `draggable: false` is not enough: Konva starts the *stage* drag
+from whatever `pointerdown` bubbles up to it, so the first working version panned the entire scene
+every time a Player grabbed somebody else's token. It looked like the app misbehaving rather than
+like a refusal. A locked token now swallows the press (`e.cancelBubble = true` on
+`mousedown.lock`/`touchstart.lock`); `click` is a separate event and still bubbles, so a locked
+token can be selected and inspected as before. The e2e caught this rather than the unit tests, and
+it could only have been caught by driving a real drag.
+
+The client-side rule lives in one place, `RoomClient.canMoveToken`, so the canvas and anything
+asking later can't disagree with each other — and `room.ownerOnlyMovement` is tracked by the token
+effect, because a GM flipping the setting has to take hold of everyone's tokens *now* rather than
+at their next reload. That's the case a reload-only implementation would have passed every test
+except the one that watches two browsers.
+
+The setting is two labelled buttons rather than a switch: there is no switch component in this
+project, and "on"/"off" are poor names for a rule about other people's tokens. `Anyone moves
+anything` / `Only the owner` says what each state means.

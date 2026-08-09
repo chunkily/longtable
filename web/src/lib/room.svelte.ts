@@ -199,8 +199,16 @@ interface Envelope {
 	payload: unknown;
 }
 
+/** The room as every client is told about it — never the password hash. */
+export interface RoomSettings {
+	slug: string;
+	name: string;
+	/** When set, only a token's owner (and the GM) may move it. */
+	ownerOnlyMovement: boolean;
+}
+
 interface StateSyncPayload {
-	room: { slug: string; name: string };
+	room: RoomSettings;
 	you: You;
 	messages?: ChatMessage[];
 	scenes?: Scene[];
@@ -326,6 +334,13 @@ export class RoomClient {
 	sessionExpired = $state(false);
 
 	roomName = $state('');
+	/**
+	 * The room's movement lock. False is the open table Longtable has
+	 * always been, and is what a client assumes until `state.sync` says
+	 * otherwise — assuming *locked* would take everyone's tokens away for
+	 * the first moments of every session.
+	 */
+	ownerOnlyMovement = $state(false);
 	you = $state<You | null>(null);
 
 	// Two lists rather than an "online" flag per row, because they come
@@ -804,6 +819,26 @@ export class RoomClient {
 		if (token) this.record({ kind: 'deleteToken', token });
 	}
 
+	/**
+	 * Whether this client may drag `token` — the room's movement lock,
+	 * answered once here so the canvas and anything else asking agree.
+	 *
+	 * The hub enforces the same rule (`mayMoveToken`); this only decides
+	 * what to let someone pick up, because a token dragged and then
+	 * refused stays under the pointer looking moved to one person and
+	 * unmoved to everyone else.
+	 */
+	canMoveToken(token: Token): boolean {
+		if (!this.ownerOnlyMovement) return true;
+		if (this.you?.role === 'gm') return true;
+		return !!this.you && token.ownerParticipantId === this.you.participantId;
+	}
+
+	/** GM-only, and refused server-side for anyone else. */
+	setOwnerOnlyMovement(ownerOnlyMovement: boolean) {
+		this.send('room.setOwnerOnlyMovement', { ownerOnlyMovement });
+	}
+
 	// Moves a token only if it is still standing where this session's own
 	// move left it. That check is what keeps undo to your own moves: the
 	// history can't tell who dragged a token last, but the position can —
@@ -1050,6 +1085,7 @@ export class RoomClient {
 			case 'state.sync': {
 				const payload = env.payload as StateSyncPayload;
 				this.roomName = payload.room.name;
+				this.ownerOnlyMovement = payload.room.ownerOnlyMovement ?? false;
 				this.you = payload.you;
 				// server returns newest-first; the log reads top-to-bottom.
 				this.messages = [...(payload.messages ?? [])].reverse();
@@ -1237,6 +1273,15 @@ export class RoomClient {
 			case 'scene.deleted': {
 				const payload = env.payload as SceneDeletedPayload;
 				this.scenes = this.scenes.filter((s) => s.id !== payload.sceneId);
+				break;
+			}
+
+			// The whole room, the same shape state.sync opens with, so a
+			// setting added later needs no new case here.
+			case 'room.updated': {
+				const payload = env.payload as { room: RoomSettings };
+				this.roomName = payload.room.name;
+				this.ownerOnlyMovement = payload.room.ownerOnlyMovement;
 				break;
 			}
 

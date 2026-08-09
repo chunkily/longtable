@@ -13,7 +13,7 @@ Added in this order, so this is also the `document.querySelectorAll('canvas')` i
 | 1 | grid | no | grid lines, recomputed for the visible region on every pan/zoom/resize |
 | 2 | fog | yes | the cover, with revealed cells punched out (`destination-out`) |
 | 3 | drawings | no | committed strokes |
-| 4 | tokens | yes | one `Group` per token, draggable only in `'none'` mode |
+| 4 | tokens | yes | one `Group` per token, draggable in `'none'` mode and only if `room.canMoveToken` |
 | 5 | pings | no | pulse rings |
 | 6 | measurements | no | in-progress measurements from anyone in the room |
 | 7 | preview | no | the current rubber-band shape, cursor ring, eraser halo |
@@ -116,6 +116,15 @@ practice you click again; fixing it properly means diffing the token layer inste
 it, which this file argues against everywhere else. It matters most in tests, where a click
 immediately after a drag hits it roughly three runs in four — see `token-delete.spec.ts`, which
 selects before dragging for exactly this reason.
+
+**A token the room's lock says you may not move swallows `mousedown` rather than merely being
+undraggable**, and that is not tidiness. Konva starts the *stage* drag from whatever pointerdown
+bubbles up to it, so a group with `draggable: false` hands the gesture straight to the map: the
+first version of the movement lock panned the whole scene every time a Player grabbed somebody
+else's token, which reads as the app misbehaving rather than as "this one isn't yours". Setting
+`e.cancelBubble = true` in a `mousedown.lock`/`touchstart.lock` handler stops it. `click` is a
+separate event and still bubbles, so a locked token can be selected and inspected as before —
+which is also why selection had to be checked separately when this went in.
 
 `attachToolHandlers()` runs in an `$effect` on `activeTool`/`scene`/`you` and is the single place
 pointer handlers are bound. It:

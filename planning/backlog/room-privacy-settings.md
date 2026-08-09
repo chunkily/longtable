@@ -20,10 +20,12 @@ shoulder. This is the one control that survives a link going where it shouldn't,
 exists a leaked slug is unrecoverable short of asking a Host to delete the room.
 
 **Where it surfaces is already decided.** Under `Manage room`, the third entry in the side panel's
-menu — see [full-bleed-map-layout](full-bleed-map-layout.md). It shares that container with
-[delete-room](delete-room.md) and the owner-only movement toggle from
-[token-move-ownership-lock](token-move-ownership-lock.md), so whoever builds the first of the
-three builds the container.
+menu — see [full-bleed-map-layout](full-bleed-map-layout.md). The container is built and already
+holds seats and the owner-only movement toggle from
+[token-move-ownership-lock](token-move-ownership-lock.md), so this is a section to add rather than
+a dialog to invent. That item is also the worked example for a room *setting*: a column with a
+safe default, a GM-only command, and `room.updated` carrying the whole room so the next setting
+needs no new event — which is this one.
 
 Worth settling when it's picked up: whether an existing Room Member is kicked out or kept when a
 password is added or changed. Keeping them is friendlier and is probably right — the password

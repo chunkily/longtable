@@ -1,9 +1,9 @@
 <script lang="ts">
 	// GM-level settings for the room itself, rather than for this scene.
 	//
-	// Seats are the first thing to live here. The other three intended
-	// settings — room privacy, the token ownership lock, and deleting the
-	// room — are each still their own open backlog item.
+	// Seats came first and the movement lock is the second thing here.
+	// Room privacy and deleting the room are each still their own open
+	// backlog item.
 	import { toast } from 'svelte-sonner';
 	import { addSeat, listSeats, removeSeat, type Seat } from '$lib/api';
 	import type { RoomClient } from '$lib/room.svelte';
@@ -91,6 +91,41 @@
 				device takes theirs back rather than joining as a stranger.
 			</Dialog.Description>
 		</Dialog.Header>
+
+		<!-- Two buttons rather than a switch: there is no switch component in
+		     this project, and the pair says what each state *means* — which
+		     matters more here than switch-ness, because "on" and "off" are
+		     not obvious names for a rule about other people's tokens. -->
+		<div class="flex flex-col gap-2">
+			<Label id="movement-label">Moving tokens</Label>
+			<div class="flex gap-2" role="group" aria-labelledby="movement-label">
+				<Button
+					type="button"
+					class="flex-1"
+					variant={room.ownerOnlyMovement ? 'outline' : 'default'}
+					aria-pressed={!room.ownerOnlyMovement}
+					onclick={() => room.setOwnerOnlyMovement(false)}
+				>
+					Anyone moves anything
+				</Button>
+				<Button
+					type="button"
+					class="flex-1"
+					variant={room.ownerOnlyMovement ? 'default' : 'outline'}
+					aria-pressed={room.ownerOnlyMovement}
+					onclick={() => room.setOwnerOnlyMovement(true)}
+				>
+					Only the owner
+				</Button>
+			</div>
+			<p class="text-xs text-muted-foreground">
+				{#if room.ownerOnlyMovement}
+					A Player can drag only the tokens they own. You can still move everything.
+				{:else}
+					Anyone at the table can drag any token, including yours.
+				{/if}
+			</p>
+		</div>
 
 		<form class="flex items-end gap-2" onsubmit={handleAdd}>
 			<div class="flex flex-1 flex-col gap-2">
