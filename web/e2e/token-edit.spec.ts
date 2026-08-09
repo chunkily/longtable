@@ -425,3 +425,35 @@ test('clicking away from an edited form asks, with one dialog on screen', async 
 
 	await gm.context.close();
 });
+
+// Token edits are undoable now, which is what makes every decision
+// above recoverable rather than final.
+test('an edit can be undone and redone, and the room sees both', async ({ browser }) => {
+	const gm = await openRoomAsGM(browser, 'Token Edit Undo');
+	const player = await joinRoomAsPlayer(browser, gm.slug);
+
+	await createToken(gm.page, 'Goblin');
+	const box = await canvasBox(gm.page);
+	const spawn = spawnCentre(box);
+	await gm.page.mouse.click(box.x + spawn.x, box.y + spawn.y);
+	await player.page.mouse.click(box.x + spawn.x, box.y + spawn.y);
+	await expect(detailsSection(player.page)).toContainText('Goblin');
+
+	await openEditor(gm.page);
+	await gm.page.getByLabel('Name').fill('Hobgoblin');
+	await save(gm.page);
+	await expect(detailsSection(player.page)).toContainText('Hobgoblin');
+
+	// Ctrl+Z puts the old name back for the whole room, not just for the
+	// person who pressed it.
+	await gm.page.keyboard.press('Control+z');
+	await expect(detailsSection(gm.page)).toContainText('Goblin');
+	await expect(detailsSection(player.page)).toContainText('Goblin');
+
+	await gm.page.keyboard.press('Control+Shift+z');
+	await expect(detailsSection(gm.page)).toContainText('Hobgoblin');
+	await expect(detailsSection(player.page)).toContainText('Hobgoblin');
+
+	await gm.context.close();
+	await player.context.close();
+});

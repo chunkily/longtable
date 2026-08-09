@@ -88,8 +88,8 @@ dialog. A GM may change all of it on any token while a Player may change the tra
 conditions on one they own),
 fog the GM paints on and off a square at a time (plus reveal-all and reset for the whole scene),
 drawings (freehand/line/rect/ellipse) with an eraser, and per-session undo/redo covering
-drawing, erasing, token creation, token deletion and token moves (an undo passes over a token someone else has
-moved since, rather than dragging it back out from under them),
+drawing, erasing, token creation, token deletion, token edits and token moves (an undo passes over
+a token someone else has changed since, rather than dragging it back out from under them),
 pings, distance measuring, area-of-effect templates (circle/cone/line/cube, origin on a snap
 mode and size in whole 5 ft steps),
 **an initiative tracker** in the rail's second panel — the GM's alone to change, everyone's to

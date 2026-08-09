@@ -7,6 +7,7 @@ import type { TemplateKind } from './aoe';
 import { MEASURE_SEND_INTERVAL_MS } from './measure';
 import { PING_COOLDOWN_MS, PING_LIFETIME_MS } from './ping';
 import { randomId } from './random-id';
+import { sameTokenFields, tokenFields, type TokenFields } from './token-fields';
 
 export interface ChatMessage {
 	id: string;
@@ -345,6 +346,11 @@ type HistoryAction =
 	// crosses between the stacks.
 	| { kind: 'deleteToken'; token: Token }
 	| { kind: 'createToken'; token: Token }
+	// An edit holds both sides, like a move: the reverse of an edit is
+	// another edit, and there is nothing to reconstruct it from otherwise
+	// — token.update carries every field, so "what it was" is only
+	// knowable at the moment it stops being true.
+	| { kind: 'editToken'; tokenId: string; before: TokenFields; after: TokenFields }
 	| { kind: 'moveToken'; tokenId: string; from: TokenPosition; to: TokenPosition };
 
 interface TokenPosition {
@@ -421,6 +427,16 @@ export class RoomClient {
 	// right here.
 	// eslint-disable-next-line svelte/prefer-svelte-reactivity
 	private pendingMoves = new Map<string, TokenPosition>();
+
+	// The fields this session last sent for a token, for the same reason
+	// pendingMoves exists: nothing about an edit is applied optimistically,
+	// so a token edited a moment ago still reads as it was until the
+	// broadcast lands. Undo needs the real answer or a Ctrl+Z pressed
+	// inside the round trip would decide someone else had edited the token
+	// and skip the entry. Bookkeeping only — nothing reactive reads it, so
+	// a plain Map is right here.
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity
+	private pendingEdits = new Map<string, TokenFields>();
 
 	// Ids this session minted for tokens it is creating, waiting for the
 	// echo that turns each into an undo entry. Bookkeeping only — nothing
@@ -813,20 +829,49 @@ export class RoomClient {
 	// and the server ignores it, which is cheaper than a second command
 	// and keeps the "every field every time" rule true of every caller —
 	// a narrower payload would read as a GM clearing the name.
-	updateToken(
-		tokenId: string,
-		fields: {
-			name: string;
-			imageAssetId: string | null;
-			width: number;
-			height: number;
-			ownerParticipantId: string | null;
-			visibility: 'visible' | 'hidden';
-			trackers: Tracker[];
-			conditions: string[];
-		}
-	) {
-		this.send('token.update', { tokenId, ...fields });
+	updateToken(tokenId: string, fields: TokenFields) {
+		const before = this.settledFields(tokenId);
+		// A form submitted with nothing typed in it sends nothing. Worth
+		// doing for its own sake — it stops an idle dialog overwriting an
+		// edit someone else made while it sat open — and it keeps the
+		// history free of entries whose undo would do nothing.
+		if (before && sameTokenFields(before, fields)) return;
+
+		if (!this.sendUpdateToken(tokenId, fields)) return;
+		if (before) this.record({ kind: 'editToken', tokenId, before, after: fields });
+	}
+
+	// The wire half, without the history. Undo and redo go through this:
+	// re-recording an edit made *by* an undo would leave the two stacks
+	// pushing the same change back and forth for ever.
+	private sendUpdateToken(tokenId: string, fields: TokenFields): boolean {
+		if (!this.send('token.update', { tokenId, ...fields })) return false;
+		this.pendingEdits.set(tokenId, fields);
+		return true;
+	}
+
+	/**
+	 * The fields this session believes the token has: what it last sent if
+	 * that hasn't come back yet, and otherwise what the room says. Null
+	 * for a token this client doesn't hold.
+	 */
+	private settledFields(tokenId: string): TokenFields | null {
+		const pending = this.pendingEdits.get(tokenId);
+		if (pending) return pending;
+		const token = this.tokens.find((t) => t.id === tokenId);
+		return token ? tokenFields(token) : null;
+	}
+
+	// Applies one side of an edit, but only if the token is still the way
+	// this session left it. Same rule as undoing a move: the history can't
+	// tell who edited a token last, but the fields can — if someone else
+	// has changed it since, putting our version back would be undoing
+	// their work rather than ours, so the entry is skipped and the next
+	// one tried.
+	private sendEdit(tokenId: string, expected: TokenFields, to: TokenFields): boolean {
+		const at = this.settledFields(tokenId);
+		if (!at || !sameTokenFields(at, expected)) return false;
+		return this.sendUpdateToken(tokenId, to);
 	}
 
 	// Changing only the trackers and conditions — the inline edit in the
@@ -1023,6 +1068,8 @@ export class RoomClient {
 				return this.sendCreateToken(action.token);
 			case 'createToken':
 				return this.sendDeleteToken(action.token.id) !== null;
+			case 'editToken':
+				return this.sendEdit(action.tokenId, action.after, action.before);
 			case 'moveToken':
 				return this.sendMoveToken(action.tokenId, action.to, action.from);
 		}
@@ -1038,6 +1085,8 @@ export class RoomClient {
 				return this.sendDeleteToken(action.token.id) !== null;
 			case 'createToken':
 				return this.sendCreateToken(action.token);
+			case 'editToken':
+				return this.sendEdit(action.tokenId, action.before, action.after);
 			case 'moveToken':
 				return this.sendMoveToken(action.tokenId, action.from, action.to);
 		}
@@ -1057,6 +1106,7 @@ export class RoomClient {
 	private resetAfterSync() {
 		this.pendingErases.clear();
 		this.pendingMoves.clear();
+		this.pendingEdits.clear();
 		this.pendingCreates.clear();
 		this.undoable = [];
 		this.redoable = [];
@@ -1263,6 +1313,15 @@ export class RoomClient {
 			// them can't tell them to stop looking at something.
 			case 'token.updated': {
 				const token = env.payload as Token;
+				// Our own edit has landed once the room comes back holding
+				// what we sent; anything else is someone else's edit arriving
+				// first, and ours is still on its way. Matching on the fields
+				// rather than just the id is what tells the two apart — these
+				// events carry no sender, the same problem token.moved has.
+				const pending = this.pendingEdits.get(token.id);
+				if (pending && sameTokenFields(pending, tokenFields(token))) {
+					this.pendingEdits.delete(token.id);
+				}
 				const existing = this.tokens.findIndex((t) => t.id === token.id);
 				this.tokens =
 					existing === -1
@@ -1273,10 +1332,12 @@ export class RoomClient {
 
 			case 'token.deleted': {
 				const payload = env.payload as TokenDeletedPayload;
-				// No broadcast is coming for a move of a token that no longer
-				// exists, so the entry would sit here for the rest of the
-				// session — and answer for the id if the token ever came back.
+				// No broadcast is coming for a move or an edit of a token that
+				// no longer exists, so the entry would sit here for the rest
+				// of the session — and answer for the id if the token ever
+				// came back.
 				this.pendingMoves.delete(payload.tokenId);
+				this.pendingEdits.delete(payload.tokenId);
 				this.tokens = this.tokens.filter((t) => t.id !== payload.tokenId);
 				break;
 			}

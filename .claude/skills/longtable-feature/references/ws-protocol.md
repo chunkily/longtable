@@ -196,6 +196,17 @@ The inline tracker boxes in the details panel send this same command, through
 holds it — there is no narrower "just the trackers" command, because one would read as a GM
 clearing the name.
 
+**`updateToken` drops a change that changes nothing**, comparing against the token as this client
+holds it (`sameTokenFields`). That is not only tidiness: an editor left open while somebody else
+worked on the same token would otherwise stamp its stale copy of every field over their edit the
+moment it was submitted, since this command carries all of them.
+
+It is also **undoable**, which took an entry holding both sides — the reverse of an edit is
+another edit, and `token.update` carries no history, so "what it was" is only knowable at the
+moment it stops being true. The undo is skipped if the token no longer matches what this session
+last set, the same rule `token.move`'s undo follows and for the same reason: putting our version
+back over someone else's change would be undoing their work rather than ours.
+
 `ownerParticipantId` on both `token.create` and `token.update` is checked with
 `requireOwnerInRoom`, the participant twin of `requireAssetInRoom` — a participant ID is
 unguessable but it isn't scoped, and a token owned by someone in another room is one whose owner
