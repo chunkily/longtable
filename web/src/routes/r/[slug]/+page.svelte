@@ -666,9 +666,15 @@
 			{/if}
 
 			{#if showConnectionBanner}
+				<!-- An opaque surface, not a tint. `bg-destructive/10` reads as a
+				     pale red wash on the white page this was designed against
+				     and as very nearly nothing over a dark battle map — which
+				     is precisely where it matters, since this is the one thing
+				     a Room Member must not miss. The toolbar floating beside it
+				     already solved this: carry your own background. -->
 				<div
 					role="status"
-					class="absolute inset-x-0 top-0 z-30 flex flex-wrap items-center gap-3 border-b border-destructive/40 bg-destructive/10 p-3 text-sm backdrop-blur"
+					class="absolute inset-x-0 top-0 z-30 flex flex-wrap items-center gap-3 border-b-2 border-destructive bg-background p-3 text-sm font-medium text-destructive shadow-md"
 				>
 					{#if client.sessionExpired}
 						<span>
@@ -741,13 +747,17 @@
 		<aside class="hidden w-[368px] shrink-0 flex-col border-l bg-background lg:flex">
 			<!-- Holds its height with nothing selected, so the rest of the rail
 			     doesn't jump every time you click empty map. -->
-			<section aria-label="Selected token" class="flex h-28 shrink-0 items-center border-b p-3">
+			<!-- Empty, it's a plain muted block rather than a sentence. The
+			     instruction was read once and then sat there for the rest of
+			     the session saying nothing, and the shaded panel already says
+			     "nothing here" without asking to be read. It still holds its
+			     height, which is the point of the section existing at all. -->
+			<section
+				aria-label="Selected token"
+				class={['flex h-28 shrink-0 items-center border-b p-3', !selectedToken && 'bg-muted']}
+			>
 				{#if selectedToken}
 					<div class="w-full">{@render tokenDetails(client, selectedToken)}</div>
-				{:else}
-					<p class="w-full text-center text-sm text-muted-foreground">
-						No token selected — click one on the map.
-					</p>
 				{/if}
 			</section>
 

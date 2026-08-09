@@ -104,7 +104,8 @@ card and no header. The toolbar floats over its top-left as five tool *families*
 measure, fog, ping — with `New token` alongside and a contextual strip below carrying only the
 active family's variants and settings (the eraser is inside draw; the templates inside measure).
 Everything else lives in a fixed full-height rail down the right: the selected token at the top
-(holding its height when nothing is selected, so the rail doesn't jump), session info under it,
+(a plain shaded block holding its height when nothing is selected, so the rail doesn't jump),
+session info under it,
 then chat or the initiative tracker filling the rest, and three icons at the foot switching
 between chat, initiative and a menu holding Scenes, New scene, Assets, Manage room and Leave
 room. Below `lg` the rail becomes a bottom sheet with those icons pinned to the bottom edge, the

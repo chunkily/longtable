@@ -160,7 +160,7 @@ test('a GM deletes the selected token for the whole room, and undo puts it back'
 	// the selection is no longer there.
 	await expect.poll(() => layerInk(player.page, TOKEN_LAYER)).toBe(0);
 	await expect.poll(() => layerInk(gm.page, TOKEN_LAYER)).toBe(0);
-	await expect(detailsSection(gm.page)).toContainText('No token selected');
+	await expect(detailsSection(gm.page)).not.toContainText('Goblin');
 
 	await gm.page.getByRole('button', { name: 'Undo', exact: true }).click();
 

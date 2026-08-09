@@ -186,3 +186,16 @@ rather than as a new icon nobody notices.
 
 Not done, and deliberately: the rail is a fixed 368px, since resizable-with-a-remembered-width was
 discussed at the design session and left undecided.
+
+## Update 2026-08-09 — two corrections to what shipped
+
+**The reconnect banner was invisible on a dark map.** It was `bg-destructive/10` with a
+`backdrop-blur`, which reads as a pale red wash on the white page it was designed against and as
+very nearly nothing over a battle map — precisely where it matters, since this item picked it over
+a status dot on the grounds that it is the one thing a Room Member must not miss. It carries its
+own opaque background now, the same way the floating toolbar beside it always has.
+
+**The empty selected-token strip lost its sentence.** "No token selected — click one on the map"
+was read once and then sat there for the rest of the session; the strip is a plain shaded block
+now. It still holds its height, which is the part of this item's design that mattered — the rail
+doesn't jump when you click empty map.

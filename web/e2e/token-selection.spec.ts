@@ -148,7 +148,9 @@ test('clicking a token selects it here and nowhere else', async ({ browser }) =>
 	const token = spawnCentre(box);
 
 	// Nothing selected to start with, on either the canvas or the strip.
-	await expect(detailsSection(gm.page)).toContainText('No token selected');
+	// The empty strip is a plain shaded block with no text in it, so
+	// "nothing selected" is asserted as the token's name being absent.
+	await expect(detailsSection(gm.page)).not.toContainText('Goblin');
 	expect(await selectionInk(gm.page)).toBe(0);
 
 	await gm.page.mouse.click(box.x + token.x, box.y + token.y);
@@ -165,12 +167,12 @@ test('clicking a token selects it here and nowhere else', async ({ browser }) =>
 	// the same layer, one page over.
 	await player.page.waitForTimeout(500);
 	expect(await selectionInk(player.page)).toBe(0);
-	await expect(detailsSection(player.page)).toContainText('No token selected');
+	await expect(detailsSection(player.page)).not.toContainText('Goblin');
 
 	// Empty map three cells to the left clears it again.
 	await gm.page.mouse.click(box.x + token.x - 3 * GRID, box.y + token.y);
 	await expect.poll(() => selectionInk(gm.page)).toBe(0);
-	await expect(detailsSection(gm.page)).toContainText('No token selected');
+	await expect(detailsSection(gm.page)).not.toContainText('Goblin');
 
 	await gm.context.close();
 	await player.context.close();
@@ -191,7 +193,7 @@ test('a selection does not survive a reload', async ({ browser }) => {
 
 	// The token comes back from the server; the selection doesn't, because
 	// it was never sent anywhere.
-	await expect(detailsSection(gm.page)).toContainText('No token selected');
+	await expect(detailsSection(gm.page)).not.toContainText('Goblin');
 	expect(await selectionInk(gm.page)).toBe(0);
 
 	await gm.context.close();

@@ -240,7 +240,9 @@ test('clicking an entry selects the token it stands for', async ({ browser }) =>
 	await addEntry(gm.page, 'Goblin', '12');
 
 	const details = gm.page.getByRole('region', { name: 'Selected token' }).first();
-	await expect(details).toContainText('No token selected');
+	// The empty strip is a plain shaded block with no text in it, so
+	// "nothing selected" is the absence of the token's name.
+	await expect(details).not.toContainText('Goblin');
 
 	await gm.page.getByRole('button', { name: 'Find Goblin on the map' }).first().click();
 	await expect(details).toContainText('Goblin');
