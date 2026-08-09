@@ -105,10 +105,12 @@ test('an asset added on the assets page is named, searchable, and offered in bot
 
 	await pageA.getByRole('button', { name: 'New token' }).click();
 	await expect(pageA.getByRole('button', { name: 'Goblin archer' })).toBeVisible();
-	// Opening on the right tab is a default, not a wall: art someone filed
-	// under the other kind is still one click away.
-	await pageA.getByRole('tab', { name: 'Maps 1' }).click();
-	await expect(pageA.getByRole('button', { name: 'Swamp road' })).toBeVisible();
+	// A picker shows the kind it is asking for and nothing else — no tabs,
+	// and the other half of the library isn't in the grid to be found. The
+	// way to art filed under the wrong kind is the assets page, which the
+	// link below carries the right tab into.
+	await expect(pageA.getByRole('tab')).toHaveCount(0);
+	await expect(pageA.getByRole('button', { name: 'Swamp road' })).toHaveCount(0);
 	await pageA.getByRole('button', { name: 'Close' }).click();
 
 	// A second, unrelated room must not see it at all — the scoping the hub

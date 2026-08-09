@@ -195,11 +195,15 @@
 				</div>
 				<div class="flex flex-col gap-2">
 					<Label>Map (optional)</Label>
+					<!-- Maps only, with no Tokens tab: a scene is asking what goes
+					     *under* the tokens, so the other half of the library is
+					     noise here, and an offer to file the wrong thing. -->
 					<AssetPicker
 						{roomSlug}
 						{sessionToken}
 						idPrefix="scene"
 						kind="map"
+						lockKind
 						bind:selectedId={mapAssetId}
 						onpick={adoptGridSize}
 						emptyHint="Nothing in the library yet — add a map on the assets page."
@@ -241,6 +245,7 @@
 						{sessionToken}
 						idPrefix="replace-map"
 						kind="map"
+						lockKind
 						bind:selectedId={replacementAssetId}
 						emptyHint="Nothing in the library yet — add a map on the assets page."
 					/>

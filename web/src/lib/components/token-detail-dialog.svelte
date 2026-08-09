@@ -128,10 +128,13 @@
 				/>
 				<div class="flex flex-col gap-2">
 					<Label>Image (optional)</Label>
+					<!-- Token art only, like the create dialog beside it. -->
 					<AssetPicker
 						{roomSlug}
 						{sessionToken}
 						idPrefix="edit-token"
+						kind="token"
+						lockKind
 						bind:selectedId={imageAssetId}
 						emptyHint="Nothing in the library yet — add art on the assets page, or leave blank for a plain marker."
 					/>

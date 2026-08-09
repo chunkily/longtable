@@ -31,6 +31,20 @@ four pickers — is tabbed, counts each tab, and draws token tiles `aspect-squar
 the whole picture shows. The scene and replace-map pickers open on Maps, the token pickers on
 Tokens, and both tabs stay reachable from either.
 
+**Correction, 2026-08-09: the pickers show one kind and no tabs.** The reasoning above — that a
+picture filed under the wrong kind should still be reachable without a trip to the assets page —
+was answering a question the person in front of the dialog isn't asking. A scene is asking what
+goes *under* the tokens and a token is asking what goes *on* one; the other tab is an offer to
+file the wrong thing, and it was read as clutter in use. `AssetPicker` takes `lockKind` for this,
+and all four pickers set it.
+
+The filtering happens in the picker rather than only hiding the tab strip, and that part matters:
+`AssetLibrary`'s empty states offer to "look in Tokens instead", so a hidden tab strip would have
+left that button stranding someone in a list with no way back. With the other kind filtered out
+before the grid sees it, those links have nothing to point at and never render. The way to
+misfiled art is the assets-page link under the picker, which already carries the right tab with
+it.
+
 **The whole assets page is tabbed, not just the grid**, and that was a correction made during
 review. The first cut asked for the kind on each staged file, with a Token/Map toggle in the
 card's action row — which puts the question *after* choosing the file, which is after the

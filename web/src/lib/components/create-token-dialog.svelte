@@ -142,10 +142,15 @@
 			{/if}
 			<div class="flex flex-col gap-2">
 				<Label>Image (optional)</Label>
+				<!-- Token art only. What goes on a token is one question with one
+				     kind of answer, and a Maps tab here is an invitation to put a
+				     battle map on a goblin. -->
 				<AssetPicker
 					{roomSlug}
 					{sessionToken}
 					idPrefix="token"
+					kind="token"
+					lockKind
 					bind:selectedId={imageAssetId}
 					emptyHint="Nothing in the library yet — add art on the assets page, or leave blank for a plain marker."
 				/>

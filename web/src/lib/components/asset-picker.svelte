@@ -17,6 +17,7 @@
 		sessionToken,
 		selectedId = $bindable(null),
 		kind = 'token',
+		lockKind = false,
 		idPrefix = 'asset',
 		emptyHint = 'Nothing in the library yet — add an image on the assets page.',
 		onpick
@@ -29,13 +30,22 @@
 		 */
 		selectedId?: string | null;
 		/**
-		 * The tab to open on — the kind this picker is actually asking for.
-		 * Only the starting tab, deliberately: a scene wants a map and a
-		 * token wants token art, but a room that filed something under the
-		 * other kind (or had it guessed for them by the migration) must
-		 * still be able to reach it without a trip to the assets page.
+		 * The kind this picker is asking for. By default it is only the
+		 * *starting* tab: a room that filed something under the other kind
+		 * can still reach it without a trip to the assets page.
 		 */
 		kind?: AssetKind;
+		/**
+		 * Show that kind and nothing else — no tabs, and the other half of
+		 * the library filtered out before the grid ever sees it.
+		 *
+		 * Set where the question has one right answer and the other tab is
+		 * noise: a scene is asking for a map, and a Tokens tab in a form
+		 * about the map under a scene is an invitation to file the wrong
+		 * thing. The way to art filed under the wrong kind is then the
+		 * assets-page link below, which already carries this kind with it.
+		 */
+		lockKind?: boolean;
 		/** Distinguishes the input ids when two pickers share a page. */
 		idPrefix?: string;
 		emptyHint?: string;
@@ -55,6 +65,14 @@
 	// says that in a way the compiler believes — reading a prop in a
 	// `$state` initialiser is otherwise assumed to be a mistake.
 	let activeKind = $state(untrack(() => kind));
+
+	// Locked, the other kind is filtered out here rather than merely
+	// hidden by taking the tabs away. AssetLibrary's empty states offer to
+	// "look in Tokens instead" when a tab is empty, and with no tab strip
+	// on screen that button would strand you in a list you couldn't get
+	// back from — filtering means those links have nothing to point at and
+	// never render.
+	const shown = $derived(lockKind ? library.filter((a) => a.kind === kind) : library);
 
 	// Loaded when the picker mounts. Uploads no longer come through here, so
 	// this list can go stale if someone adds to the library in another tab —
@@ -81,10 +99,11 @@
 
 <div class="flex flex-col gap-2">
 	<AssetLibrary
-		assets={library}
+		assets={shown}
 		{loading}
 		{idPrefix}
 		{emptyHint}
+		showTabs={!lockKind}
 		bind:kind={activeKind}
 		bind:selectedId
 	/>
