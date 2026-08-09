@@ -513,14 +513,20 @@
 	{/snippet}
 
 	{#snippet tokenDetails(room: RoomClient, token: Token)}
-		<div class="flex items-center gap-2">
+		<div class="flex items-start gap-2">
 			<div class="min-w-0 flex-1">
-				<p class="truncate text-sm font-medium">{token.name}</p>
-				<p class="text-xs text-muted-foreground">
-					{token.width}×{token.height} squares{token.visibility === 'hidden'
-						? ' · hidden from players'
-						: ''}
-				</p>
+				<!-- The size used to be spelled out under the name and isn't any
+				     more: a token's footprint is drawn on the map at the size it
+				     is, so the line said in words what the reader was already
+				     looking at. Being hidden is the opposite — it is precisely
+				     what the map can't show a GM at a glance — so that half
+				     stayed, as a badge. -->
+				<div class="flex items-center gap-1.5">
+					<p class="truncate text-sm font-medium">{token.name}</p>
+					{#if token.visibility === 'hidden'}
+						<Badge variant="outline" class="shrink-0">hidden from players</Badge>
+					{/if}
+				</div>
 				<!-- Shown to everyone, not just the GM: whose token is whose is
 				     the point of an owner, and it's the roster that turns the
 				     stored id back into a name. Silent when nobody owns it —
@@ -750,10 +756,21 @@
 			     instruction was read once and then sat there for the rest of
 			     the session saying nothing, and the shaded panel already says
 			     "nothing here" without asking to be read. It still holds its
-			     height, which is the point of the section existing at all. -->
+			     height, which is the point of the section existing at all.
+
+			     A *floor* and a ceiling rather than one fixed height, and the
+			     content laid out from the top. It was `h-28 items-center`,
+			     which meant a token carrying condition tags overflowed a box
+			     that centred it — and overflow on a centred flex child spills
+			     off the *top*, taking the token's name with it, out of the
+			     panel and out of reach. Growing to `max-h-44` fits the usual
+			     case; anything past that scrolls, with the name staying put. -->
 			<section
 				aria-label="Selected token"
-				class={['flex h-28 shrink-0 items-center border-b p-3', !selectedToken && 'bg-muted']}
+				class={[
+					'flex max-h-44 min-h-28 shrink-0 flex-col overflow-y-auto border-b p-3',
+					!selectedToken && 'bg-muted'
+				]}
 			>
 				{#if selectedToken}
 					<div class="w-full">{@render tokenDetails(client, selectedToken)}</div>

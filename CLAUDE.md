@@ -73,7 +73,7 @@ anyone drags — unless the GM has set `Manage room`'s **Moving tokens** to `Onl
 holds every Player to their own tokens and leaves the GM able to move anything; a token someone
 else moves slides to its new square rather than jumping;
 anyone can click one to select it, which rings it on the map and shows its
-details above chat, whose token it is included, with Edit and Delete beside them for a GM or for
+details above chat, whose token it is included, with a pen and a bin beside them for a GM or for
 whoever owns it — the
 selection is local to that browser, never synced; each token also carries three numeric trackers,
 labelled per token (hit points, armour class, a resource), and any number of condition tags — all

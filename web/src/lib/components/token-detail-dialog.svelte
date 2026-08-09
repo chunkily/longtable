@@ -10,6 +10,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { ownerOptions } from '$lib/token-owner';
+	import SquarePen from '@lucide/svelte/icons/square-pen';
 	import AssetPicker from '$lib/components/asset-picker.svelte';
 	import TokenOwnerPicker from '$lib/components/token-owner-picker.svelte';
 	import TokenSizePicker, { sizeForSquares } from '$lib/components/token-size-picker.svelte';
@@ -93,7 +94,21 @@
 >
 	<Dialog.Trigger>
 		{#snippet child({ props })}
-			<Button {...props} variant="outline" size="sm" aria-label="Edit token">Edit</Button>
+			<!-- An icon, like the delete button beside it: the two sit
+			     together in a 368px rail where a word-labelled button next to
+			     an icon one reads as two different kinds of control. The
+			     accessible name still says "Edit token" — what a screen
+			     reader announces, what the tooltip shows, and what the specs
+			     find it by. -->
+			<Button
+				{...props}
+				variant="outline"
+				size="sm"
+				aria-label="Edit token"
+				title="Edit this token"
+			>
+				<SquarePen class="h-4 w-4" />
+			</Button>
 		{/snippet}
 	</Dialog.Trigger>
 	<Dialog.Content>

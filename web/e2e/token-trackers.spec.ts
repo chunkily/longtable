@@ -241,8 +241,16 @@ test('a number typed into the panel reaches the room, and takes nothing else wit
 
 	// Everything the panel never asked about survived being sent back with
 	// it: the name, and the size that came from a picker in another form.
+	// The size is read back through the editor, since the panel no longer
+	// spells it out.
 	await expect(detailsSection(gm.page)).toContainText('Goblin');
-	await expect(detailsSection(gm.page)).toContainText('2×2 squares');
+	await openEditor(gm.page);
+	await expect(gm.page.getByRole('button', { name: 'Large (2×2 squares)' })).toHaveAttribute(
+		'aria-pressed',
+		'true'
+	);
+	await gm.page.getByRole('button', { name: 'Close' }).click();
+	await expect(gm.page.getByRole('button', { name: 'Save changes' })).toBeHidden();
 
 	// Clearing the box empties the slot rather than storing a zero — and
 	// zero itself has to still be storable, which is the distinction the

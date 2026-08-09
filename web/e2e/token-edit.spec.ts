@@ -96,6 +96,20 @@ async function openEditor(page: Page) {
 	await expect(page.getByRole('button', { name: 'Save changes' })).toBeVisible();
 }
 
+/**
+ * What size the room believes this token is, read back through the edit
+ * dialog's picker. The panel used to spell it out ("2×2 squares") and
+ * doesn't any more — a token's footprint is drawn on the map at the size
+ * it is — so the pressed option is where the stored value shows up in
+ * the DOM now.
+ */
+async function expectSize(page: Page, label: string) {
+	await openEditor(page);
+	await expect(page.getByRole('button', { name: label })).toHaveAttribute('aria-pressed', 'true');
+	await page.getByRole('button', { name: 'Close' }).click();
+	await expect(page.getByRole('button', { name: 'Save changes' })).toBeHidden();
+}
+
 async function save(page: Page) {
 	await page.getByRole('button', { name: 'Save changes' }).click();
 	await expect(page.getByRole('button', { name: 'Save changes' })).toBeHidden();
@@ -121,7 +135,7 @@ test('a GM gives a token its size and owner as it is created', async ({ browser 
 	const box = await canvasBox(gm.page);
 	const spawn = spawnCentre(box);
 	await gm.page.mouse.click(box.x + spawn.x, box.y + spawn.y);
-	await expect(detailsSection(gm.page)).toContainText('2×2 squares');
+	await expect(detailsSection(gm.page)).toContainText("Bob's Fighter");
 
 	// Whose token it is has to be legible to the room, not just to the GM
 	// who assigned it — that is the whole point of an owner, and the
@@ -142,7 +156,7 @@ test('a GM gives a token its size and owner as it is created', async ({ browser 
 	await expect(detailsSection(gm.page)).not.toContainText("Bob's token");
 	await expect(detailsSection(player.page)).not.toContainText("Bob's token");
 	// Still selected and still 2x2 — clearing the owner changed one field.
-	await expect(detailsSection(gm.page)).toContainText('2×2 squares');
+	await expectSize(gm.page, 'Large (2×2 squares)');
 
 	await gm.context.close();
 	await player.context.close();
@@ -233,7 +247,6 @@ test('a GM renames and resizes a token, and the whole room sees it', async ({ br
 	// The strip reads from room.tokens, so it re-renders from the
 	// broadcast rather than from what was typed.
 	await expect(detailsSection(gm.page)).toContainText('Hobgoblin');
-	await expect(detailsSection(gm.page)).toContainText('2×2 squares');
 
 	// A 2x2 token covers four times the ground, on the map of someone who
 	// only knows through the socket.
