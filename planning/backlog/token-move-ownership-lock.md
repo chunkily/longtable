@@ -38,6 +38,14 @@ something: a Player-made token is owned by its creator without anyone choosing a
 that turns the lock on gets sensible behaviour by default rather than needing the GM to assign
 every token first.
 
+**The premise it was waiting on has shipped.**
+[player-created-tokens](player-created-tokens.md) is `status: done`: a Player's token is owned by
+its creator with nobody choosing an owner, so a table that turns this lock on gets sensible
+behaviour immediately rather than needing the GM to assign every token first. Ownership now also
+decides who may *delete* a token (`handleTokenDelete`), which is a second worked example of the
+check to copy — and a closer one than the tracker rule, since it is a whole-command gate rather
+than a per-field one, which is what a move needs.
+
 **Its home now exists.** [full-bleed-map-layout](full-bleed-map-layout.md) shipped a
 `Manage room` dialog (`web/src/lib/components/manage-room-dialog.svelte`), opened from the room
 menu and GM-only, holding nothing yet and saying so. This is one of the settings it is waiting

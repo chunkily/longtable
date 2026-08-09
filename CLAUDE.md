@@ -60,22 +60,25 @@ or bare code into; there is no server endpoint that enumerates rooms, and `longt
 the only way to see them all, which is the Host's job and needs the database file. Scenes built
 from an uploaded map or a
 picked library asset and managed from a picker (switch, delete, swap the map under one),
-tokens (GM creates and edits them with the same set of fields either way — name, art, size, owner,
-visibility — and deletes, anyone drags, hidden ones
-withheld from players; a token someone else moves slides to its new square rather than jumping;
+tokens (**anyone creates them**, from the same `New token` icon on the toolbar and up to twenty at
+a time — a batch is numbered `Monkey 1`…`Monkey 8` and spreads over free squares rather than
+stacking, and each one is its own undo. A GM's dialog carries name, art, size, owner and
+visibility; a Player's is the same minus the last two, because a token they make is theirs and
+hiding one is a GM power. A GM edits and deletes anything, an owner edits and deletes their own,
+anyone drags, hidden ones withheld from players; a token someone else moves slides to its new square rather than jumping;
 anyone can click one to select it, which rings it on the map and shows its
-details above chat, whose token it is included, with Edit beside them for a GM or for whoever owns
-it and Delete for a GM alone — the
+details above chat, whose token it is included, with Edit and Delete beside them for a GM or for
+whoever owns it — the
 selection is local to that browser, never synced; each token also carries three numeric trackers,
 labelled per token (hit points, armour class, a resource), and any number of condition tags — all
 three slots shown in that details panel as large boxes whose values are typed straight into them,
 a focused box floating a −/+ control that steps by 1 or by whatever it's told, plus a card when
 the pointer rests on the token showing only the slots carrying a number; labels and conditions are
 set in the edit dialog, and a GM may change all of it on any token while a Player may change the
-trackers and conditions on one they own, which is the first thing ownership actually confers),
+trackers and conditions on one they own),
 fog the GM paints on and off a square at a time (plus reveal-all and reset for the whole scene),
 drawings (freehand/line/rect/ellipse) with an eraser, and per-session undo/redo covering
-drawing, erasing, token deletion and token moves (an undo passes over a token someone else has
+drawing, erasing, token creation, token deletion and token moves (an undo passes over a token someone else has
 moved since, rather than dragging it back out from under them),
 pings, distance measuring, area-of-effect templates (circle/cone/line/cube, origin on a snap
 mode and size in whole 5 ft steps),
@@ -120,8 +123,10 @@ All of it syncs live; everything but pings and measurements persists.
 Known gaps, which is also roughly the queue: no initiative tracker — the side panel switches to it
 and says so, which is the shape waiting for the feature; `Manage room` is likewise an empty
 container for settings that don't exist yet (room privacy, the token ownership lock, deleting a
-room). Ownership governs a token's trackers and conditions but nothing else (anyone can still move
-anyone's token), fog has no automatic vision from tokens, no prebuilt releases, no way for a Host
+room, and a switch to turn Player token creation off). Ownership now governs a token's trackers,
+its conditions, its deletion and who a Player's new token belongs to — but not moving it (anyone
+can still move anyone's token), and nothing caps how many tokens one Player may have standing.
+Fog has no automatic vision from tokens, no prebuilt releases, no way for a Host
 to remove a moderated asset server-wide or cap upload sizes per room (a room removing something
 from its own library is a different, smaller thing, and does exist). The drawing tools still have
 no stroke-width or fill control; both are open items and both now have a strip to land on.

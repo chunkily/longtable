@@ -276,6 +276,12 @@
 		!!selectedToken &&
 			(isGM || (!!client?.you && selectedToken.ownerParticipantId === client.you.participantId))
 	);
+	// Deletion follows ownership too, now that a Player can create tokens
+	// — clearing away your own summons is the other half of conjuring
+	// them. Same rule as editing, and the same rule handleTokenDelete
+	// enforces; kept as its own name because the two were different for
+	// most of this file's life and will read as a mistake otherwise.
+	const canDeleteSelected = $derived(canEditSelected);
 	const showStrip = $derived(familyHasStrip(familyOf(activeTool)));
 </script>
 
@@ -546,16 +552,16 @@
 					canEditAll={isGM}
 				/>
 			{/if}
-			<!-- Deletion stays GM-only even though editing no longer is: a
-			     token is a piece of the GM's scene that a Player may be
-			     allowed to move and now to take damage on, which is a long
-			     way from being allowed to remove it. token.delete enforces
-			     the same rule.
+			<!-- A GM on anything, and anyone else on a token they own — the
+			     same rule as the Edit button beside it. Deletion used to be
+			     GM-only because creation was; now that a Player can conjure
+			     eight monkeys, leaving the clearing-up to the GM would be the
+			     busywork this was meant to remove. token.delete enforces it.
 
 			     Not behind a confirmation, unlike deleting a scene: the
 			     deletion is undoable, which is the cheaper answer to a
 			     misclick than a dialog on every deliberate one. -->
-			{#if isGM}
+			{#if canDeleteSelected}
 				<Button
 					variant="outline"
 					size="sm"
@@ -701,10 +707,14 @@
 				>
 					<MapToolbar {room} bind:activeTool {isGM} onResetView={() => canvasRef?.resetView()}>
 						{#snippet newToken()}
-							{#if isGM && joined}
+							<!-- Everyone's, not just the GM's: a Player's summons and
+							     familiars were the GM's paperwork mid-fight. The dialog
+							     itself is what differs by role. -->
+							{#if joined}
 								<CreateTokenDialog
 									{room}
 									{sceneId}
+									{isGM}
 									roomSlug={joined.roomSlug}
 									sessionToken={joined.sessionToken}
 									spawnCell={() => canvasRef?.viewCenterCell() ?? { x: 0, y: 0 }}

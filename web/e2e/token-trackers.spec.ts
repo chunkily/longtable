@@ -111,13 +111,14 @@ function trackerBox(page: Page, label: string) {
 // Selects the token, waiting for it to be drawn first.
 //
 // **The canvas box is re-read from the page being clicked, never shared
-// between two of them.** A GM's toolbar carries a row a Player's doesn't
-// (New scene, New token, the fog buttons), so the two canvases sit 44px
-// apart vertically even though they're the same size — most of a grid
-// square. Reusing one page's box on the other silently clicks the wrong
-// cell, and only shows up on a 1×1 token: a 2×2 one is wide enough to
-// absorb the error, which is why the specs that pass a box around have
-// been getting away with it.
+// between two of them.** That used to be load-bearing: a GM's toolbar
+// carried a row a Player's didn't, so the two canvases sat 44px apart
+// vertically — most of a grid square — and reusing one page's box on the
+// other silently clicked the wrong cell. The full-bleed layout floats the
+// toolbar over the map instead of pushing it down, and `New token` is no
+// longer GM-only anyway, so the two boxes now agree. Keep re-reading
+// regardless: it costs nothing, and the property it relies on is exactly
+// what the next layout change breaks silently.
 //
 // The click is then made inside a poll rather than once, because a
 // single one is unreliable for a separate reason: Konva fires `click`
@@ -416,10 +417,25 @@ test('the wheel steps a focused tracker, and never drops the step size below 1',
 	await selectToken(gm.page, spawn, 'Troll');
 
 	await openEditor(gm.page);
-	await gm.page.getByLabel('Tracker 1 label').fill('HP');
+	// Filled and then checked rather than filled and trusted. Under a full
+	// run this fill has been seen not to stick — the same shape as the
+	// hydration race in planning/backlog/e2e-flakes.md, where Svelte
+	// reconciles an input back to its bound value if the fill lands early
+	// enough. The symptom surfaces four lines below as a tracker box that
+	// never appears, which reads as the wheel being broken.
+	const label = gm.page.getByLabel('Tracker 1 label');
+	await expect
+		.poll(async () => {
+			await label.fill('HP');
+			return label.inputValue();
+		})
+		.toBe('HP');
 	await save(gm.page);
 
+	// The relabelled box arriving is the proof the save landed; without
+	// this the next line's failure is a timeout with nothing to read.
 	const hp = trackerBox(gm.page, 'HP');
+	await expect(hp).toBeVisible();
 	await hp.fill('30');
 	await hp.blur();
 
@@ -509,10 +525,8 @@ test('a player edits the trackers on their own token and nothing else', async ({
 });
 
 // The other side of the same rule: a token nobody owns is nobody's to
-// edit but the GM's, and deleting stays GM-only even for one they do own.
-test('a player gets no editor for a token they do not own, and never a delete', async ({
-	browser
-}) => {
+// edit or delete but the GM's.
+test('a player gets no editor for a token they do not own', async ({ browser }) => {
 	const gm = await openRoomAsGM(browser, 'Token Trackers Not Yours');
 	const player = await joinRoomAsPlayer(browser, gm.slug);
 
@@ -527,18 +541,20 @@ test('a player gets no editor for a token they do not own, and never a delete', 
 	await selectToken(gm.page, spawn, "Bob's Fighter");
 	await selectToken(player.page, spawn, "Bob's Fighter");
 
-	// Owning it earns an editor but never a delete: a token is a piece of
-	// the GM's scene that a Player is merely allowed to move and to take
-	// damage on.
+	// Owning it earns both the editor and the delete — the same rule, since
+	// a Player who can conjure their own tokens has to be able to clear
+	// them away again.
 	await expect(player.page.getByRole('button', { name: 'Edit token' })).toBeVisible();
-	await expect(player.page.getByRole('button', { name: 'Delete token' })).toBeHidden();
+	await expect(player.page.getByRole('button', { name: 'Delete token' })).toBeVisible();
 
-	// Handed back to nobody, the editor goes with it.
+	// Handed back to nobody, both go with it: an unowned token is a piece
+	// of the GM's scene that a Player is merely allowed to move.
 	await openEditor(gm.page);
 	await gm.page.getByLabel('Owner').selectOption({ label: 'Nobody (monster or prop)' });
 	await save(gm.page);
 
 	await expect(player.page.getByRole('button', { name: 'Edit token' })).toBeHidden();
+	await expect(player.page.getByRole('button', { name: 'Delete token' })).toBeHidden();
 	await expect(detailsSection(player.page)).toContainText("Bob's Fighter");
 
 	await gm.context.close();

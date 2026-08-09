@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { RoomClient } from './room.svelte';
+import { MAX_TOKENS_PER_CREATE, RoomClient } from './room.svelte';
 import { MEASURE_SEND_INTERVAL_MS } from './measure';
 import { PING_COOLDOWN_MS, PING_LIFETIME_MS } from './ping';
 
@@ -1238,7 +1238,7 @@ describe('RoomClient', () => {
 		// from this payload alone — a token that came back 1×1 in the wrong
 		// square would look like a different token to everyone.
 		expect(JSON.parse(socket.sent[1]).payload).toEqual({
-			tokenId: 't1',
+			tokenIds: ['t1'],
 			sceneId: 's1',
 			name: 'Goblin',
 			imageAssetId: null,
@@ -1305,22 +1305,106 @@ describe('RoomClient', () => {
 			ownerParticipantId: 'p2'
 		});
 
-		expect(JSON.parse(socket.sent[0])).toEqual({
-			type: 'token.create',
-			payload: {
-				sceneId: 's1',
-				name: "Bob's Fighter",
-				imageAssetId: null,
-				x: 3,
-				y: 4,
-				// A token is square, so one picked size is both dimensions —
-				// the wire carries them separately because the store does.
-				width: 3,
-				height: 3,
-				ownerParticipantId: 'p2',
-				visibility: 'visible'
-			}
+		const { type, payload } = JSON.parse(socket.sent[0]);
+		expect(type).toBe('token.create');
+		expect(payload).toMatchObject({
+			sceneId: 's1',
+			name: "Bob's Fighter",
+			imageAssetId: null,
+			x: 3,
+			y: 4,
+			// A token is square, so one picked size is both dimensions —
+			// the wire carries them separately because the store does.
+			width: 3,
+			height: 3,
+			ownerParticipantId: 'p2',
+			visibility: 'visible',
+			count: 1
 		});
+		// One minted id even for a single token: it's what the echo is
+		// recognised by, and having two shapes on the wire for one and many
+		// would mean two paths through the handler.
+		expect(payload.tokenIds).toHaveLength(1);
+	});
+
+	// The count is the whole point of the batch, and the ids are what make
+	// eight monkeys eight undo entries rather than a mystery.
+	it('mints one id per token on token.create', () => {
+		const { client, socket } = roomWithTokens();
+
+		client.createToken('s1', 'Monkey', null, 3, 4, 'visible', { count: 8 });
+
+		const { payload } = JSON.parse(socket.sent[0]);
+		expect(payload.count).toBe(8);
+		expect(new Set(payload.tokenIds).size).toBe(8);
+	});
+
+	// The server refuses anything above the cap outright, so a stepper
+	// someone typed 500 into would lose the whole batch rather than
+	// making twenty. Clamping is the kinder half of the same rule.
+	it('clamps the count to the cap the server enforces', () => {
+		const { client, socket } = roomWithTokens();
+
+		client.createToken('s1', 'Monkey', null, 3, 4, 'visible', { count: 500 });
+		expect(JSON.parse(socket.sent[0]).payload.count).toBe(MAX_TOKENS_PER_CREATE);
+
+		client.createToken('s1', 'Monkey', null, 3, 4, 'visible', { count: 0 });
+		expect(JSON.parse(socket.sent[1]).payload.count).toBe(1);
+	});
+
+	// One entry per token, newest first — deliberately not one entry for
+	// the whole batch, which would be the first grouped action on a
+	// history that is flat everywhere else.
+	it('undoes a batch one token at a time, newest first', () => {
+		const { client, socket } = roomWithTokens();
+
+		client.createToken('s1', 'Monkey', null, 3, 4, 'visible', { count: 3 });
+		const ids: string[] = JSON.parse(socket.sent[0]).payload.tokenIds;
+
+		// Nothing is undoable until the tokens actually exist: the name and
+		// the square are the server's to decide, so the entry is recorded
+		// on the echo rather than on the send.
+		expect(client.canUndo).toBe(false);
+		ids.forEach((id, i) => {
+			socket.emit({ type: 'token.created', payload: { ...goblin, id, name: `Monkey ${i + 1}` } });
+		});
+		expect(client.canUndo).toBe(true);
+
+		client.undo();
+		client.undo();
+
+		expect(sentTypes(socket)).toEqual(['token.create', 'token.delete', 'token.delete']);
+		expect(JSON.parse(socket.sent[1]).payload).toEqual({ tokenId: ids[2] });
+		expect(JSON.parse(socket.sent[2]).payload).toEqual({ tokenId: ids[1] });
+	});
+
+	// Undo is this session's own actions and nothing else. A token
+	// arriving because somebody else made theirs must not end up on a
+	// stack that would then delete it.
+	it('leaves a token somebody else created off the undo stack', () => {
+		const { client, socket } = roomWithTokens();
+
+		socket.emit({ type: 'token.created', payload: { ...goblin, id: 'theirs' } });
+
+		expect(client.tokens.map((t) => t.id)).toEqual(['theirs']);
+		expect(client.canUndo).toBe(false);
+	});
+
+	// Redo puts it back under the same id, so the token the room knew is
+	// the token that returns.
+	it('redoes an undone creation as the same token', () => {
+		const { client, socket } = roomWithTokens();
+
+		client.createToken('s1', 'Monkey', null, 3, 4);
+		const [id]: string[] = JSON.parse(socket.sent[0]).payload.tokenIds;
+		socket.emit({ type: 'token.created', payload: { ...goblin, id, name: 'Monkey' } });
+
+		client.undo();
+		socket.emit({ type: 'token.deleted', payload: { tokenId: id } });
+		client.redo();
+
+		expect(sentTypes(socket)).toEqual(['token.create', 'token.delete', 'token.create']);
+		expect(JSON.parse(socket.sent[2]).payload).toMatchObject({ tokenIds: [id], name: 'Monkey' });
 	});
 
 	it('sends every editable field on token.update, so a cleared image stays cleared', () => {

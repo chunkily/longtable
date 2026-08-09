@@ -104,22 +104,68 @@ func TestTokenDelete_GMRemovesItForTheWholeRoom(t *testing.T) {
 	}
 }
 
-// A Player can drag a token around but must not be able to take it off
-// the map — the same boundary that stops them creating one.
-func TestTokenDelete_PlayerMayNot(t *testing.T) {
+// Clearing away your own summons is the other half of being able to
+// make them: without it, eight conjured monkeys become the GM's cleanup.
+func TestTokenDelete_PlayerRemovesTheirOwn(t *testing.T) {
 	r := newTokenTestRoom(t)
-	token := r.token(t, "Goblin", store.VisibilityVisible)
+	token := r.ownedToken(t, "Monkey", store.VisibilityVisible, r.player.ID)
 
 	client := r.ts.connect(t, r.room.Slug, r.player.SessionToken)
 	client.readEnvelope(t) // state.sync
 
 	client.send(t, "token.delete", map[string]any{"tokenId": token.ID})
-	if env := client.readEnvelope(t); env.Type != "error" {
-		t.Fatalf("type = %q, want error", env.Type)
+	if env := client.readEnvelope(t); env.Type != "token.deleted" {
+		t.Fatalf("type = %q, want token.deleted", env.Type)
+	}
+	if got := r.tokenCount(t); got != 0 {
+		t.Fatalf("len(tokens) = %d, want 0", got)
+	}
+}
+
+// Ownership is the whole rule: a monster nobody owns is still the GM's
+// to remove, and a Player deleting one would be deleting the scene.
+func TestTokenDelete_PlayerMayNotRemoveATokenTheyDoNotOwn(t *testing.T) {
+	r := newTokenTestRoom(t)
+	unowned := r.token(t, "Goblin", store.VisibilityVisible)
+	someoneElses := r.ownedToken(t, "Alice's Fighter", store.VisibilityVisible, r.gm.ID)
+
+	client := r.ts.connect(t, r.room.Slug, r.player.SessionToken)
+	client.readEnvelope(t) // state.sync
+
+	for _, token := range []store.Token{unowned, someoneElses} {
+		client.send(t, "token.delete", map[string]any{"tokenId": token.ID})
+		if env := client.readEnvelope(t); env.Type != "error" {
+			t.Fatalf("%s: type = %q, want error", token.Name, env.Type)
+		}
 	}
 
+	if got := r.tokenCount(t); got != 2 {
+		t.Fatalf("len(tokens) = %d, want 2 (neither may be deleted)", got)
+	}
+}
+
+// A hidden token is refused in the words of one that isn't there, even
+// to its own owner — a GM can prep an ambush with a Player's character,
+// and an error separating "not yours" from "no such token" is how they'd
+// find out. Same rule, same wording, as token.update.
+func TestTokenDelete_HiddenTokenIsRefusedToItsOwnerAsMissing(t *testing.T) {
+	r := newTokenTestRoom(t)
+	hidden := r.ownedToken(t, "Ambusher", store.VisibilityHidden, r.player.ID)
+
+	client := r.ts.connect(t, r.room.Slug, r.player.SessionToken)
+	client.readEnvelope(t) // state.sync
+
+	client.send(t, "token.delete", map[string]any{"tokenId": hidden.ID})
+	hiddenAnswer := errorMessage(t, client.readEnvelope(t))
+
+	client.send(t, "token.delete", map[string]any{"tokenId": "00000000-0000-4000-8000-000000000000"})
+	missingAnswer := errorMessage(t, client.readEnvelope(t))
+
+	if hiddenAnswer != missingAnswer {
+		t.Fatalf("errors differ: %q vs %q — the two must be indistinguishable", hiddenAnswer, missingAnswer)
+	}
 	if got := r.tokenCount(t); got != 1 {
-		t.Fatalf("len(tokens) = %d, want 1 (a player must not be able to delete)", got)
+		t.Fatalf("len(tokens) = %d, want 1", got)
 	}
 }
 
@@ -201,13 +247,13 @@ func TestTokenCreate_UsesClientSuppliedIDSoADeleteCanBeUndone(t *testing.T) {
 	}
 
 	client.send(t, "token.create", map[string]any{
-		"tokenId": token.ID,
-		"sceneId": r.scene.ID,
-		"name":    token.Name,
-		"x":       token.X,
-		"y":       token.Y,
-		"width":   token.Width,
-		"height":  token.Height,
+		"tokenIds": []string{token.ID},
+		"sceneId":  r.scene.ID,
+		"name":     token.Name,
+		"x":        token.X,
+		"y":        token.Y,
+		"width":    token.Width,
+		"height":   token.Height,
 	})
 	env := client.readEnvelope(t)
 	if env.Type != "token.created" {
@@ -258,7 +304,7 @@ func TestTokenCreate_RejectsMalformedID(t *testing.T) {
 		"6F1E3B8A-2C4D-4F1E-9A7B-0D5C8E2F4A13",
 	} {
 		client.send(t, "token.create", map[string]any{
-			"tokenId": id, "sceneId": r.scene.ID, "name": "Goblin",
+			"tokenIds": []string{id}, "sceneId": r.scene.ID, "name": "Goblin",
 		})
 		if env := client.readEnvelope(t); env.Type != "error" {
 			t.Fatalf("tokenId %q: type = %q, want error", id, env.Type)

@@ -408,7 +408,7 @@ func TestTokenCreate_RestoresTrackersUnderTheOriginalID(t *testing.T) {
 
 	id := "11111111-1111-4111-8111-111111111111"
 	client.send(t, "token.create", map[string]any{
-		"tokenId": id, "sceneId": r.scene.ID, "name": "Goblin", "x": 1, "y": 1,
+		"tokenIds": []string{id}, "sceneId": r.scene.ID, "name": "Goblin", "x": 1, "y": 1,
 		"trackers":   []map[string]any{{"label": "HP", "value": 4}},
 		"conditions": []string{"Prone"},
 	})

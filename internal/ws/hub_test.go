@@ -298,38 +298,12 @@ func TestStateSync_IncludesActiveSceneAndMessages(t *testing.T) {
 	}
 }
 
-func TestTokenCreate_NonGMRejected(t *testing.T) {
-	ts := newTestServer(t)
-	room, _, err := ts.store.CreateRoom("Room", "GM", "password")
-	if err != nil {
-		t.Fatalf("CreateRoom: %v", err)
-	}
-	player, err := ts.store.JoinRoom(room.ID, "Bob")
-	if err != nil {
-		t.Fatalf("JoinRoom: %v", err)
-	}
-	scene, err := ts.store.CreateScene(room.ID, "Scene", nil, 70, 10, 10)
-	if err != nil {
-		t.Fatalf("CreateScene: %v", err)
-	}
-
-	client := ts.connect(t, room.Slug, player.SessionToken)
-	client.readEnvelope(t) // state.sync
-
-	client.send(t, "token.create", map[string]any{"sceneId": scene.ID, "name": "Goblin"})
-	env := client.readEnvelope(t)
-	if env.Type != "error" {
-		t.Fatalf("type = %q, want error", env.Type)
-	}
-
-	tokens, err := ts.store.ListTokensForScene(scene.ID)
-	if err != nil {
-		t.Fatalf("ListTokensForScene: %v", err)
-	}
-	if len(tokens) != 0 {
-		t.Fatalf("len(tokens) = %d, want 0 (player must not be able to create tokens)", len(tokens))
-	}
-}
+// What a Player may and may not do with token.create lives in
+// token_create_test.go, next to the rest of that command's rules. There
+// used to be a TestTokenCreate_NonGMRejected here; creating a token is
+// no longer a GM's privilege, and the boundary it was guarding is now
+// about *which fields* a Player may set rather than whether they may
+// send the command at all.
 
 func TestTokenCreate_HiddenTokenOnlyBroadcastToGM(t *testing.T) {
 	ts := newTestServer(t)

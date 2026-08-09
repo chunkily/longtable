@@ -29,10 +29,10 @@ Envelope both ways:
 | --- | --- | --- | --- |
 | `chat.send` | anyone | yes | `chat.posted` |
 | `chat.delete` | author, or any GM | yes | `chat.deleted` (first call) or `chat.purged` (second) |
-| `token.create` | GM only | yes | `token.created` (GM-only if hidden) |
+| `token.create` | anyone; a non-GM's is theirs and visible | yes | one `token.created` per token (GM-only if hidden) |
 | `token.move` | anyone | yes | `token.moved` |
 | `token.update` | GM, or the token's owner for trackers/conditions | yes | `token.updated` (+ `token.deleted` to Players on hiding) |
-| `token.delete` | GM only | yes | `token.deleted` (GM-only if hidden) |
+| `token.delete` | GM, or the token's owner | yes | `token.deleted` (GM-only if hidden) |
 | `fog.reveal` | GM only | yes | `fog.revealed` |
 | `fog.hide` | GM only | yes | `fog.hidden` |
 | `fog.revealAll` | GM only | yes | `fog.revealed` |
@@ -98,12 +98,32 @@ unconditionally, because activation was the only way to ever reach a scene again
 `scene.delete` refuses the active scene: `room.active_scene_id` has no foreign key to clean it
 up, so deleting it would leave every client pointed at a scene the server can't load.
 
-`token.delete` is GM-only, matching who may create one — deliberately *not* the "your own work"
-rule `draw.delete` uses, since a token has no author to fall back on: it's a piece of the GM's
-scene that a Player may merely be allowed to move. Its broadcast is withheld from Players when
-the token was hidden, exactly as its creation was; an id they were never told about turning up in
-a deletion is itself the leak. Undoing a deletion is a `token.create` carrying the original id,
-so the token returns as the same token to everyone still holding it.
+`token.create` is **open to Players**, with the same per-field shape `token.update` uses: a
+non-GM's owner is forced to the creator and the visibility to `visible`, and both are *ignored
+rather than rejected* when the payload says otherwise. Owner comes from `c.participant.ID`, so
+`requireOwnerInRoom` is skipped for that path — the sender is in the room by construction.
+
+It carries a `count` (absent means one, capped at `maxTokensPerCreate` = 20 **server-side**, since
+a stepper is a convenience and not a permission) and an optional `tokenIds` list, which must be
+exactly `count` canonical UUIDs. A count above one numbers the tokens `Name 1` … `Name N` and
+spreads them over free squares by Chebyshev ring (`internal/ws/spawn.go`); a count of one keeps
+the name exactly as typed and lands on the requested square **even if something is standing
+there**, which is what makes it safe for the undo of a deletion. Each token gets its own
+`token.created`, so hidden-token filtering stays per recipient and every client folds them in one
+at a time.
+
+`tokenIds` replaced the old single `tokenId`. Two callers, one meaning — "the ids these tokens
+must appear under": undoing a deletion, so the token comes back as the token the room still knows;
+and a fresh batch, so the creating client can put one undo entry per token on its stack without
+having to guess which of the arriving `token.created` events are its own (they carry no sender).
+
+`token.delete` is a GM, **or the token's owner** — not the "your own work" rule `draw.delete`
+uses, since a token has no author, but the same ownership that already governs its trackers. It
+was GM-only precisely because creation was, and leaving it there once Players could conjure eight
+monkeys would have made the clearing-up the GM's. A hidden token is refused to a non-GM in the
+words of one that doesn't exist, *including to its owner*, exactly as in `token.update`. Its
+broadcast is withheld from Players when the token was hidden, exactly as its creation was; an id
+they were never told about turning up in a deletion is itself the leak.
 
 `token.move` is also how a move is *undone* — the client sends the token back to the square it
 came from, so any permission check added to `handleTokenMove` governs the undo for free. The
@@ -184,9 +204,11 @@ something a Player is told about. A dedicated `token.hidden` event would be more
 the client nothing.
 
 Notable gaps as of the last pass: there is no way to move a token with an ownership lock — note
-that ownership now means something for the *first* time, on `token.update`'s trackers and
-conditions, so `token-move-ownership-lock` has a worked precedent to copy rather than a rule to
-invent. See `planning/backlog/`.
+that ownership now governs three things (`token.update`'s trackers and conditions, `token.delete`,
+and who a Player's new token belongs to), so `token-move-ownership-lock` has a worked precedent to
+copy rather than a rule to invent. There is also no GM switch to turn Player token creation off,
+and no cap on how many tokens one Player may have standing at once — twenty at a time, as many
+times as they like. See `planning/backlog/`.
 
 ## Presence
 
@@ -306,9 +328,10 @@ Clients may mint a drawing's id so the stroke they've already drawn can be match
 braced and URN spellings, which would echo back an id that doesn't match the one the client is
 holding. Any future client-chosen id should go through the same check.
 
-`token.create` takes an optional `tokenId` through that same check, for a different reason:
+`token.create` takes an optional `tokenIds` list through that same check, for a different reason:
 nothing is rendered ahead of the server there, but undoing a deletion has to restore the token
-under the id the rest of the room still knows it by, not a fresh one.
+under the id the rest of the room still knows it by, and a batch's creator has to know its own
+tokens' ids to build its undo entries.
 
 On the client, **mint ids with `randomId()` from `$lib/random-id`, never `crypto.randomUUID`
 directly.** `randomUUID` is defined only in a secure context, and Longtable's whole deployment

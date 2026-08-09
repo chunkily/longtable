@@ -35,6 +35,15 @@ export interface Tracker {
 	value: number | null;
 }
 
+/**
+ * How many tokens one `token.create` may make. Mirrors
+ * `maxTokensPerCreate` in `internal/ws/hub.go`, which is where it's
+ * actually enforced — this is only what the stepper stops at, so that a
+ * cap never turns into an error toast after someone has finished
+ * choosing.
+ */
+export const MAX_TOKENS_PER_CREATE = 20;
+
 export interface Token {
 	id: string;
 	sceneId: string;
@@ -285,7 +294,14 @@ interface MeasureEndedPayload {
 type HistoryAction =
 	| { kind: 'create'; drawing: Drawing }
 	| { kind: 'erase'; drawing: Drawing }
+	// deleteToken and createToken are one variant read in the two
+	// directions: undoing a deletion is a create carrying the whole token,
+	// and undoing a creation is a delete of it. They stay two kinds rather
+	// than one with a sign, because `step` reads the kind to decide which
+	// way round to go and a flag would have to be flipped as the entry
+	// crosses between the stacks.
 	| { kind: 'deleteToken'; token: Token }
+	| { kind: 'createToken'; token: Token }
 	| { kind: 'moveToken'; tokenId: string; from: TokenPosition; to: TokenPosition };
 
 interface TokenPosition {
@@ -351,6 +367,12 @@ export class RoomClient {
 	// right here.
 	// eslint-disable-next-line svelte/prefer-svelte-reactivity
 	private pendingMoves = new Map<string, TokenPosition>();
+
+	// Ids this session minted for tokens it is creating, waiting for the
+	// echo that turns each into an undo entry. Bookkeeping only — nothing
+	// reactive reads it, so a plain Set is right here.
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity
+	private pendingCreates = new Set<string>();
 
 	private lastPingSentAt = 0;
 
@@ -560,6 +582,17 @@ export class RoomClient {
 	// Size and owner are optional here in the same way they're optional on
 	// the wire: the server reads a missing width as one square and a
 	// missing owner as nobody, which is what most tokens are.
+	//
+	// The ids are minted here rather than left to the server, for the
+	// undo: one entry per token, and this is what tells this session's own
+	// creations apart from the ones arriving because somebody else at the
+	// table made theirs. `token.created` carries no sender, so without
+	// them there is nothing to match on.
+	//
+	// A Player may send owner and visibility and have them ignored — the
+	// server owns those two for a non-GM. The dialog doesn't offer them,
+	// so what actually goes on the wire is whatever this method's default
+	// is; the rule is enforced there, not here.
 	createToken(
 		sceneId: string,
 		name: string,
@@ -567,19 +600,35 @@ export class RoomClient {
 		x: number,
 		y: number,
 		visibility: 'visible' | 'hidden' = 'visible',
-		options: { squares?: number; ownerParticipantId?: string | null } = {}
+		options: { squares?: number; ownerParticipantId?: string | null; count?: number } = {}
 	) {
-		this.send('token.create', {
-			sceneId,
-			name,
-			imageAssetId,
-			x,
-			y,
-			visibility,
-			width: options.squares ?? 1,
-			height: options.squares ?? 1,
-			ownerParticipantId: options.ownerParticipantId ?? null
-		});
+		const count = Math.max(1, Math.min(MAX_TOKENS_PER_CREATE, Math.round(options.count ?? 1)));
+		const tokenIds = Array.from({ length: count }, () => randomId());
+
+		if (
+			!this.send('token.create', {
+				sceneId,
+				name,
+				imageAssetId,
+				x,
+				y,
+				visibility,
+				width: options.squares ?? 1,
+				height: options.squares ?? 1,
+				ownerParticipantId: options.ownerParticipantId ?? null,
+				count,
+				tokenIds
+			})
+		) {
+			return;
+		}
+
+		// Recorded on the echo rather than here: the name and the square a
+		// token ends up on are the server's to decide (`Monkey 3`, spread
+		// off the spawn cell), and an undo entry needs the token as the
+		// room actually holds it. A refusal simply never arrives, and
+		// nothing is left on the stack.
+		for (const id of tokenIds) this.pendingCreates.add(id);
 	}
 
 	revealFog(sceneId: string, cells: FogCell[]) {
@@ -684,7 +733,7 @@ export class RoomClient {
 	private sendCreateToken(token: Token): boolean {
 		if (this.tokens.some((t) => t.id === token.id)) return false;
 		return this.send('token.create', {
-			tokenId: token.id,
+			tokenIds: [token.id],
 			sceneId: token.sceneId,
 			name: token.name,
 			imageAssetId: token.imageAssetId,
@@ -848,6 +897,8 @@ export class RoomClient {
 				return this.sendCreate(action.drawing);
 			case 'deleteToken':
 				return this.sendCreateToken(action.token);
+			case 'createToken':
+				return this.sendDeleteToken(action.token.id) !== null;
 			case 'moveToken':
 				return this.sendMoveToken(action.tokenId, action.to, action.from);
 		}
@@ -861,6 +912,8 @@ export class RoomClient {
 				return this.sendErase(action.drawing.id) !== null;
 			case 'deleteToken':
 				return this.sendDeleteToken(action.token.id) !== null;
+			case 'createToken':
+				return this.sendCreateToken(action.token);
 			case 'moveToken':
 				return this.sendMoveToken(action.tokenId, action.from, action.to);
 		}
@@ -880,6 +933,7 @@ export class RoomClient {
 	private resetAfterSync() {
 		this.pendingErases.clear();
 		this.pendingMoves.clear();
+		this.pendingCreates.clear();
 		this.undoable = [];
 		this.redoable = [];
 		// Measurements belong to a scene that may no longer be the one on
@@ -1062,9 +1116,18 @@ export class RoomClient {
 				break;
 			}
 
-			case 'token.created':
-				this.tokens = [...this.tokens, env.payload as Token];
+			case 'token.created': {
+				const token = env.payload as Token;
+				this.tokens = [...this.tokens, token];
+				// One undo entry per token, in the order the server made
+				// them — so Ctrl+Z after eight monkeys takes Monkey 8 first.
+				// Only this session's own creations are on the stack; an id
+				// nobody here minted isn't in the set.
+				if (this.pendingCreates.delete(token.id)) {
+					this.record({ kind: 'createToken', token });
+				}
 				break;
+			}
 
 			// An upsert, not a replace. A token that was hidden and has just
 			// been revealed arrives here at a client that has never held it —

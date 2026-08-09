@@ -1,7 +1,7 @@
 ---
 title: Player-created tokens, and creating several at once
 created: 2026-08-04
-status: open
+status: done
 tags: [tokens, permissions]
 ---
 
@@ -75,3 +75,48 @@ can exist at once. Nothing stops a Player making twenty tokens twenty times.
 
 - [player-create-own-tokens](../user-stories/player-create-own-tokens.md)
 - [room-member-create-several-tokens-at-once](../user-stories/room-member-create-several-tokens-at-once.md)
+
+## What shipped
+
+All of the shape above. `token.create` lost its `requireGM` and gained the per-field split
+`token.update` already used: a non-GM's owner is forced to the creator and the visibility to
+`visible`, both **ignored rather than rejected**. `token.delete` became "a GM, or the owner", with
+the hidden-token refusal worded as a missing token even for its own owner — the same sentence, for
+the same reason, as the update handler's.
+
+**`tokenId` became `tokenIds`, and that's the decision to understand before touching this again.**
+The count has to be a *server* field or the cap is unenforceable, but the client also has to know
+the ids up front, because `token.created` carries no sender and one undo entry per token is
+otherwise impossible to attribute. So the client mints N ids, the server places and names them,
+and the ids come back in order. `RoomClient` records each entry **on the echo**, not on the send:
+the name (`Monkey 3`) and the square are the server's to decide, and an undo entry holds the whole
+token. A refusal therefore leaves nothing on the stack, for free.
+
+`spawnCells` in `internal/ws/spawn.go` does the placement, by Chebyshev ring, testing whole
+footprints rather than corners so a 2×2 token doesn't get a monkey dropped under its bottom-right
+square. **A count of one returns the origin unconditionally**, occupied or not — without that
+carve-out, undoing a deletion would politely restore the token *beside* its own square whenever
+anything had parked there since, and that's the whole point of restoring it by id.
+
+Not done, and now more visible than before: a GM switch to turn Player token creation off, and any
+cap on how many tokens one Player can have standing at once. Twenty at a time, as often as they
+like. Both were out of scope above and both stay out; see
+[full-bleed-map-layout](full-bleed-map-layout.md) for where the switch would live.
+
+Two things found on the way, neither caused by this work:
+
+- **The new-token dialog was one field away from being taller than the window**, and a dialog
+  taller than the window puts its own close button off the top of the screen — it is centred by
+  translating half its height, so there is nothing to scroll. Adding a full-width `How many` row
+  crossed that line and `asset-library.spec.ts` caught it as an unclickable `Close`. Fixed by
+  putting the count on the name's row rather than by making dialogs scroll: `max-h` +
+  `overflow-y-auto` on the shared `Dialog.Content` fixes the symptom everywhere and introduces a
+  scroll position that clicks and fills then race against, which is a worse trade in a suite that
+  drives dialogs constantly. **The taller `TokenDetailDialog` still has the original problem on a
+  short viewport** — that's the one worth fixing properly, and it wants its own item.
+- **Re-adding identical image bytes can clear an asset's credit on Windows.** The library JSON
+  comes back with `attribution: ""` while the row that produced it had one, and the server log
+  shows `rename … Access is denied` from the blobstore plus a `UNIQUE constraint failed:
+  asset.content_hash` — so the upload takes the dedup path and the room-asset update writes an
+  empty credit over a real one. `asset-library.spec.ts:188` is where it surfaces, intermittently.
+  Unrelated to tokens; recorded here because the reproduction is easy to lose.

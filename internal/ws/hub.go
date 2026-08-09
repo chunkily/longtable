@@ -536,20 +536,34 @@ func parseConditions(raw []string) ([]string, error) {
 	return out, nil
 }
 
+// maxTokensPerCreate caps a batch. A stepper is a convenience, not a
+// permission — the command has to refuse five hundred monkeys whatever
+// sent it, since each one is a row, a broadcast to every client and a
+// group the canvas rebuilds.
+const maxTokensPerCreate = 20
+
 type tokenCreateRequest struct {
-	// TokenID is optional and normally absent — the server mints one. A
-	// client supplies it when undoing a deletion, where the token has to
-	// come back under the id everyone else in the room still knows it by.
-	TokenID            string  `json:"tokenId"`
-	SceneID            string  `json:"sceneId"`
-	Name               string  `json:"name"`
-	ImageAssetID       *string `json:"imageAssetId"`
-	X                  float64 `json:"x"`
-	Y                  float64 `json:"y"`
-	Width              float64 `json:"width"`
-	Height             float64 `json:"height"`
-	OwnerParticipantID *string `json:"ownerParticipantId"`
-	Visibility         string  `json:"visibility"`
+	// TokenIDs is optional and normally absent — the server mints them.
+	// A client supplies them for two reasons, both about an id it already
+	// holds: undoing a deletion, where the token has to come back under
+	// the id everyone else in the room still knows it by, and creating a
+	// batch it wants on its own undo stack, where knowing the ids up front
+	// is what lets it record one entry per token without having to work
+	// out which of the echoes arriving are its own. Must be exactly Count
+	// long when present.
+	TokenIDs           []string `json:"tokenIds"`
+	SceneID            string   `json:"sceneId"`
+	Name               string   `json:"name"`
+	ImageAssetID       *string  `json:"imageAssetId"`
+	X                  float64  `json:"x"`
+	Y                  float64  `json:"y"`
+	Width              float64  `json:"width"`
+	Height             float64  `json:"height"`
+	OwnerParticipantID *string  `json:"ownerParticipantId"`
+	Visibility         string   `json:"visibility"`
+	// How many to make. Absent means one, which is what every caller but
+	// the new-token dialog sends.
+	Count int `json:"count"`
 	// Normally absent — a token is created blank and its trackers filled
 	// in afterwards. They're here for the same reason TokenID is: undoing
 	// a deletion rebuilds the row from this payload alone, and a token
@@ -559,23 +573,54 @@ type tokenCreateRequest struct {
 	Conditions []string         `json:"conditions"`
 }
 
+// handleTokenCreate puts one or more tokens on a scene.
+//
+// Open to Players as well as GMs, which it wasn't: a Player's summons,
+// familiars and companions were the GM's paperwork mid-fight, landing on
+// the one person with the least spare attention. What a Player may set
+// is narrower, in the same shape token.update already uses — the fields
+// that aren't theirs are **ignored rather than rejected**:
+//
+//   - the owner is the creator. Not a choice, so not a refusal either;
+//     this is also the first thing that makes ownership mean something
+//     at creation rather than only on a GM's edit.
+//   - the token is visible. Hiding something from the room is a GM
+//     power, and it's the one field a Player could use to hide a token
+//     from the GM.
 func (h *Hub) handleTokenCreate(ctx context.Context, c *client, raw json.RawMessage) {
-	if !h.requireGM(ctx, c) {
-		return
-	}
+	isGM := c.participant.Role == store.RoleGM
 
 	var req tokenCreateRequest
 	if err := decodePayload(raw, &req); err != nil || req.SceneID == "" || req.Name == "" {
 		h.sendError(ctx, c, "invalid token.create payload")
 		return
 	}
+
+	count := req.Count
+	if count == 0 {
+		count = 1
+	}
+	if count < 1 || count > maxTokensPerCreate {
+		h.sendError(ctx, c, fmt.Sprintf("you can create between 1 and %d tokens at once", maxTokensPerCreate))
+		return
+	}
+	// One id per token or none at all. A short list would leave the
+	// client holding ids for tokens that came back under different ones,
+	// which is worse than refusing: its undo entries would point at
+	// nothing.
+	if len(req.TokenIDs) > 0 && len(req.TokenIDs) != count {
+		h.sendError(ctx, c, "tokenIds must carry one id per token")
+		return
+	}
 	// Same canonical-form check draw.create makes on a client-chosen id,
 	// and for the same reason: the id is echoed back, so anything but the
 	// lowercase hyphenated spelling would come back as a different string
 	// from the one the client is holding.
-	if req.TokenID != "" && !isCanonicalUUID(req.TokenID) {
-		h.sendError(ctx, c, "tokenId must be a canonical UUID")
-		return
+	for _, id := range req.TokenIDs {
+		if !isCanonicalUUID(id) {
+			h.sendError(ctx, c, "tokenId must be a canonical UUID")
+			return
+		}
 	}
 	if !h.requireSceneInRoom(ctx, c, req.SceneID) {
 		return
@@ -583,17 +628,27 @@ func (h *Hub) handleTokenCreate(ctx context.Context, c *client, raw json.RawMess
 	if !h.requireAssetInRoom(ctx, c, req.ImageAssetID) {
 		return
 	}
-	if !h.requireOwnerInRoom(ctx, c, req.OwnerParticipantID) {
-		return
-	}
 
+	owner := req.OwnerParticipantID
 	visibility := store.Visibility(req.Visibility)
-	if visibility == "" {
+	if isGM {
+		if !h.requireOwnerInRoom(ctx, c, owner) {
+			return
+		}
+		if visibility == "" {
+			visibility = store.VisibilityVisible
+		}
+		if visibility != store.VisibilityVisible && visibility != store.VisibilityHidden {
+			h.sendError(ctx, c, "visibility must be \"visible\" or \"hidden\"")
+			return
+		}
+	} else {
+		// Taken from the connection rather than the payload, like every
+		// other identity in this file. requireOwnerInRoom is skipped rather
+		// than passed: the sender is in the room by construction.
+		creator := c.participant.ID
+		owner = &creator
 		visibility = store.VisibilityVisible
-	}
-	if visibility != store.VisibilityVisible && visibility != store.VisibilityHidden {
-		h.sendError(ctx, c, "visibility must be \"visible\" or \"hidden\"")
-		return
 	}
 
 	width, height := req.Width, req.Height
@@ -615,33 +670,70 @@ func (h *Hub) handleTokenCreate(ctx context.Context, c *client, raw json.RawMess
 		return
 	}
 
-	token, err := h.store.CreateToken(store.Token{
-		ID:                 req.TokenID,
-		SceneID:            req.SceneID,
-		Name:               req.Name,
-		ImageAssetID:       req.ImageAssetID,
-		X:                  req.X,
-		Y:                  req.Y,
-		Width:              width,
-		Height:             height,
-		OwnerParticipantID: req.OwnerParticipantID,
-		Visibility:         visibility,
-		Trackers:           trackers,
-		Conditions:         conditions,
-	})
-	if err != nil {
-		slog.Error("ws: create token failed", "error", err)
-		h.sendError(ctx, c, "failed to create token")
-		return
+	// Only a batch needs to know what's already standing where. A single
+	// token goes exactly where it was asked to go — see spawnCells.
+	var existing []store.Token
+	if count > 1 {
+		existing, err = h.store.ListTokensForScene(req.SceneID)
+		if err != nil {
+			slog.Error("ws: list tokens for spawn failed", "error", err)
+			h.sendError(ctx, c, "failed to create token")
+			return
+		}
+	}
+	cells := spawnCells(req.X, req.Y, count, width, height, existing)
+
+	created := make([]store.Token, 0, count)
+	for i := range count {
+		id := ""
+		if len(req.TokenIDs) > 0 {
+			id = req.TokenIDs[i]
+		}
+		// No suffix unless there's more than one, or every single token a
+		// GM makes picks up a pointless " 1".
+		name := req.Name
+		if count > 1 {
+			name = fmt.Sprintf("%s %d", req.Name, i+1)
+		}
+
+		token, err := h.store.CreateToken(store.Token{
+			ID:                 id,
+			SceneID:            req.SceneID,
+			Name:               name,
+			ImageAssetID:       req.ImageAssetID,
+			X:                  cells[i].X,
+			Y:                  cells[i].Y,
+			Width:              width,
+			Height:             height,
+			OwnerParticipantID: owner,
+			Visibility:         visibility,
+			Trackers:           trackers,
+			Conditions:         conditions,
+		})
+		if err != nil {
+			// Whatever was made before the failure is real and stays: the
+			// rows exist, so the room has to be told about them. Reporting
+			// the failure *and* broadcasting the successes is the honest
+			// answer to a half-made batch.
+			slog.Error("ws: create token failed", "error", err)
+			h.sendError(ctx, c, "failed to create token")
+			break
+		}
+		created = append(created, token)
 	}
 
-	payload := tokenPayload(token)
-	h.broadcastPerClient(ctx, c.roomID, "token.created", func(recipient *client) any {
-		if token.Visibility == store.VisibilityHidden && recipient.participant.Role != store.RoleGM {
-			return nil
-		}
-		return payload
-	})
+	// One event per token rather than a batch event: hidden tokens are
+	// withheld per recipient, and every client already folds these in one
+	// at a time.
+	for _, token := range created {
+		payload := tokenPayload(token)
+		h.broadcastPerClient(ctx, c.roomID, "token.created", func(recipient *client) any {
+			if token.Visibility == store.VisibilityHidden && recipient.participant.Role != store.RoleGM {
+				return nil
+			}
+			return payload
+		})
+	}
 }
 
 // tokenUpdateRequest is token.create's payload minus the things an edit
@@ -810,18 +902,23 @@ type tokenDeleteRequest struct {
 	TokenID string `json:"tokenId"`
 }
 
-// handleTokenDelete takes a token off the map for everyone. GM-only,
-// matching who may create one: anyone at the table can drag a token
-// around, but only the GM decides what is on the map at all.
+// handleTokenDelete takes a token off the map for everyone: a GM on
+// anything, and anyone else on a token they own.
 //
-// Deliberately not the erase-style "your own work" rule draw.delete
-// uses. A token isn't authored the way a stroke is — it's a piece of the
-// GM's scene that a Player may be allowed to move — so there's no
-// authorship to fall back on.
+// It was GM-only, explicitly because creating one was. Now that a Player
+// can make their own, leaving deletion behind would mean eight conjured
+// monkeys become the GM's cleanup — which is the busywork the whole
+// feature exists to remove. So the rule is ownership, which a token now
+// really has: not the erase-style "your own work" rule draw.delete uses,
+// since a token has no author, but the same owner already governing its
+// trackers and conditions in handleTokenUpdate.
+//
+// Deletion is still a bigger thing than editing, and the two refusals
+// below are worded exactly as that handler's are, for the same reasons:
+// a hidden token is refused in the words of one that isn't there,
+// including to its own owner, so a GM's ambush stays an ambush.
 func (h *Hub) handleTokenDelete(ctx context.Context, c *client, raw json.RawMessage) {
-	if !h.requireGM(ctx, c) {
-		return
-	}
+	isGM := c.participant.Role == store.RoleGM
 
 	var req tokenDeleteRequest
 	if err := decodePayload(raw, &req); err != nil || req.TokenID == "" {
@@ -847,6 +944,17 @@ func (h *Hub) handleTokenDelete(ctx context.Context, c *client, raw json.RawMess
 	if !h.sceneInRoom(c, token.SceneID) {
 		h.sendError(ctx, c, "token not found")
 		return
+	}
+
+	if !isGM {
+		if token.Visibility == store.VisibilityHidden {
+			h.sendError(ctx, c, "token not found")
+			return
+		}
+		if token.OwnerParticipantID == nil || *token.OwnerParticipantID != c.participant.ID {
+			h.sendError(ctx, c, "you can only delete a token you own")
+			return
+		}
 	}
 
 	if err := h.store.DeleteToken(token.ID); err != nil {
