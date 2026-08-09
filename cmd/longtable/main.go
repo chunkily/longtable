@@ -21,6 +21,7 @@ import (
 	"longtable/internal/api"
 	"longtable/internal/blobstore"
 	"longtable/internal/db"
+	"longtable/internal/lanurl"
 	"longtable/internal/store"
 	"longtable/internal/ws"
 )
@@ -81,7 +82,41 @@ func serve(addr, dbPath, assetsDir, banner string) error {
 	router := api.NewRouter(s, hub, blobs, frontend, banner)
 
 	slog.Info("longtable: listening", "addr", addr, "db", dbPath, "assets", assetsDir)
+	logReachableURLs(addr)
 	return http.ListenAndServe(addr, router)
+}
+
+// logReachableURLs prints the addresses the rest of the table can use.
+//
+// Everyone but the Host joins over the LAN, and nothing happens until
+// somebody reads an address out — which otherwise means going hunting
+// through OS network settings for your own IP before you can start a
+// game. Every candidate is printed rather than a chosen one: a machine
+// with Wi-Fi, Ethernet and a VPN has three, and the Host is the only
+// one who knows which network their players are on.
+func logReachableURLs(addr string) {
+	ifaces, err := lanurl.Interfaces()
+	if err != nil {
+		// Not worth failing a start over — the server is already up, and
+		// the worst outcome is a Host who looks their address up the way
+		// they always have.
+		slog.Warn("longtable: could not read network interfaces", "error", err)
+		return
+	}
+
+	candidates := lanurl.For(addr, ifaces)
+	if len(candidates) == 0 {
+		slog.Warn("longtable: no network address found to share — is this machine on a network?")
+		return
+	}
+
+	for _, candidate := range candidates {
+		if candidate.Interface == "" {
+			slog.Info("longtable: reachable at", "url", candidate.URL)
+			continue
+		}
+		slog.Info("longtable: reachable at", "url", candidate.URL, "interface", candidate.Interface)
+	}
 }
 
 // openStore opens the database at dbPath and wraps it in a Store,

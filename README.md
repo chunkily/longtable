@@ -22,7 +22,14 @@ go build -tags nodynamic -o longtable ./cmd/longtable
 ./longtable
 ```
 
-Serves on `:8080` by default (`-addr` and `-db` flags to override).
+Serves on `:8080` by default (`-addr` and `-db` flags to override). On startup it prints
+the addresses everyone else can connect to — one per network interface, so you don't have to
+go looking for your own IP:
+
+```
+INFO longtable: listening addr=:8080 db=longtable.db assets=longtable-assets
+INFO longtable: reachable at url=http://192.168.1.23:8080 interface=Ethernet
+```
 
 `-banner "Back up at 9pm"` puts a message across the top of every page for
 everyone on the server, which each of them can dismiss. Changing the text brings

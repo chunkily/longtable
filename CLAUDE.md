@@ -20,6 +20,7 @@ architecture and current state live here instead**, and keeping them true is par
 | `internal/blobstore/` | re-encoded images on disk, addressed by content hash so identical uploads share a file |
 | `internal/auth/` | session tokens and bcrypt password hashing. No accounts — identity in a room is a *seat* (a `participant` row), and a device proves it holds one with a `session` token in `localStorage`. See [ADR-0008](planning/decisions/0008-seats-and-sessions.md) |
 | `internal/dice/` | `/roll 2d6+3` expression parser |
+| `internal/lanurl/` | which of the machine's addresses a Host can hand to their players, printed at startup. Takes the interface list as an argument, so the rules are testable on machines nobody has |
 | `internal/db/` | SQLite wiring (`modernc.org/sqlite`, no CGO) |
 | `assets.go` (root) | `go:embed`s `web/build`. Has to be at the root — embed can't reach outside its own directory |
 | `web/src/lib/api.ts`, `session.ts` | REST client; per-room session in `localStorage` |
@@ -132,6 +133,10 @@ upload is decoded and re-encoded to WebP, with any grid offset padded into the p
 through, and joins the uploading room's library — content-addressed globally so identical uploads
 share one file, but a room only ever sees what it added itself, under its own name and credit.
 All of it syncs live; everything but pings and measurements persists.
+
+On startup the server prints the LAN addresses players can use, one line per interface with the
+interface's name — a Host binding `-addr` to one interface is answered with that address alone,
+since enumerating the rest would be a lie about where the server is.
 
 **The Host has one thing in the UI**, and it isn't in a room: `longtable serve -banner "…"`
 puts a message across the top of every page for everyone on the server, dismissable per browser

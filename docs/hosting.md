@@ -2,6 +2,29 @@
 
 Guide for self-hosting a Longtable server.
 
+## Telling everyone where to connect
+
+The server prints the addresses reachable from your network when it starts, so you don't have to
+go looking for your own IP:
+
+```
+INFO longtable: listening addr=:8080 db=longtable.db assets=longtable-assets
+INFO longtable: reachable at url=http://192.168.1.23:8080 interface=Ethernet
+INFO longtable: reachable at url=http://172.17.224.1:8080 interface="vEthernet (Default Switch)"
+```
+
+Every address the machine has is listed rather than one being picked for you, because only you
+know which network the people at your table are on — a laptop with Wi-Fi, an Ethernet cable and a
+VPN has three, and two of them are the wrong answer. The interface name beside each one is usually
+enough to tell them apart; virtual switches (Docker, WSL, Hyper-V) show up under names like the
+second line above and are almost never the one to share.
+
+If you started the server on a specific address (`-addr 127.0.0.1:8080`), that one address is all
+it prints — it isn't reachable anywhere else, whatever the machine's other addresses are.
+
+If nothing is printed, the machine has no network address to share: check it's actually on the
+network.
+
 ## Configuration
 
 This section will document the server's config file — its location, every available setting,
