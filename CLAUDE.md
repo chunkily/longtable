@@ -25,6 +25,7 @@ architecture and current state live here instead**, and keeping them true is par
 | `assets.go` (root) | `go:embed`s `web/build`. Has to be at the root — embed can't reach outside its own directory |
 | `web/src/lib/api.ts`, `session.ts` | REST client; per-room session in `localStorage` |
 | `web/src/lib/room.svelte.ts` | `RoomClient`: the WS protocol wrapped in Svelte 5 runes state |
+| `web/src/lib/token-fields.ts` | what a `token.update` carries and whether two of them are the same — the one answer behind the dialog's "anything typed?", `updateToken`'s no-op guard and undo's "still how I left it?" |
 | `web/src/lib/components/game-canvas.svelte` | the whole Konva map: layers, tools, rendering |
 | `web/src/lib/tool-family.ts` | the `Tool` union, and the rules grouping it into the toolbar's five families |
 | `web/src/lib/components/map-toolbar.svelte`, `tool-strip.svelte` | the floating tool row, and the active family's contextual strip |
@@ -80,8 +81,11 @@ labelled per token (hit points, armour class, a resource), and any number of con
 three slots shown in that details panel as large boxes whose values are typed straight into them,
 a focused box floating a −/+ control that steps by 1 or by whatever it's told, plus a card when
 the pointer rests on the token showing only the slots carrying a number; labels and conditions are
-set in the edit dialog, and a GM may change all of it on any token while a Player may change the
-trackers and conditions on one they own),
+set in the edit dialog — which **stages** its changes, unlike the panel: `Save changes` commits,
+`Cancel`/Escape/the X discard, and clicking away with something typed swaps the form for a
+three-way question (`Back`, `Discard changes`, `Save changes`) rather than stacking a second
+dialog. A GM may change all of it on any token while a Player may change the trackers and
+conditions on one they own),
 fog the GM paints on and off a square at a time (plus reveal-all and reset for the whole scene),
 drawings (freehand/line/rect/ellipse) with an eraser, and per-session undo/redo covering
 drawing, erasing, token creation, token deletion and token moves (an undo passes over a token someone else has

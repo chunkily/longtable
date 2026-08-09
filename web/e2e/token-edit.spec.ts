@@ -110,6 +110,21 @@ async function expectSize(page: Page, label: string) {
 	await expect(page.getByRole('button', { name: 'Save changes' })).toBeHidden();
 }
 
+/**
+ * The "clicking away" gesture: a click on the dialog's overlay.
+ *
+ * The wait is not decoration. The dialog attaches its outside-click
+ * listener a tick *after* the content paints, so a click sent the
+ * instant `Save changes` becomes visible lands before anything is
+ * listening and the dialog simply stays open — which reads exactly like
+ * dismissal being broken. Only a test can hit that window: a person has
+ * just released the mouse on the button that opened it.
+ */
+async function clickAway(page: Page) {
+	await page.waitForTimeout(250);
+	await page.mouse.click(5, 5);
+}
+
 async function save(page: Page) {
 	await page.getByRole('button', { name: 'Save changes' }).click();
 	await expect(page.getByRole('button', { name: 'Save changes' })).toBeHidden();
@@ -318,4 +333,95 @@ test('a player is offered no way to edit a token they can select', async ({ brow
 
 	await gm.context.close();
 	await player.context.close();
+});
+
+// The three ways out that keep the token as it was, and the one that
+// asks. The failure this is built around: an edit typed, the dialog
+// dismissed, and the work gone without anything having said so.
+test('cancelling an edit leaves the token alone, whichever way you cancel', async ({ browser }) => {
+	const gm = await openRoomAsGM(browser, 'Token Edit Cancel');
+
+	await createToken(gm.page, 'Goblin');
+	const box = await canvasBox(gm.page);
+	const spawn = spawnCentre(box);
+	await gm.page.mouse.click(box.x + spawn.x, box.y + spawn.y);
+	await expect(detailsSection(gm.page)).toContainText('Goblin');
+
+	// The Cancel button.
+	await openEditor(gm.page);
+	await gm.page.getByLabel('Name').fill('Cancelled by button');
+	await gm.page.getByRole('button', { name: 'Cancel' }).click();
+	await expect(gm.page.getByRole('button', { name: 'Save changes' })).toBeHidden();
+	await expect(detailsSection(gm.page)).toContainText('Goblin');
+
+	// Escape.
+	await openEditor(gm.page);
+	await gm.page.getByLabel('Name').fill('Cancelled by escape');
+	await gm.page.keyboard.press('Escape');
+	await expect(gm.page.getByRole('button', { name: 'Save changes' })).toBeHidden();
+	await expect(detailsSection(gm.page)).toContainText('Goblin');
+
+	// The X in the corner.
+	await openEditor(gm.page);
+	await gm.page.getByLabel('Name').fill('Cancelled by the X');
+	await gm.page.getByRole('button', { name: 'Close' }).click();
+	await expect(gm.page.getByRole('button', { name: 'Save changes' })).toBeHidden();
+	await expect(detailsSection(gm.page)).toContainText('Goblin');
+
+	// Reopening shows the token, not the last thing typed into it — the
+	// form is filled from the token every time it opens.
+	await openEditor(gm.page);
+	await expect(gm.page.getByLabel('Name')).toHaveValue('Goblin');
+	await gm.page.getByRole('button', { name: 'Cancel' }).click();
+
+	await gm.context.close();
+});
+
+// Clicking away is the ambiguous one — as often a misclick as a
+// decision — so it asks instead of guessing, and asks in place of the
+// form rather than on top of it.
+test('clicking away from an edited form asks, with one dialog on screen', async ({ browser }) => {
+	const gm = await openRoomAsGM(browser, 'Token Edit Dismiss');
+
+	await createToken(gm.page, 'Goblin');
+	const box = await canvasBox(gm.page);
+	const spawn = spawnCentre(box);
+	await gm.page.mouse.click(box.x + spawn.x, box.y + spawn.y);
+	await expect(detailsSection(gm.page)).toContainText('Goblin');
+
+	// Nothing typed: clicking away is just closing, with nothing to ask.
+	await openEditor(gm.page);
+	await clickAway(gm.page);
+	await expect(gm.page.getByRole('button', { name: 'Save changes' })).toBeHidden();
+	await expect(gm.page.getByText('Keep your changes')).toHaveCount(0);
+
+	// Something typed: the editor gives way to the question. One dialog at
+	// a time is the part worth asserting — the form is gone, not stacked
+	// underneath.
+	await openEditor(gm.page);
+	await gm.page.getByLabel('Name').fill('Hobgoblin');
+	await clickAway(gm.page);
+	await expect(gm.page.getByText('Keep your changes')).toBeVisible();
+	await expect(gm.page.getByLabel('Name')).toHaveCount(0);
+
+	// Back returns to the form with what was typed still in it — the
+	// reply to a misclick should be "put it back how it was".
+	await gm.page.getByRole('button', { name: 'Back' }).click();
+	await expect(gm.page.getByLabel('Name')).toHaveValue('Hobgoblin');
+
+	// Discarding from the question throws the edit away, like every other
+	// way out of the editor.
+	await clickAway(gm.page);
+	await gm.page.getByRole('button', { name: 'Discard changes' }).click();
+	await expect(detailsSection(gm.page)).toContainText('Goblin');
+
+	// And saving from it keeps what was typed, which is the whole reason
+	// the values have to survive the swap.
+	await openEditor(gm.page);
+	await gm.page.getByLabel('Name').fill('Hobgoblin');
+	await clickAway(gm.page);
+	await gm.page.getByRole('button', { name: 'Save changes' }).click();
+	await expect(detailsSection(gm.page)).toContainText('Hobgoblin');
+
+	await gm.context.close();
 });
