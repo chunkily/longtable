@@ -71,6 +71,25 @@ picker that just stays empty, with no server-side log and an error toast that ex
 locator timeout does. Files can't be corrupted that way, and uploading by path keeps a fixture's
 name tied to its bytes, which matters more than it looks: see `e2e/fixtures/README.md`.
 
+## Update 2026-08-09 — New scene folded into this dialog
+
+Making a scene was its own dialog with its own room-menu entry, which meant the menu asked
+"scenes, or a new one?" before showing you either — and the answer to that question is usually
+"show me the list, and then let me add to it". It is a mode of the Scenes dialog now, reached from
+a `New scene` button at the foot of the list it will join, and the menu has one scenes entry.
+
+`create-scene-dialog.svelte` is gone; its form and its two effects (a picked map's real dimensions,
+and adopting the grid size measured while aligning it) moved into `scene-manager-dialog.svelte`
+beside `Replace map`, which had already established the one-job-at-a-time swap this uses.
+
+The original reason for keeping them apart is in `room-menu.svelte`'s history: a button inside a
+dialog opening a *second* dialog leaves two stacked, each with its own focus trap. Making it a
+mode of the same dialog is what avoids that rather than ignoring it.
+
+Creating closes the whole dialog rather than returning to the list. Making a scene is nearly
+always the last thing you came here for — the room's first one is already on screen behind — and
+being dropped back on a list you then have to dismiss reads as the form having failed.
+
 ## Related user stories
 
 - [gm-switch-active-scene](../user-stories/gm-switch-active-scene.md)

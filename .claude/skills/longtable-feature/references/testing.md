@@ -116,8 +116,11 @@ twenty files.
   way to update a drawing spec wrongly and have it fail with "expected > 0, received 0".
   Canvas-relative pixels still double as world coordinates, because a fresh scene starts at the
   identity transform; don't pan or zoom in a spec that relies on that.
-- `openRoomMenu` / `openNewSceneDialog` / `openScenesDialog` / `openAssetsPage` — Scenes, New
-  scene and Assets all moved into the menu behind the third icon at the foot of the side panel.
+- `openRoomMenu` / `openNewSceneDialog` / `openScenesDialog` / `openAssetsPage` — Scenes and
+  Assets live in the menu behind the third icon at the foot of the side panel. **New scene is not
+  a menu entry**: it's a mode of the Scenes dialog, so `openNewSceneDialog` goes through
+  `openScenesDialog` first. Creating a scene closes the whole dialog rather than returning to the
+  list, which is what lets a spec click the canvas straight afterwards.
 - `joinAsNewPlayer(page, name)` / `takeSeat(page, seatName)` / `joinAsGM(page, name, password)` /
   `openSeatPicker(page)` — the pre-join screen asks which side of the screen you're on before it
   asks anything else, so getting into a room is never one `fill` and one click any more. Filling

@@ -14,7 +14,6 @@
 	import Menu from '@lucide/svelte/icons/menu';
 	import Images from '@lucide/svelte/icons/images';
 	import Layers from '@lucide/svelte/icons/layers';
-	import Plus from '@lucide/svelte/icons/plus';
 	import Settings from '@lucide/svelte/icons/settings';
 	import LogOut from '@lucide/svelte/icons/log-out';
 	import Redo from '@lucide/svelte/icons/redo';
@@ -25,7 +24,6 @@
 		slug,
 		isGM,
 		onOpenScenes,
-		onOpenNewScene,
 		onOpenManageRoom,
 		onLeave,
 		onResetView
@@ -34,7 +32,6 @@
 		slug: string;
 		isGM: boolean;
 		onOpenScenes: () => void;
-		onOpenNewScene: () => void;
 		onOpenManageRoom: () => void;
 		onLeave: () => void;
 		onResetView: () => void;
@@ -84,12 +81,12 @@
 		<div
 			class="absolute right-0 bottom-full z-50 mb-1 flex w-56 flex-col gap-1 rounded-md border bg-popover p-1 shadow-md"
 		>
-			<!-- Both Scenes and New scene live here, which is what the design
-			     session meant by them leaving the toolbar. New scene is a
-			     second entry rather than a button inside the Scenes dialog:
-			     opening one dialog from another leaves two stacked, each with
-			     its own focus trap, and the list underneath is not something
-			     you are still reading while naming a new scene. -->
+			<!-- One entry, not two. New scene used to sit beside this as its
+			     own dialog, which meant the menu asked whether you wanted the
+			     scenes or a new one before showing you either. It is a mode
+			     of the Scenes dialog now — reached from the foot of the list
+			     it will join — so nothing here opens a second dialog over a
+			     first, which was the original reason for keeping them apart. -->
 			{#if isGM}
 				<Button
 					variant="ghost"
@@ -101,17 +98,6 @@
 				>
 					<Layers class="h-4 w-4" />
 					Scenes
-				</Button>
-				<Button
-					variant="ghost"
-					class="justify-start"
-					onclick={() => {
-						close();
-						onOpenNewScene();
-					}}
-				>
-					<Plus class="h-4 w-4" />
-					New scene
 				</Button>
 			{/if}
 			<!-- Anyone in the room, not just the GM: players bring their own

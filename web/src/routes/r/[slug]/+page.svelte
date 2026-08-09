@@ -21,7 +21,6 @@
 	import RoomMenu from '$lib/components/room-menu.svelte';
 	import ManageRoomDialog from '$lib/components/manage-room-dialog.svelte';
 	import SceneManagerDialog from '$lib/components/scene-manager-dialog.svelte';
-	import CreateSceneDialog from '$lib/components/create-scene-dialog.svelte';
 	import CreateTokenDialog from '$lib/components/create-token-dialog.svelte';
 	import TokenDetailDialog from '$lib/components/token-detail-dialog.svelte';
 	import TokenTrackerStrip from '$lib/components/token-tracker-strip.svelte';
@@ -97,7 +96,6 @@
 	let sheetOpen = $state(false);
 
 	let scenesOpen = $state(false);
-	let newSceneOpen = $state(false);
 	let manageRoomOpen = $state(false);
 
 	// Which token this client is looking at. Local to this browser and
@@ -607,7 +605,6 @@
 				{slug}
 				{isGM}
 				onOpenScenes={() => (scenesOpen = true)}
-				onOpenNewScene={() => (newSceneOpen = true)}
 				onOpenManageRoom={() => (manageRoomOpen = true)}
 				onLeave={handleLeave}
 				onResetView={() => canvasRef?.resetView()}
@@ -624,13 +621,6 @@
 			roomSlug={session.roomSlug}
 			sessionToken={session.sessionToken}
 			bind:open={scenesOpen}
-			trigger={false}
-		/>
-		<CreateSceneDialog
-			room={client}
-			roomSlug={session.roomSlug}
-			sessionToken={session.sessionToken}
-			bind:open={newSceneOpen}
 			trigger={false}
 		/>
 		<ManageRoomDialog

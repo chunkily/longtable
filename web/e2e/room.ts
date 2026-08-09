@@ -122,11 +122,12 @@ export async function openRoomMenu(page: Page) {
 }
 
 /**
- * Opens the New scene dialog, which lives in the room menu now that the
- * toolbar is five tool families and nothing else.
+ * Opens the new-scene form, which is a mode of the Scenes dialog — the
+ * menu has one scenes entry now, and `New scene` is at the foot of the
+ * list the scene will join.
  */
 export async function openNewSceneDialog(page: Page) {
-	await openRoomMenu(page);
+	await openScenesDialog(page);
 	await page.getByRole('button', { name: 'New scene', exact: true }).click();
 	await expect(page.getByRole('button', { name: 'Create scene', exact: true })).toBeVisible();
 }
@@ -145,6 +146,10 @@ export async function openAssetsPage(page: Page) {
 export async function openScenesDialog(page: Page) {
 	await openRoomMenu(page);
 	await page.getByRole('button', { name: 'Scenes', exact: true }).click();
+	// The dialog animates in, and `New scene` at its foot is the next
+	// thing most callers click — a click sent while it is still arriving
+	// lands on the backdrop.
+	await expect(page.getByRole('button', { name: 'New scene', exact: true })).toBeVisible();
 }
 
 /**

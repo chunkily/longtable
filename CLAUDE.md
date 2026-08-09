@@ -27,7 +27,7 @@ architecture and current state live here instead**, and keeping them true is par
 | `web/src/lib/components/game-canvas.svelte` | the whole Konva map: layers, tools, rendering |
 | `web/src/lib/tool-family.ts` | the `Tool` union, and the rules grouping it into the toolbar's five families |
 | `web/src/lib/components/map-toolbar.svelte`, `tool-strip.svelte` | the floating tool row, and the active family's contextual strip |
-| `web/src/lib/components/room-menu.svelte` | the menu behind the side panel's third icon: Scenes, New scene, Assets, Manage room, Leave room |
+| `web/src/lib/components/room-menu.svelte` | the menu behind the side panel's third icon: Scenes, Assets, Manage room, Leave room |
 | `web/src/lib/components/initiative-panel.svelte` | the turn order in the rail's second panel — one component for both roles, with the GM's controls left off for everyone else |
 | `internal/ws/initiative.go` | the tracker's six commands and its one event, split out of `hub.go` |
 | `web/src/routes/r/[slug]/+page.svelte` | the room page — join form, then the full-bleed shell: map, floating toolbar, side rail (or bottom sheet) |
@@ -61,7 +61,7 @@ only the rooms this browser holds a session for, newest first, with a box to pas
 or bare code into; there is no server endpoint that enumerates rooms, and `longtable room list` is
 the only way to see them all, which is the Host's job and needs the database file. Scenes built
 from an uploaded map or a
-picked library asset and managed from a picker (switch, delete, swap the map under one),
+picked library asset and managed from one dialog (make, switch, delete, swap the map under one),
 tokens (**anyone creates them**, from the same `New token` icon on the toolbar and up to twenty at
 a time — a batch is numbered `Monkey 1`…`Monkey 8` and spreads over free squares rather than
 stacking, and each one is its own undo. A GM's dialog carries name, art, size, owner and
@@ -107,8 +107,8 @@ Everything else lives in a fixed full-height rail down the right: the selected t
 (a plain shaded block holding its height when nothing is selected, so the rail doesn't jump),
 session info under it,
 then chat or the initiative tracker filling the rest, and three icons at the foot switching
-between chat, initiative and a menu holding Scenes, New scene, Assets, Manage room and Leave
-room. Below `lg` the rail becomes a bottom sheet with those icons pinned to the bottom edge, the
+between chat, initiative and a menu holding Scenes, Assets, Manage room and Leave
+room (making a scene is a mode of the Scenes dialog rather than a menu entry of its own). Below `lg` the rail becomes a bottom sheet with those icons pinned to the bottom edge, the
 contextual strip docks into it rather than floating, the selected token becomes a bar above the
 icons shown only when something is selected, and redo and reset view move from the toolbar into
 the menu. A dropped socket reconnects on
