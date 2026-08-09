@@ -282,9 +282,7 @@
 	<Dialog.Content>
 		<Dialog.Header>
 			<Dialog.Title>Keep your changes to {token.name}?</Dialog.Title>
-			<Dialog.Description>
-				You clicked away from the editor with unsaved changes.
-			</Dialog.Description>
+			<Dialog.Description>You have unsaved changes.</Dialog.Description>
 		</Dialog.Header>
 		<!-- Three answers, and Back is the one that costs nothing: the
 		     question is most often the result of a misclick, and the reply
