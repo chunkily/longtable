@@ -199,6 +199,40 @@ interface Envelope {
 	payload: unknown;
 }
 
+/**
+ * One combatant in the turn order.
+ *
+ * `tokenId` is null for a freestanding entry — a lair action, a hazard,
+ * something nobody has drawn. A linked entry's `name` and
+ * `imageAssetId` come from its token and are resolved server-side on
+ * every send, so renaming a token renames its entry.
+ *
+ * `hidden` is true for an entry the GM has hidden *or* one standing for
+ * a hidden token; a Player is never sent either, so on their client it
+ * is always false.
+ */
+export interface InitiativeEntry {
+	id: string;
+	tokenId: string | null;
+	name: string;
+	initiative: number;
+	hidden: boolean;
+	imageAssetId: string | null;
+}
+
+/**
+ * The whole tracker. It arrives whole on every change rather than as a
+ * delta: entries are withheld per recipient, and a turn advance or a
+ * removal moves several fields at once — see internal/ws/initiative.go.
+ */
+export interface InitiativeState {
+	entries: InitiativeEntry[];
+	round: number;
+	currentEntryId: string | null;
+}
+
+const EMPTY_INITIATIVE: InitiativeState = { entries: [], round: 1, currentEntryId: null };
+
 /** The room as every client is told about it — never the password hash. */
 export interface RoomSettings {
 	slug: string;
@@ -209,6 +243,7 @@ export interface RoomSettings {
 
 interface StateSyncPayload {
 	room: RoomSettings;
+	initiative?: InitiativeState;
 	you: You;
 	messages?: ChatMessage[];
 	scenes?: Scene[];
@@ -362,6 +397,10 @@ export class RoomClient {
 	drawings = $state<Drawing[]>([]);
 	pings = $state<Ping[]>([]);
 	measurements = $state<Measurement[]>([]);
+	// The turn order. Belongs to the room rather than to a scene, so
+	// unlike everything above it this survives a scene change — a GM
+	// flipping to the battle map mid-fight doesn't reload the encounter.
+	initiative = $state<InitiativeState>({ ...EMPTY_INITIATIVE });
 
 	private socket: WebSocket | null = null;
 
@@ -839,6 +878,56 @@ export class RoomClient {
 		this.send('room.setOwnerOnlyMovement', { ownerOnlyMovement });
 	}
 
+	// --- initiative ---
+	//
+	// All GM-only on the wire, and every one of them answers with the
+	// whole tracker, so none of these touches local state: there is
+	// nothing here worth rendering ahead of the server, and a turn that
+	// jumped forward locally and then came back would be worse than one
+	// that waits a round trip.
+
+	/** A combatant: either a token to stand for, or a name to stand alone under. */
+	addInitiativeEntry(entry: {
+		tokenId?: string | null;
+		name?: string;
+		initiative: number;
+		hidden?: boolean;
+	}) {
+		this.send('initiative.add', {
+			tokenId: entry.tokenId ?? null,
+			name: entry.name ?? '',
+			initiative: entry.initiative,
+			hidden: entry.hidden ?? false
+		});
+	}
+
+	// Every field every time, like token.update — and for a linked entry
+	// the name and hidden flag are the token's, so the server ignores
+	// what's sent for them rather than refusing it.
+	updateInitiativeEntry(
+		entryId: string,
+		fields: { name: string; initiative: number; hidden: boolean }
+	) {
+		this.send('initiative.update', { entryId, ...fields });
+	}
+
+	removeInitiativeEntry(entryId: string) {
+		this.send('initiative.remove', { entryId });
+	}
+
+	/** Moves an entry one place among the combatants it is tied with. */
+	reorderInitiativeEntry(entryId: string, direction: 'up' | 'down') {
+		this.send('initiative.reorder', { entryId, direction });
+	}
+
+	advanceInitiative(direction: 'next' | 'previous') {
+		this.send('initiative.advance', { direction });
+	}
+
+	clearInitiative() {
+		this.send('initiative.clear', {});
+	}
+
 	// Moves a token only if it is still standing where this session's own
 	// move left it. That check is what keeps undo to your own moves: the
 	// history can't tell who dragged a token last, but the position can —
@@ -1086,6 +1175,7 @@ export class RoomClient {
 				const payload = env.payload as StateSyncPayload;
 				this.roomName = payload.room.name;
 				this.ownerOnlyMovement = payload.room.ownerOnlyMovement ?? false;
+				this.initiative = payload.initiative ?? { ...EMPTY_INITIATIVE };
 				this.you = payload.you;
 				// server returns newest-first; the log reads top-to-bottom.
 				this.messages = [...(payload.messages ?? [])].reverse();
@@ -1275,6 +1365,12 @@ export class RoomClient {
 				this.scenes = this.scenes.filter((s) => s.id !== payload.sceneId);
 				break;
 			}
+
+			// The whole tracker every time, not a delta — see the note on
+			// InitiativeState. Nothing to reconcile, so nothing to get wrong.
+			case 'initiative.updated':
+				this.initiative = env.payload as InitiativeState;
+				break;
 
 			// The whole room, the same shape state.sync opens with, so a
 			// setting added later needs no new case here.

@@ -28,6 +28,8 @@ architecture and current state live here instead**, and keeping them true is par
 | `web/src/lib/tool-family.ts` | the `Tool` union, and the rules grouping it into the toolbar's five families |
 | `web/src/lib/components/map-toolbar.svelte`, `tool-strip.svelte` | the floating tool row, and the active family's contextual strip |
 | `web/src/lib/components/room-menu.svelte` | the menu behind the side panel's third icon: Scenes, New scene, Assets, Manage room, Leave room |
+| `web/src/lib/components/initiative-panel.svelte` | the turn order in the rail's second panel — one component for both roles, with the GM's controls left off for everyone else |
+| `internal/ws/initiative.go` | the tracker's six commands and its one event, split out of `hub.go` |
 | `web/src/routes/r/[slug]/+page.svelte` | the room page — join form, then the full-bleed shell: map, floating toolbar, side rail (or bottom sheet) |
 | `web/e2e/room.ts` | shared Playwright helpers for driving the room — family-aware `selectTool`, the menu, `mapGestureOrigin` |
 | `web/src/routes/r/[slug]/assets/+page.svelte` | the assets page — the only way art enters a room's library, and the only way one leaves: tabbed by token/map, with name, credit, grid alignment, search |
@@ -84,6 +86,12 @@ drawing, erasing, token creation, token deletion and token moves (an undo passes
 moved since, rather than dragging it back out from under them),
 pings, distance measuring, area-of-effect templates (circle/cone/line/cube, origin on a snap
 mode and size in whole 5 ft steps),
+**an initiative tracker** in the rail's second panel — the GM's alone to change, everyone's to
+read: entries either stand for a token (taking its name and art, and its visibility with them) or
+stand alone for a lair action or a hazard, sorted by the value rolled with a manual nudge for
+ties, a current turn and a round counter that wrap together, and a two-click clear that leaves the
+tokens on the map. It belongs to the room rather than the scene, so a GM switching to the battle
+map mid-fight keeps the encounter,
 chat with `/roll` and a two-stage delete (a GM may delete or purge any message, everyone else
 only their own — the first delete leaves the room seeing "this message has been deleted", while
 the author and whoever just deleted it still see the original text struck through; a second
@@ -122,8 +130,8 @@ through, and joins the uploading room's library — content-addressed globally s
 share one file, but a room only ever sees what it added itself, under its own name and credit.
 All of it syncs live; everything but pings and measurements persists.
 
-Known gaps, which is also roughly the queue: no initiative tracker — the side panel switches to it
-and says so, which is the shape waiting for the feature; `Manage room` holds seats and the
+Known gaps, which is also roughly the queue: nothing rolls initiative for you — the tracker takes
+the number and `/roll 1d20+2` in chat is where it comes from; `Manage room` holds seats and the
 movement lock, and is still waiting on room privacy, deleting a room, and a switch to turn Player
 token creation off. Nothing caps how many tokens one Player may have standing. Fog has no automatic vision from tokens, no prebuilt releases, no way for a Host
 to remove a moderated asset server-wide or cap upload sizes per room (a room removing something

@@ -25,6 +25,7 @@
 	import CreateTokenDialog from '$lib/components/create-token-dialog.svelte';
 	import TokenDetailDialog from '$lib/components/token-detail-dialog.svelte';
 	import TokenTrackerStrip from '$lib/components/token-tracker-strip.svelte';
+	import InitiativePanel from '$lib/components/initiative-panel.svelte';
 	import MessageSquare from '@lucide/svelte/icons/message-square';
 	import Swords from '@lucide/svelte/icons/swords';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
@@ -471,18 +472,12 @@
 		</div>
 	{/snippet}
 
-	<!-- The tracker itself is still an open backlog item. The panel is
-	     here because the switcher is part of the layout being built, and a
-	     third icon appearing later is harder to notice than a panel whose
-	     contents fill in — but it says plainly that it does nothing yet
-	     rather than pretending to be an empty initiative order. -->
-	{#snippet initiativePanel()}
-		<div class="flex min-h-0 flex-1 items-center justify-center p-4 text-center">
-			<p class="text-sm text-muted-foreground">
-				The initiative tracker isn't built yet. Roll initiative in chat with
-				<code>/roll 1d20+2</code> for now.
-			</p>
-		</div>
+	<!-- Rendered twice — once in the rail, once in the mobile sheet — and
+	     only one is ever on screen, so the duplicate ids inside it never
+	     both reach the accessibility tree. Same arrangement as the chat
+	     panel above. -->
+	{#snippet initiativePanel(room: RoomClient)}
+		<InitiativePanel {room} {isGM} bind:selectedTokenId />
 	{/snippet}
 
 	<!-- Room name, who you are, and whether the socket is up. There is no
@@ -766,7 +761,7 @@
 					{@render chatPanel(client)}
 				</div>
 				<div class={['flex min-h-0 flex-1 flex-col', panel !== 'initiative' && 'hidden']}>
-					{@render initiativePanel()}
+					{@render initiativePanel(client)}
 				</div>
 			</div>
 
@@ -799,7 +794,7 @@
 						{@render chatPanel(client)}
 					</div>
 					<div class={['flex min-h-0 flex-1 flex-col', panel !== 'initiative' && 'hidden']}>
-						{@render initiativePanel()}
+						{@render initiativePanel(client)}
 					</div>
 				</div>
 			</div>

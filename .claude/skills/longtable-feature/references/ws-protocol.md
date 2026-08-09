@@ -42,6 +42,12 @@ Envelope both ways:
 | `scene.delete` | GM only | yes | `scene.deleted` |
 | `scene.setMap` | GM only | yes | `scene.updated` |
 | `room.setOwnerOnlyMovement` | GM only | yes | `room.updated` |
+| `initiative.add` | GM only | yes | `initiative.updated` |
+| `initiative.update` | GM only | yes | `initiative.updated` |
+| `initiative.remove` | GM only | yes | `initiative.updated` |
+| `initiative.reorder` | GM only | yes | `initiative.updated` |
+| `initiative.advance` | GM only | yes | `initiative.updated` |
+| `initiative.clear` | GM only | yes | `initiative.updated` |
 | `draw.create` | anyone | yes | `drawing.created` |
 | `draw.delete` | author, or any GM | yes | `drawing.deleted` |
 | `ping` | anyone | no | `ping` |
@@ -221,9 +227,50 @@ the client nothing.
 Ownership now governs four things: `token.update`'s trackers and conditions, `token.delete`, who a
 Player's new token belongs to, and — when the room is locked — `token.move`.
 
+## The initiative tracker
+
+Six commands, all GM-only, all answering with **the whole tracker** rather than a delta —
+`internal/ws/initiative.go`, kept out of `hub.go` only because that file is long enough that the
+token handlers are already hard to find. Three reasons for sending it whole, in order of how
+expensive they'd be to work around: entries are withheld per recipient, a turn advance changes the
+round as well as the pointer, and a removal can move whose turn it is. Most "small" changes are
+several fields, and a tracker is a couple of dozen rows that change once a turn.
+
+`initiative.updated` and `state.sync`'s `initiative` key carry `{entries, round, currentEntryId}`.
+An entry is `{id, tokenId, name, initiative, hidden, imageAssetId}`.
+
+**The tracker belongs to the room, not the scene.** A GM flipping to the battle map mid-fight must
+not lose the encounter, so entries hang off `room_id` and the turn/round live in two columns on
+`room` — one row's worth of state, where a second table would be a join for two scalars.
+
+**An entry is either a token or a name.** A linked one resolves its name and art from the token on
+every send rather than copying them at creation, so renaming a token renames its entry; a
+freestanding one is for lair actions and hazards. That live resolution is why **any change to a
+token re-broadcasts the tracker** if an entry stands for it (`broadcastInitiativeIfLinked`), and
+why `handleTokenDelete` has to ask *before* deleting: `initiative_entry.token_id` is
+`ON DELETE CASCADE`, so afterwards there is no entry left to notice.
+
+**Two ways to be invisible, one answer.** A freestanding entry has its own `hidden` flag; a linked
+entry's visibility is its token's, read from the token so the two can never disagree. Players are
+never *sent* either kind, so counting rows tells them nothing. `currentEntryId` is still sent when
+it names a withheld entry — the Player sees a tracker with nothing highlighted, which says "it's
+somebody's turn and not yours" without saying whose.
+
+**The round changes only at the wrap, in both directions** (`advanceTurn`), which is what makes
+next-then-previous land exactly where it started across a round boundary. The first press of Next
+with nobody up starts at the top of the order without counting a round nobody has played, and
+round 1 is the floor.
+
+`initiative.reorder` moves an entry one place **only among the entries it is tied with**. That is
+the feature, not a limitation: the order *is* the values, and letting an entry jump a higher roll
+would make the list disagree with the numbers printed beside it. It renumbers `sort_order` across
+the whole list rather than swapping two values — every new entry starts at 0, so a swap would
+trade one zero for another and change nothing.
+
 Notable gaps as of the last pass: there is no GM switch to turn Player token creation off, and no
 cap on how many tokens one Player may have standing at once — twenty at a time, as many times as
-they like. See `planning/backlog/`.
+they like. Nothing rolls initiative for you either: `initiative.add` takes the number, and `/roll
+1d20+2` in chat is where it comes from. See `planning/backlog/`.
 
 ## Presence
 
@@ -282,8 +329,8 @@ picture and `resetAfterSync` drops anything in flight, so a reconnect converges 
 `state.sync`, `chat.posted`, `chat.deleted`, `chat.purged`, `token.created`, `token.moved`,
 `token.updated`, `token.deleted`, `participant.connected`, `participant.disconnected`,
 `fog.revealed`, `fog.hidden`, `fog.reset`, `scene.activated`, `scene.created`, `scene.updated`,
-`scene.deleted`, `room.updated`, `drawing.created`, `drawing.deleted`, `ping`, `measure.updated`,
-`measure.ended`, `error`.
+`scene.deleted`, `room.updated`, `initiative.updated`, `drawing.created`, `drawing.deleted`,
+`ping`, `measure.updated`, `measure.ended`, `error`.
 
 `state.sync` and `scene.activated` both carry the same full picture — `{scene, tokens, fogCells,
 drawings}` built by `sceneStatePayload` — so a client can render immediately without another

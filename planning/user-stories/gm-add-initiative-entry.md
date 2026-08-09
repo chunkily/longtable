@@ -1,7 +1,7 @@
 ---
 title: GM adds an initiative entry
 created: 2026-07-29
-status: incomplete
+status: done
 ---
 
 As a GM
@@ -15,3 +15,13 @@ So that I can build the turn order for an encounter, including things that aren'
 - [ ] I can mark a freestanding entry as hidden, independent of any token's visibility
 - [ ] Each entry has an initiative value used to determine turn order
 - [ ] New entries are inserted into the tracker in the correct sorted position
+
+## Verified 2026-08-09
+
+All five hold. The first reads "pulls in its name/image automatically", and it is stronger than
+that in practice: a linked entry *resolves* its name and art from the token every time the tracker
+is sent rather than copying them once, so renaming a token renames its entry for the whole room.
+
+The third criterion — hiding a freestanding entry — is deliberately not offered for a linked one:
+that entry's visibility is its token's, and two switches for one answer is how they end up
+disagreeing.

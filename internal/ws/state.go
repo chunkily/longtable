@@ -63,6 +63,11 @@ func (h *Hub) sendStateSync(ctx context.Context, c *client, room store.Room) {
 		payload["scenes"] = scenePayloads(scenes)
 	}
 
+	// The turn order belongs to the room rather than to a scene, so it
+	// rides here beside the roster rather than inside the scene picture —
+	// a GM flipping scenes mid-fight doesn't reload the encounter.
+	payload["initiative"] = h.initiativeStatePayload(room.ID, c.participant.Role)
+
 	if room.ActiveSceneID != nil {
 		sceneState, err := h.sceneStatePayload(*room.ActiveSceneID, c.participant.Role)
 		if err != nil {

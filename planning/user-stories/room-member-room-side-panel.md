@@ -1,7 +1,7 @@
 ---
 title: Room Member uses one side panel for chat, initiative and room actions
 created: 2026-08-04
-status: incomplete
+status: done
 ---
 
 As a Room Member
@@ -18,7 +18,7 @@ So that I can reach all of them without the screen filling up with separate boxe
 - [ ] Three icons at the foot of the panel switch between chat, the initiative tracker, and a menu
 - [ ] Switching between chat and the tracker doesn't lose an in-progress chat draft or tracker
       state
-- [ ] The menu offers Scenes, Assets, Manage room and Leave room
+- [ ] The menu offers Scenes, New scene, Assets, Manage room and Leave room
 - [ ] Assets takes me to the assets page rather than trying to fit it into the panel
 
 ## Still open after full-bleed-map-layout (2026-08-07)
@@ -39,3 +39,17 @@ Two criteria don't hold literally, so this stays `incomplete`:
   than something unbuilt: rewrite this criterion to five entries when someone confirms the menu is
   right, and note that `Manage room` is currently an empty container for three settings that are
   each still their own open item.
+
+## Done 2026-08-09
+
+Both of those are settled, so this is `done`.
+
+[initiative-tracker](../backlog/initiative-tracker.md) shipped, and the second criterion now holds
+as written: the placeholder is gone and the panel switches between chat and a real turn order,
+with the "doesn't lose state" criterion holding for the tracker too — both panels still stay
+mounted and hidden with CSS, so a half-typed combatant survives a trip to chat and back.
+
+The menu criterion is **rewritten to five entries** rather than left as a marker. The five have
+been on screen since 2026-08-07 and the backlog item asked for them explicitly; the story was the
+document that was wrong, not the code. `Manage room` is no longer an empty container either — it
+holds seats and the movement lock, with room privacy and deleting a room still open.

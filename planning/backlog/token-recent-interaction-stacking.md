@@ -33,7 +33,11 @@ that never needs to touch the store.
 
 - [ ] Local recency-ordering state, keyed by token id, separate from `room.tokens`
 - [ ] Any pointer interaction on a token's group raises it via `moveToTop()`
-- [ ] Selecting a token from the initiative tracker raises it the same way, once the tracker exists
+- [ ] Selecting a token from the initiative tracker raises it the same way — **the tracker now
+      exists** ([initiative-tracker](initiative-tracker.md), 2026-08-09), and a linked entry is a
+      button that sets `selectedTokenId`. Nothing here is blocked any more; the hook to hang the
+      bump on is that assignment plus the stage's `click.select` handler, which is the one call
+      this item wants both paths to share
 - [ ] No wire message, no persistence
 
 [player-created-tokens](player-created-tokens.md) raises the stakes here: it lets anyone spawn up

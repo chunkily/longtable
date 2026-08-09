@@ -34,6 +34,15 @@ func (s *Store) createTables() error {
 			-- including a future one — is open rather than accidentally
 			-- locked, which is the direction that fails safely.
 			owner_only_movement  INTEGER NOT NULL DEFAULT 0,
+			-- The initiative tracker's turn and round. Two scalars rather
+			-- than a table of their own: a room runs one encounter at a
+			-- time, so this is one row's worth of state and a second table
+			-- would be a join for two numbers. No foreign key on the entry
+			-- id on purpose — an entry can vanish with its token, and
+			-- GetInitiativeState reads a dangling pointer as "nobody's
+			-- turn" rather than failing.
+			initiative_round     INTEGER NOT NULL DEFAULT 1,
+			initiative_entry_id  TEXT,
 			created_at           TEXT NOT NULL
 		);
 
@@ -117,6 +126,26 @@ func (s *Store) createTables() error {
 			created_at                TEXT NOT NULL
 		);
 		CREATE INDEX IF NOT EXISTS idx_drawing_scene ON drawing(scene_id);
+
+		-- The turn order. Hung off the *room* rather than a scene, so a GM
+		-- flipping to the battle map mid-fight doesn't lose the encounter.
+		--
+		-- token_id is nullable: an entry can stand alone (a lair action, a
+		-- hazard, a creature nobody has drawn). When it does point at a
+		-- token, ON DELETE CASCADE takes the entry with it — a combatant
+		-- taken off the map has left the fight, and an entry pointing at
+		-- nothing would have no name to show.
+		CREATE TABLE IF NOT EXISTS initiative_entry (
+			id          TEXT PRIMARY KEY,
+			room_id     TEXT NOT NULL REFERENCES room(id) ON DELETE CASCADE,
+			token_id    TEXT REFERENCES token(id) ON DELETE CASCADE,
+			name        TEXT NOT NULL,
+			initiative  REAL NOT NULL,
+			hidden      INTEGER NOT NULL DEFAULT 0,
+			sort_order  INTEGER NOT NULL DEFAULT 0,
+			created_at  TEXT NOT NULL
+		);
+		CREATE INDEX IF NOT EXISTS idx_initiative_room ON initiative_entry(room_id);
 
 		-- Which assets a room's library holds. The asset row itself stays
 		-- global and content-addressed, so identical uploads share one

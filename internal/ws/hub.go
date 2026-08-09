@@ -312,6 +312,18 @@ func (h *Hub) handleMessage(ctx context.Context, c *client, data []byte) {
 		h.handleSceneSetMap(ctx, c, env.Payload)
 	case "room.setOwnerOnlyMovement":
 		h.handleRoomSetOwnerOnlyMovement(ctx, c, env.Payload)
+	case "initiative.add":
+		h.handleInitiativeAdd(ctx, c, env.Payload)
+	case "initiative.update":
+		h.handleInitiativeUpdate(ctx, c, env.Payload)
+	case "initiative.remove":
+		h.handleInitiativeRemove(ctx, c, env.Payload)
+	case "initiative.reorder":
+		h.handleInitiativeReorder(ctx, c, env.Payload)
+	case "initiative.advance":
+		h.handleInitiativeAdvance(ctx, c, env.Payload)
+	case "initiative.clear":
+		h.handleInitiativeClear(ctx, c)
 	case "chat.send":
 		h.handleChatSend(ctx, c, env.Payload)
 	case "chat.delete":
@@ -996,6 +1008,11 @@ func (h *Hub) handleTokenUpdate(ctx context.Context, c *client, raw json.RawMess
 			return gone
 		})
 	}
+
+	// An initiative entry standing for this token shows the token's name
+	// and follows the token's visibility, so an edit can change the
+	// tracker without anyone having touched it.
+	h.broadcastInitiativeIfLinked(ctx, c.roomID, token.ID)
 }
 
 type tokenDeleteRequest struct {
@@ -1057,6 +1074,10 @@ func (h *Hub) handleTokenDelete(ctx context.Context, c *client, raw json.RawMess
 		}
 	}
 
+	// Asked before the deletion, not after: the entry is ON DELETE CASCADE
+	// from the token, so afterwards there is nothing left to notice.
+	wasInInitiative := h.tokenIsInInitiative(c.roomID, token.ID)
+
 	if err := h.store.DeleteToken(token.ID); err != nil {
 		slog.Error("ws: delete token failed", "error", err)
 		h.sendError(ctx, c, "failed to delete token")
@@ -1073,6 +1094,12 @@ func (h *Hub) handleTokenDelete(ctx context.Context, c *client, raw json.RawMess
 		}
 		return payload
 	})
+
+	// The entry went with it, so the room has to be told the order is one
+	// shorter — and if it was that combatant's turn, that nobody's is now.
+	if wasInInitiative {
+		h.broadcastInitiative(ctx, c.roomID)
+	}
 }
 
 // fogCellsRequest is the payload of both fog.reveal and fog.hide, which

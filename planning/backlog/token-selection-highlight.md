@@ -81,6 +81,12 @@ Not done, and deliberately: the last checkbox above, wiring selection up from th
 tracker, since there is no tracker yet. When [initiative-tracker](initiative-tracker.md)
 lands, setting `selectedTokenId` from a tracker entry is the whole of it.
 
+**Update 2026-08-09 — that checkbox is done too.**
+[initiative-tracker](initiative-tracker.md) shipped, and a linked entry in the panel is a button
+that sets `selectedTokenId`; it was the one-liner predicted above, so it went in with the tracker
+rather than as a return trip here. Covered by `web/e2e/initiative.spec.ts`, "clicking an entry
+selects the token it stands for".
+
 One trap that cost real time and is now written into `references/testing.md`: `page.mouse.click()`
 skips every actionability check `locator.click()` makes, so the "New token" dialog — still on
 screen while its exit animation ran — swallowed the click meant for the canvas, and the symptom

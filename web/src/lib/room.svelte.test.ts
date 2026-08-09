@@ -1169,6 +1169,119 @@ describe('RoomClient', () => {
 		visibility: 'visible'
 	};
 
+	// The tracker arrives whole on every change, so there is no reducer
+	// to speak of — what's worth pinning is that it survives the things
+	// that throw other state away, and that the commands are shaped the
+	// way the hub expects.
+	describe('the initiative tracker', () => {
+		const tracker = {
+			entries: [
+				{
+					id: 'e1',
+					tokenId: 't1',
+					name: 'Goblin',
+					initiative: 14,
+					hidden: false,
+					imageAssetId: null
+				}
+			],
+			round: 2,
+			currentEntryId: 'e1'
+		};
+
+		it('takes the whole tracker from state.sync and from initiative.updated', () => {
+			const { client, socket } = connectedClient();
+
+			socket.emit({
+				type: 'state.sync',
+				payload: {
+					room: { slug: 'abc123', name: 'Room', ownerOnlyMovement: false },
+					you: { participantId: 'p1', displayName: 'A', role: 'gm' },
+					initiative: tracker
+				}
+			});
+			expect(client.initiative.round).toBe(2);
+			expect(client.initiative.entries.map((e) => e.name)).toEqual(['Goblin']);
+
+			socket.emit({
+				type: 'initiative.updated',
+				payload: { entries: [], round: 1, currentEntryId: null }
+			});
+			expect(client.initiative.entries).toEqual([]);
+			expect(client.initiative.currentEntryId).toBeNull();
+		});
+
+		// A room that has never had an encounter sends no tracker at all,
+		// and an empty order at round 1 is what that means.
+		it('reads a sync with no tracker as an empty order', () => {
+			const { client, socket } = connectedClient();
+
+			socket.emit({
+				type: 'state.sync',
+				payload: {
+					room: { slug: 'abc123', name: 'Room', ownerOnlyMovement: false },
+					you: { participantId: 'p1', displayName: 'A', role: 'gm' }
+				}
+			});
+
+			expect(client.initiative).toEqual({ entries: [], round: 1, currentEntryId: null });
+		});
+
+		// The order belongs to the room, not the scene — a GM flipping to
+		// the battle map mid-fight must not lose the encounter, and
+		// scene.activated is what throws scene-scoped state away.
+		it('survives a scene change', () => {
+			const { client, socket } = connectedClient();
+			socket.emit({
+				type: 'state.sync',
+				payload: {
+					room: { slug: 'abc123', name: 'Room', ownerOnlyMovement: false },
+					you: { participantId: 'p1', displayName: 'A', role: 'gm' },
+					initiative: tracker
+				}
+			});
+
+			socket.emit({
+				type: 'scene.activated',
+				payload: { scene: { id: 's2', gridSize: 70 }, tokens: [], fogCells: [], drawings: [] }
+			});
+
+			expect(client.initiative.entries).toHaveLength(1);
+			expect(client.initiative.round).toBe(2);
+		});
+
+		it('sends each command in the shape the hub decodes', () => {
+			const { client, socket } = connectedClient();
+
+			client.addInitiativeEntry({ tokenId: 't1', initiative: 14 });
+			client.addInitiativeEntry({ name: 'Lair action', initiative: 20, hidden: true });
+			client.updateInitiativeEntry('e1', { name: 'Lair action', initiative: 12, hidden: false });
+			client.reorderInitiativeEntry('e1', 'up');
+			client.advanceInitiative('next');
+			client.removeInitiativeEntry('e1');
+			client.clearInitiative();
+
+			expect(socket.sent.map((s) => JSON.parse(s))).toEqual([
+				{
+					type: 'initiative.add',
+					payload: { tokenId: 't1', name: '', initiative: 14, hidden: false }
+				},
+				{
+					type: 'initiative.add',
+					payload: { tokenId: null, name: 'Lair action', initiative: 20, hidden: true }
+				},
+				{
+					type: 'initiative.update',
+					payload: { entryId: 'e1', name: 'Lair action', initiative: 12, hidden: false }
+				},
+				{ type: 'initiative.reorder', payload: { entryId: 'e1', direction: 'up' } },
+				{ type: 'initiative.advance', payload: { direction: 'next' } },
+				{ type: 'initiative.remove', payload: { entryId: 'e1' } },
+				{ type: 'initiative.clear', payload: {} }
+			]);
+		});
+	});
+
 	// The room's movement lock, as the canvas asks it: what may this
 	// client pick up? The hub enforces the same rule — this is only about
 	// what gets a drag handle.
