@@ -42,7 +42,7 @@ func newTestServer(t *testing.T) (*httptest.Server, *store.Store) {
 
 	hub := ws.NewHub(s)
 	frontend := os.DirFS(t.TempDir())
-	router := NewRouter(s, hub, blobs, frontend)
+	router := NewRouter(s, hub, blobs, frontend, "")
 
 	srv := httptest.NewServer(router)
 	t.Cleanup(srv.Close)

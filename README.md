@@ -24,6 +24,10 @@ go build -tags nodynamic -o longtable ./cmd/longtable
 
 Serves on `:8080` by default (`-addr` and `-db` flags to override).
 
+`-banner "Back up at 9pm"` puts a message across the top of every page for
+everyone on the server, which each of them can dismiss. Changing the text brings
+it back for people who dismissed the last one.
+
 ## Running the tests
 
 Three suites. All of these run from the repo root, and CI runs all of them on

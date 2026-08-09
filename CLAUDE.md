@@ -13,7 +13,7 @@ architecture and current state live here instead**, and keeping them true is par
 | Path | What lives there |
 | --- | --- |
 | `cmd/longtable/` | entrypoint: `serve` (default) plus a `room list` / `room reset-password` admin CLI |
-| `internal/api/` | HTTP routes: create/join room, GM login, asset upload + serving + per-room library listing, health check, `GET /ws` upgrade, SPA fallback for the embedded frontend |
+| `internal/api/` | HTTP routes: create/join room, GM login, asset upload + serving + per-room library listing, health check, the Host's banner (`GET /api/notice`), `GET /ws` upgrade, SPA fallback for the embedded frontend |
 | `internal/ws/` | the real-time hub and the authority on room state — command/event protocol, permission checks, broadcast |
 | `internal/store/` | SQLite schema and every typed query (rooms, participants, scenes, tokens, fog, drawings, chat). `store.go` holds the `CREATE TABLE`s and migrations |
 | `internal/imageproc/` | decodes and re-encodes every upload to WebP. Read its doc comment before touching it — the studio-swing trap in there is easy to reintroduce |
@@ -28,6 +28,7 @@ architecture and current state live here instead**, and keeping them true is par
 | `web/src/lib/tool-family.ts` | the `Tool` union, and the rules grouping it into the toolbar's five families |
 | `web/src/lib/components/map-toolbar.svelte`, `tool-strip.svelte` | the floating tool row, and the active family's contextual strip |
 | `web/src/lib/components/room-menu.svelte` | the menu behind the side panel's third icon: Scenes, Assets, Manage room, Leave room |
+| `web/src/lib/host-notice.svelte.ts`, `components/host-notice.svelte` | the Host's `-banner` message: fetched once, dismissable, and the height everything else moves down by |
 | `web/src/lib/components/initiative-panel.svelte` | the turn order in the rail's second panel — one component for both roles, with the GM's controls left off for everyone else |
 | `internal/ws/initiative.go` | the tracker's six commands and its one event, split out of `hub.go` |
 | `web/src/routes/r/[slug]/+page.svelte` | the room page — join form, then the full-bleed shell: map, floating toolbar, side rail (or bottom sheet) |
@@ -130,6 +131,12 @@ upload is decoded and re-encoded to WebP, with any grid offset padded into the p
 through, and joins the uploading room's library — content-addressed globally so identical uploads
 share one file, but a room only ever sees what it added itself, under its own name and credit.
 All of it syncs live; everything but pings and measurements persists.
+
+**The Host has one thing in the UI**, and it isn't in a room: `longtable serve -banner "…"`
+puts a message across the top of every page for everyone on the server, dismissable per browser
+and keyed by its own text, so changing the message brings it back for people who dismissed the
+last one. A Host runs the server and needn't be at any table on it (`planning/roles.md`), which is
+why it is a flag rather than a screen.
 
 Known gaps, which is also roughly the queue: nothing rolls initiative for you — the tracker takes
 the number and `/roll 1d20+2` in chat is where it comes from; `Manage room` holds seats and the

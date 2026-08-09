@@ -302,3 +302,22 @@ export async function checkSession(
 export function assetUrl(assetId: string): string {
 	return `/api/assets/${encodeURIComponent(assetId)}`;
 }
+
+/**
+ * The Host's banner message, or '' when the server was started without
+ * one. Unauthenticated, because it is shown on every page including the
+ * home page of a browser that has never joined anything.
+ *
+ * Never throws: a server that can't answer this is a server whose banner
+ * nobody needs, and the page behind it works either way.
+ */
+export async function fetchNotice(): Promise<string> {
+	try {
+		const res = await fetch('/api/notice');
+		if (!res.ok) return '';
+		const body = (await res.json()) as { notice?: string };
+		return body.notice ?? '';
+	} catch {
+		return '';
+	}
+}

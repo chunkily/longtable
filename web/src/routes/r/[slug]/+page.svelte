@@ -6,6 +6,7 @@
 	import { toast } from 'svelte-sonner';
 	import { endSession, gmLogin, joinRoom, listSeats, type Seat, type Session } from '$lib/api';
 	import { clearSession, loadSession, saveSession, touchSession } from '$lib/session';
+	import { hostNotice } from '$lib/host-notice.svelte';
 	import { RoomClient, type Token } from '$lib/room.svelte';
 	import { DEFAULT_LINE_WIDTH_FEET, type SnapMode } from '$lib/aoe';
 	import { familyHasStrip, familyOf, type Tool } from '$lib/tool-family';
@@ -631,7 +632,15 @@
 		/>
 	{/if}
 
-	<div class="fixed inset-0 flex flex-col lg:flex-row">
+	<!-- Starts under the Host's banner when there is one. This container
+	     is `fixed`, so the layout's padding doesn't reach it — the map
+	     would otherwise run under the banner and take the toolbar with
+	     it. Read from the banner's own height rather than a constant,
+	     since a long message wraps. -->
+	<div
+		class="fixed inset-x-0 bottom-0 flex flex-col lg:flex-row"
+		style="top: {hostNotice.height}px"
+	>
 		<!-- The map. Everything else either floats over it or sits in the
 		     rail beside it; there is no padding, no card and no header. -->
 		<div class="relative min-h-0 min-w-0 flex-1">

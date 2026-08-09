@@ -49,12 +49,18 @@ func runServe(args []string) error {
 	addr := fset.String("addr", ":8080", "address to listen on")
 	dbPath := fset.String("db", "longtable.db", "path to the SQLite database file")
 	assetsDir := fset.String("assets", "longtable-assets", "directory for uploaded map/token images")
+	// A Host's own announcement — "back up at 9", "new server address
+	// next week". Shown to everyone on this server, in every room, and
+	// dismissable by each of them; changing the text brings it back for
+	// people who dismissed the last one. A flag rather than a screen
+	// because a Host runs the server and needn't be at any table on it.
+	banner := fset.String("banner", "", "a message shown to everyone on this server until they dismiss it")
 	fset.Parse(args)
 
-	return serve(*addr, *dbPath, *assetsDir)
+	return serve(*addr, *dbPath, *assetsDir, *banner)
 }
 
-func serve(addr, dbPath, assetsDir string) error {
+func serve(addr, dbPath, assetsDir, banner string) error {
 	s, closeDB, err := openStore(dbPath)
 	if err != nil {
 		return err
@@ -72,7 +78,7 @@ func serve(addr, dbPath, assetsDir string) error {
 	}
 
 	hub := ws.NewHub(s)
-	router := api.NewRouter(s, hub, blobs, frontend)
+	router := api.NewRouter(s, hub, blobs, frontend, banner)
 
 	slog.Info("longtable: listening", "addr", addr, "db", dbPath, "assets", assetsDir)
 	return http.ListenAndServe(addr, router)

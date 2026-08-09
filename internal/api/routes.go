@@ -17,10 +17,16 @@ type Server struct {
 	hub      *ws.Hub
 	blobs    *blobstore.Store
 	frontend fs.FS
+	notice   string
 }
 
-func NewRouter(s *store.Store, hub *ws.Hub, blobs *blobstore.Store, frontend fs.FS) http.Handler {
-	srv := &Server{store: s, hub: hub, blobs: blobs, frontend: frontend}
+// NewRouter wires the whole HTTP surface. `notice` is the Host's banner
+// message — see the endpoint below — and is empty on a server that
+// wasn't started with one.
+func NewRouter(
+	s *store.Store, hub *ws.Hub, blobs *blobstore.Store, frontend fs.FS, notice string,
+) http.Handler {
+	srv := &Server{store: s, hub: hub, blobs: blobs, frontend: frontend, notice: notice}
 
 	mux := http.NewServeMux()
 
@@ -28,6 +34,17 @@ func NewRouter(s *store.Store, hub *ws.Hub, blobs *blobstore.Store, frontend fs.
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))
 	})
+
+	// The Host's banner, for everyone on this server whether or not they
+	// are in a room — so it answers without a session, like the seat list
+	// does. It carries only what the Host typed and nothing about the
+	// server, which is what keeps an unauthenticated endpoint dull.
+	//
+	// Set at startup (`longtable serve -banner "…"`) rather than from the
+	// web UI on purpose: a Host runs the server and needn't be at any
+	// table on it, so there is no screen of theirs to put this on. See
+	// planning/roles.md.
+	mux.HandleFunc("GET /api/notice", srv.getNotice)
 
 	// Deliberately no `GET /api/rooms`. There used to be one, and the home
 	// page listed every room on the server to anyone who loaded it — which
