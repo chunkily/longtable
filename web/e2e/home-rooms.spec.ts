@@ -96,42 +96,45 @@ test('a player who joins by code gets the room on their own home page', async ({
 	await player.context.close();
 });
 
-// A room code is the only way into a room you haven't been in, so the box
-// has to take the forms it actually arrives in — six characters read off
-// someone's screen, or the whole link they pasted at you.
-test('a room code can be pasted as a link or typed as six characters', async ({ browser }) => {
+// A room code is the only way into a room you haven't been in, so the
+// box has to take the six characters someone read off another screen —
+// and only those.
+test('six characters get you in, and anything else is refused', async ({ browser }) => {
 	const gm = await browser.newContext();
 	const gmPage = await gm.newPage();
 	const slug = await createRoom(gmPage, 'Tomb of Horrors');
 
-	for (const pasted of [`http://localhost:5173/r/${slug}`, slug]) {
-		const context = await browser.newContext();
-		const page = await context.newPage();
-		await page.goto('/');
-		await page.getByRole('button', { name: 'Join a room' }).click();
-		await page.getByLabel('Room code').fill(pasted);
-		await page.getByRole('button', { name: 'Join', exact: true }).click();
-		await expect(page).toHaveURL(new RegExp(`/r/${slug}$`));
-		await context.close();
-	}
-
-	// Something that isn't a code says so and stays put, rather than
-	// navigating to a room that was never going to exist.
 	const context = await browser.newContext();
 	const page = await context.newPage();
 	await page.goto('/');
 	await page.getByRole('button', { name: 'Join a room' }).click();
-	await page.getByLabel('Room code').fill('where is the game');
+	await page.getByLabel('Room code').fill(slug);
 	// `exact`, because the welcome step's `Join a room` button also
 	// contains "Join" and Playwright matches accessible names by
 	// substring unless told otherwise. It isn't on screen at this point,
 	// but a locator that would go ambiguous the moment the layout changes
 	// is one worth pinning down now.
 	await page.getByRole('button', { name: 'Join', exact: true }).click();
-	await expect(page.getByText("doesn't look like a room code")).toBeVisible();
-	await expect(page).toHaveURL(/\/$/);
-
+	await expect(page).toHaveURL(new RegExp(`/r/${slug}$`));
 	await context.close();
+
+	// Anything that isn't six characters says so and stays put, rather
+	// than navigating to a room that was never going to exist. A whole
+	// pasted link is in that list on purpose: it used to work, and the
+	// field says six characters now. Following the link is what a link is
+	// for.
+	for (const refused of ['where is the game', `http://localhost:5173/r/${slug}`]) {
+		const other = await browser.newContext();
+		const otherPage = await other.newPage();
+		await otherPage.goto('/');
+		await otherPage.getByRole('button', { name: 'Join a room' }).click();
+		await otherPage.getByLabel('Room code').fill(refused);
+		await otherPage.getByRole('button', { name: 'Join', exact: true }).click();
+		await expect(otherPage.getByText("doesn't look like a room code")).toBeVisible();
+		await expect(otherPage).toHaveURL(/\/$/);
+		await other.close();
+	}
+
 	await gm.close();
 });
 

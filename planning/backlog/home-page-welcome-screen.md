@@ -54,6 +54,21 @@ is asked to read it aloud, and renaming it would touch `[slug]` directories, eve
 every API path for no gain a user could see. The doc comment on `room-code.ts` says so, because
 the next person to notice the mismatch deserves the reason rather than the chance to "fix" it.
 
+**The join box then went the rest of the way, in follow-up commits.** It is one large
+six-character field — full width, `text-4xl` and `md:text-5xl`, monospace and letter-spaced —
+rather than a small input beside a button on a mostly empty page. And `parseRoomCode` was narrowed
+to match what the field now advertises: codes only, no URL and no path. It used to take the last
+segment of anything slug-shaped, which meant a whole pasted link worked. That leniency served one
+narrow case — someone holding a link, on the machine they mean to play on, choosing to paste it
+into a text field instead of following it — and cost a parser that accepted things the field
+doesn't offer. Both changes are recorded here rather than in an item of their own because they
+finish the same thought: the box asks for a room code, so it should look like one and take one.
+
+The `md:` variant on that field is load-bearing and easy to delete by accident. The base `Input`
+carries `md:text-sm`; without an `md:` override of its own, the huge box shrinks to 14px at exactly
+the breakpoint with the most room. `cn` resolves the pair correctly only because both are the same
+variant and the same property, with the override second.
+
 ### The e2e suite had to move with it
 
 Every spec created its room by filling three fields on the home page, so putting the form behind a

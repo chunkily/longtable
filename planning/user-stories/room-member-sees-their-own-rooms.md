@@ -5,7 +5,7 @@ status: done
 ---
 
 As a Room Member
-I want the home page to show the rooms I'm actually in, and a box to paste an invite into
+I want the home page to show the rooms I'm actually in, and a box to type a room code into
 So that I can get back to my game without hunting through everyone else's, and without anyone seeing mine
 
 ## Acceptance criteria
@@ -13,7 +13,7 @@ So that I can get back to my game without hunting through everyone else's, and w
 - [ ] The home page lists only rooms this browser has joined or created, newest use first
 - [ ] Each row says which room it is and whether I'm its GM or a Player there
 - [ ] No room I haven't joined appears anywhere in the web UI, for anyone
-- [ ] I can join a room by pasting a link or typing its room code
+- [ ] I can join a room by typing its room code
 - [ ] I can remove a room from my own list without affecting the room or anyone else's list
 - [ ] With no rooms yet, the page offers the two ways into one rather than showing an empty list
 - [ ] Creating a room puts it straight into my list
@@ -45,3 +45,10 @@ still the biggest thing on a first-time visitor's screen. It is now a welcome sc
 actions on it and no list at all, which is what the criterion was reaching for. The other change is
 vocabulary: **room code**, not "invite link" — the wording here and everywhere public moved
 together.
+
+**Amended again the same day**: the join criterion said "pasting a link or typing its room code",
+and the link half is gone. The box is one large six-character field now, and `parseRoomCode`
+refuses anything else — deliberately, since a link is already a link and following it lands you in
+the room without this field. The criterion above is rewritten rather than left standing with a
+note, because it describes an affordance that was removed on purpose rather than one nobody has
+built yet. `room-code.ts` carries the reasoning next to the code.

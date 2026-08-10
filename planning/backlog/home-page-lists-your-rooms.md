@@ -51,7 +51,13 @@ takes an invite; below that, the create form as before. `GET /api/rooms` is gone
 under it are not: they're behind large buttons on a welcome screen now, and the empty state that
 this item added is gone rather than reworded. See
 [home-page-welcome-screen](home-page-welcome-screen.md). `parseInvite` is `parseRoomCode` in
-`web/src/lib/room-code.ts` — the paragraph below still describes what it does, under its old name.
+`web/src/lib/room-code.ts`.
+
+**And it is no longer lenient**, which reverses the paragraph below: the join box became one large
+six-character field, so the parser was narrowed to match it. A URL, a path and a trailing slash are
+all refused now. The reasoning below for the *alphabet* still holds and is the durable half —
+`0`/`o`/`1`/`l`/`i` are still excluded, still mirrored from `internal/store/slug.go`, and still for
+the same reason.
 
 **The design question in the item above answered itself: the session already holds the room name.**
 `sessionResponse` has carried `roomName` since rooms were first built, so neither of the two

@@ -24,7 +24,7 @@ architecture and current state live here instead**, and keeping them true is par
 | `internal/db/` | SQLite wiring (`modernc.org/sqlite`, no CGO) |
 | `assets.go` (root) | `go:embed`s `web/build`. Has to be at the root — embed can't reach outside its own directory |
 | `web/src/lib/api.ts`, `session.ts` | REST client; per-room session in `localStorage` |
-| `web/src/lib/room-code.ts` | turns whatever someone pasted — a link, a path, six characters — into a room code |
+| `web/src/lib/room-code.ts` | validates six typed characters as a room code. Codes only — a pasted link is refused, and its doc comment says why |
 | `web/src/lib/room.svelte.ts` | `RoomClient`: the WS protocol wrapped in Svelte 5 runes state |
 | `web/src/lib/token-fields.ts` | what a `token.update` carries and whether two of them are the same — the one answer behind the dialog's "anything typed?", `updateToken`'s no-op guard and undo's "still how I left it?" |
 | `web/src/lib/components/game-canvas.svelte` | the whole Konva map: layers, tools, rendering |
@@ -68,7 +68,8 @@ the hosting guide, and that CLI's `CODE NAME CREATED` header. `slug` survives as
 parameter, the column and the Go identifiers, because nobody is ever asked to say a URL shape out
 loud. **The home page asks one question at a time** too: a browser holding sessions sees those
 rooms listed, newest first, and every browser gets two large buttons under it — `Join a room`,
-which opens a box taking a bare code or a whole pasted link, and `Create a room`. A browser with
+which opens one large six-character box (codes only — a link is meant to be followed, not pasted
+in there), and `Create a room`. A browser with
 no rooms gets no list at all rather than an empty one, since the two buttons are what it came for.
 Scenes built
 from an uploaded map or a

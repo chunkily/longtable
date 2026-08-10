@@ -176,14 +176,13 @@
 		<Card.Root>
 			<Card.Header>
 				<Card.Title>Join a room</Card.Title>
-				<Card.Description>
-					Room codes are six-characters long like <code>ab23ef</code>.
-				</Card.Description>
 			</Card.Header>
 			<Card.Content class="flex flex-col gap-4">
 				{@render back()}
-				<form class="flex flex-col gap-4" onsubmit={handleJoin}>
-					<Label for="room-code" class="items-center text-xl">Room code</Label>
+				<form class="flex flex-col items-stretch gap-4" onsubmit={handleJoin}>
+					<div class="flex items-center justify-center">
+						<Label for="room-code" class=" text-xl">Room code</Label>
+					</div>
 					<!-- Six characters typed off someone else's screen, so the box
 					     is sized for reading them back rather than for the layout:
 					     monospace so every glyph is the same width, and spaced so
@@ -204,6 +203,9 @@
 						spellcheck={false}
 						class="h-auto py-5 text-center indent-[0.35em] font-mono text-4xl tracking-[0.35em] md:text-5xl"
 					/>
+					<p class="text-center text-sm text-muted-foreground">
+						Room codes are six-characters long like <code>ab23ef</code>.
+					</p>
 					<Button type="submit" size="lg" class="h-12 text-base">Join</Button>
 				</form>
 			</Card.Content>
