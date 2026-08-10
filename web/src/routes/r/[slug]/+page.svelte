@@ -494,6 +494,32 @@
 				playing as <strong>{room.you?.displayName}</strong>
 				<Badge variant="outline" class="ml-1">{room.you?.role}</Badge>
 			</p>
+			<!-- How anyone else gets in, so it sits where a GM asked "what's
+			     the code?" can read it without leaving the app. Shown to
+			     Players too: a Player is as likely to be the one messaging
+			     whoever is running late, and they can already read it out of
+			     their own address bar — see ADR-0007.
+
+			     **No copy button, deliberately.** `navigator.clipboard` is
+			     defined only in a secure context, and every Player is on
+			     `http://192.168.x.x:8080` — so a button would work for
+			     whoever is developing on localhost and fail for most of the
+			     people it's for. `document.execCommand` is a fallback but a
+			     patchy one. The address bar is the thing that copies
+			     reliably on every device here, so the line below points at
+			     it rather than at a control that might not answer.
+
+			     `select-all` so one click takes the whole code, which is
+			     what someone reading it into a message wants. -->
+			<div class="flex items-center gap-1.5 text-xs text-muted-foreground">
+				<span>room code</span>
+				<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-sm text-foreground select-all">
+					{slug}
+				</code>
+			</div>
+			<p class="text-xs text-muted-foreground">
+				To invite someone, send them this code — or the whole address from your browser's bar.
+			</p>
 			<!-- Who is actually at the table right now, which is a different
 			     list from everyone who has ever joined: someone who played last
 			     week and isn't online doesn't appear.

@@ -119,7 +119,9 @@ measure, fog, ping — with `New token` alongside and a contextual strip below c
 active family's variants and settings (the eraser is inside draw; the templates inside measure).
 Everything else lives in a fixed full-height rail down the right: the selected token at the top
 (a plain shaded block holding its height when nothing is selected, so the rail doesn't jump),
-session info under it,
+session info under it (room name, who you are, the socket status, and **the room code** with a line
+saying to send that or the browser's address — there is no copy button, and that's a decision, not
+a gap),
 then chat or the initiative tracker filling the rest, and three icons at the foot switching
 between chat, initiative and a menu holding Scenes, Assets, Manage room and Leave
 room (making a scene is a mode of the Scenes dialog rather than a menu entry of its own). Below `lg` the rail becomes a bottom sheet with those icons pinned to the bottom edge, the
@@ -178,8 +180,12 @@ Ids used to be minted with `crypto.randomUUID`, which browsers expose only in a
 secure context, so drawing and pings threw for every client on a LAN address. They now go through
 `randomId()` in `web/src/lib/random-id.ts`, which falls back to `crypto.getRandomValues` — read its
 doc comment before minting an id anywhere else, and **never call `crypto.randomUUID` directly**.
-Anything else gated on a secure context (`navigator.clipboard` is the likely next one, for a "copy
-the join link" button) has the same trap waiting.
+Anything else gated on a secure context has the same trap waiting. **`navigator.clipboard` is the
+next one and has already been ruled against**: a copy-the-room-code button was built with an
+`execCommand` fallback, passed unit and e2e tests, and was deleted before it shipped, because
+nothing in this repo can test the case it exists for — Playwright drives localhost, which is a
+secure context. The room shows the code and points at the address bar instead. Read
+`planning/backlog/share-room-code-from-room.md` before reaching for the clipboard here.
 
 `planning/backlog/` is the authority on all of this and goes into far more detail: `status: done`
 items record what shipped and why, `status: open` ones are the queue. Items cite paths and line
