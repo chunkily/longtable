@@ -10,9 +10,9 @@ So that I can get a latecomer in without reading characters off my address bar
 
 ## Acceptance criteria
 
-- [ ] The room code is visible from inside the room, without opening anything
+- [ ] The room code is readable from inside the room, one gesture away
 - [ ] It's selectable, so it can be taken in one gesture rather than transcribed
-- [ ] The room says how to pass it on, for someone who doesn't know a code is enough
+- [ ] Both forms it travels in are offered — the bare code, and a link
 - [ ] It works the same on a LAN address as on the GM's localhost
 - [ ] A Player can do this too, not only the GM
 
@@ -30,4 +30,11 @@ for this product is on `http://192.168.x.x:8080`. The fourth criterion above is 
 
 That criterion is worth reading literally, and is why the story is `done` without a copy control.
 It doesn't ask for a button; it asks that whatever ships behaves the same for a Player on the LAN
-as for the GM on localhost. Static text does. A clipboard button, on the evidence, does not.
+as for the GM on localhost. A readonly field you select does. A clipboard button, on the evidence,
+does not.
+
+**The third criterion was rewritten** once the code moved into the menu. It used to ask the room to
+say how to pass a code on, which the rail did with a line of instructions. The dialog offers the
+code and the link as two fields instead, which is the same answer without the sentence — and the
+link is the honest weak spot: it is whatever address this browser is on, so a GM on localhost sees
+a link only they can use.

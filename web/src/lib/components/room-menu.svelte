@@ -25,6 +25,7 @@
 		isGM,
 		onOpenScenes,
 		onOpenManageRoom,
+		onOpenRoomCode,
 		onLeave,
 		onResetView
 	}: {
@@ -33,6 +34,7 @@
 		isGM: boolean;
 		onOpenScenes: () => void;
 		onOpenManageRoom: () => void;
+		onOpenRoomCode: () => void;
 		onLeave: () => void;
 		onResetView: () => void;
 	} = $props();
@@ -81,6 +83,28 @@
 		<div
 			class="absolute right-0 bottom-full z-50 mb-1 flex w-56 flex-col gap-1 rounded-md border bg-popover p-1 shadow-md"
 		>
+			<!-- The code sits at the top of the menu and shows itself, so the
+			     answer to "what's the code?" is one tap away and readable
+			     without opening anything. Monospace because it gets read out
+			     character by character, and a proportional font makes that
+			     harder than it needs to be. Everyone gets it, not just the
+			     GM: a Player is as likely to be the one messaging whoever is
+			     running late, and can read it out of their own address bar
+			     anyway — see ADR-0007. -->
+			<Button
+				variant="ghost"
+				class="h-auto justify-start py-2"
+				onclick={() => {
+					close();
+					onOpenRoomCode();
+				}}
+			>
+				<span class="flex flex-col items-start gap-0.5">
+					<span class="text-xs font-normal text-muted-foreground">Room code</span>
+					<span class="font-mono text-base tracking-widest">{slug}</span>
+				</span>
+			</Button>
+			<div class="border-t"></div>
 			<!-- One entry, not two. New scene used to sit beside this as its
 			     own dialog, which meant the menu asked whether you wanted the
 			     scenes or a new one before showing you either. It is a mode

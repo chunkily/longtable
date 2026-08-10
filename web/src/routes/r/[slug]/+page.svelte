@@ -29,6 +29,7 @@
 	import ToolStrip from '$lib/components/tool-strip.svelte';
 	import RoomMenu from '$lib/components/room-menu.svelte';
 	import ManageRoomDialog from '$lib/components/manage-room-dialog.svelte';
+	import RoomCodeDialog from '$lib/components/room-code-dialog.svelte';
 	import SceneManagerDialog from '$lib/components/scene-manager-dialog.svelte';
 	import CreateTokenDialog from '$lib/components/create-token-dialog.svelte';
 	import TokenDetailDialog from '$lib/components/token-detail-dialog.svelte';
@@ -109,6 +110,7 @@
 
 	let scenesOpen = $state(false);
 	let manageRoomOpen = $state(false);
+	let roomCodeOpen = $state(false);
 
 	// Which token this client is looking at. Local to this browser and
 	// nothing more: it never goes on the wire, so two people can have
@@ -536,32 +538,12 @@
 				playing as <strong>{room.you?.displayName}</strong>
 				<Badge variant="outline" class="ml-1">{room.you?.role}</Badge>
 			</p>
-			<!-- How anyone else gets in, so it sits where a GM asked "what's
-			     the code?" can read it without leaving the app. Shown to
-			     Players too: a Player is as likely to be the one messaging
-			     whoever is running late, and they can already read it out of
-			     their own address bar — see ADR-0007.
-
-			     **No copy button, deliberately.** `navigator.clipboard` is
-			     defined only in a secure context, and every Player is on
-			     `http://192.168.x.x:8080` — so a button would work for
-			     whoever is developing on localhost and fail for most of the
-			     people it's for. `document.execCommand` is a fallback but a
-			     patchy one. The address bar is the thing that copies
-			     reliably on every device here, so the line below points at
-			     it rather than at a control that might not answer.
-
-			     `select-all` so one click takes the whole code, which is
-			     what someone reading it into a message wants. -->
-			<div class="flex items-center gap-1.5 text-xs text-muted-foreground">
-				<span>room code</span>
-				<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-sm text-foreground select-all">
-					{slug}
-				</code>
-			</div>
-			<p class="text-xs text-muted-foreground">
-				To invite someone, send them this code — or the whole address from your browser's bar.
-			</p>
+			<!-- The room code used to sit here. It lives at the top of the
+			     room menu now, where it shows itself and opens a dialog
+			     holding both the code and this browser's address. The rail
+			     is the thing on screen the whole session, so what earns a
+			     place in it is what changes — who is connected, whether the
+			     socket is up — not a constant six characters. -->
 			<!-- Who is actually at the table right now, which is a different
 			     list from everyone who has ever joined: someone who played last
 			     week and isn't online doesn't appear.
@@ -684,15 +666,21 @@
 				{isGM}
 				onOpenScenes={() => (scenesOpen = true)}
 				onOpenManageRoom={() => (manageRoomOpen = true)}
+				onOpenRoomCode={() => (roomCodeOpen = true)}
 				onLeave={handleLeave}
 				onResetView={() => canvasRef?.resetView()}
 			/>
 		</div>
 	{/snippet}
 
-	<!-- Both dialogs are opened from the menu rather than from a trigger of
+	<!-- The dialogs are opened from the menu rather than from a trigger of
 	     their own, so they live out here at the top level rather than
 	     inside whichever copy of the icon bar is on screen. -->
+
+	<!-- Outside the isGM block below: everyone at the table can hand the
+	     room to someone else, and only a GM can manage it. -->
+	<RoomCodeDialog {slug} bind:open={roomCodeOpen} />
+
 	{#if isGM && session}
 		<SceneManagerDialog
 			room={client}

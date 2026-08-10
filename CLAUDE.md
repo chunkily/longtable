@@ -123,12 +123,15 @@ measure, fog, ping — with `New token` alongside and a contextual strip below c
 active family's variants and settings (the eraser is inside draw; the templates inside measure).
 Everything else lives in a fixed full-height rail down the right: the selected token at the top
 (a plain shaded block holding its height when nothing is selected, so the rail doesn't jump),
-session info under it (room name, who you are, the socket status, and **the room code** with a line
-saying to send that or the browser's address — there is no copy button, and that's a decision, not
-a gap),
+session info under it (room name, who you are, the socket status),
 then chat or the initiative tracker filling the rest, and three icons at the foot switching
-between chat, initiative and a menu holding Scenes, Assets, Manage room and Leave
-room (making a scene is a mode of the Scenes dialog rather than a menu entry of its own). Below `lg` the rail becomes a bottom sheet with those icons pinned to the bottom edge, the
+between chat, initiative and a menu. That menu opens with **the room code**, shown in monospace
+under a muted label and readable without going further; clicking it opens a dialog holding the code
+and this browser's address as readonly fields, one click to select either. There is no copy button
+anywhere, and that's a decision, not a gap — see
+`planning/backlog/share-room-code-from-room.md`. Under it the menu holds Scenes, Assets, Manage
+room and Leave room (making a scene is a mode of the Scenes dialog rather than a menu entry of its
+own). Below `lg` the rail becomes a bottom sheet with those icons pinned to the bottom edge, the
 contextual strip docks into it rather than floating, the selected token becomes a bar above the
 icons shown only when something is selected, and redo and reset view move from the toolbar into
 the menu. A dropped socket reconnects on

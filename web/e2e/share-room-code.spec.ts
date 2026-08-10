@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures/table';
+import { openRoomMenu } from './fixtures/room';
 
 // Handing the room code to someone who isn't here yet.
 //
@@ -7,40 +8,50 @@ import { expect, test } from './fixtures/table';
 // `navigator.clipboard` exists only in a secure context and every Player
 // is on `http://192.168.x.x:8080`, so a button would work for whoever is
 // developing on localhost and fail for most of the people it's for. What
-// the room offers instead is the code itself, readable and selectable,
-// and a line pointing at the address bar — which copies on every device
-// at the table.
+// the room offers instead is the code readable in the menu, and a dialog
+// holding it and the address as readonly fields — one click selects
+// either, and Ctrl-C works on every device at the table.
 //
 // No scene in these rooms — nothing here needs a canvas.
 test.use({ scene: false });
 
-// Session info is rendered twice, once in the rail and once in the
-// mobile sheet, so every locator here takes `.first()`. Only the rail is
-// visible at this viewport; the other copy is display:none, which
-// Playwright still counts for strict mode.
-const sessionInfo = (page: Page) => page.getByRole('region', { name: 'Session info' }).first();
+const menuCode = (page: Page) => page.getByRole('button', { name: 'Room code' }).first();
 
-test('the room code is on screen, with how to pass it on', async ({ table }) => {
-	const info = sessionInfo(table.gm.page);
+test('the code is readable in the menu without opening anything', async ({ table }) => {
+	await openRoomMenu(table.gm.page);
 
-	await expect(info).toContainText(table.slug);
-	await expect(info).toContainText('To invite someone');
+	// The entry carries the code itself, so the answer to "what's the
+	// code?" costs one tap rather than a dialog.
+	await expect(menuCode(table.gm.page)).toContainText(table.slug);
+});
 
-	// The code is what the room is actually reached by, so this checks the
-	// thing on screen against the address rather than against itself — a
-	// panel confidently showing the wrong six characters is the failure
-	// worth catching, and it would pass any assertion made from the same
-	// variable the component read.
-	const fromURL = new URL(table.gm.page.url()).pathname.split('/').pop();
-	await expect(info).toContainText(fromURL!);
+test('the menu entry opens both ways of sharing, as selectable fields', async ({ table }) => {
+	const page = table.gm.page;
+	await openRoomMenu(page);
+	await menuCode(page).click();
+
+	// Readonly rather than static text: an <input> is one click plus
+	// Ctrl-A to select, where a run of text in a dialog is a drag people
+	// miss. Asserting `readonly` is asserting nobody can edit their way
+	// into a code that doesn't exist.
+	const code = page.getByLabel('Code', { exact: true });
+	await expect(code).toHaveValue(table.slug);
+	await expect(code).toHaveAttribute('readonly', '');
+
+	// The link is this browser's own address, so it is checked against the
+	// page rather than rebuilt from parts — a link that doesn't lead back
+	// here is the failure worth catching.
+	await expect(page.getByLabel('Link', { exact: true })).toHaveValue(page.url());
 });
 
 // A Player is as likely to be the one messaging whoever is running late,
-// and can already read the code out of their own address bar — so it is
-// on their screen too rather than being a GM control.
-test('a player has the code as well', async ({ table }) => {
+// and can already read the code out of their own address bar — so this
+// is not a GM control.
+test('a player can share the room too', async ({ table }) => {
 	const player = await table.join('Bob');
+	await openRoomMenu(player.page);
 
-	await expect(sessionInfo(player.page)).toContainText(table.slug);
-	await expect(sessionInfo(player.page)).toContainText('To invite someone');
+	await expect(menuCode(player.page)).toContainText(table.slug);
+	await menuCode(player.page).click();
+	await expect(player.page.getByLabel('Code', { exact: true })).toHaveValue(table.slug);
 });

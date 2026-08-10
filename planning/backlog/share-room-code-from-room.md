@@ -31,9 +31,23 @@ endpoint; it isn't free, and it isn't this item.
 
 ## What shipped
 
-The session-info block in the rail now carries `room code h9frfp` in a monospace chip with
-`select-all` on it, plus one line: *"To invite someone, send them this code — or the whole address
-from your browser's bar."* Both roles see it. That is the whole feature.
+The room menu opens with the code. A muted `Room code` label above the six characters in monospace,
+readable without going any further, and clicking it opens a dialog holding two readonly fields: the
+bare code, and this browser's address. One click selects either, so Ctrl-C is the only other step.
+Both roles get all of it.
+
+**It shipped in the rail first and moved.** The first version put the code in the session-info
+block with a line saying to send that or the address from the browser's bar. That block is on
+screen the whole session, and what earns a place there is what *changes* — who is connected, whether
+the socket is up — not a constant six characters plus a sentence of instructions nobody rereads.
+The menu is where you go when you want to do something, which is exactly when the code is wanted.
+
+Showing the address is a reversal worth flagging, since the item above argues against copying a
+link: for a GM on localhost that field reads `http://localhost:8080/…`, which is no use to anyone
+else. Showing is not copying — it's visible, so a Host can see it says localhost — but the field is
+only as good as the address the browser is on, and the LAN addresses the server prints at startup
+are still nowhere in the UI. If someone wants that fixed properly, `internal/lanurl` already
+computes them and needs an endpoint.
 
 **The three middle checkboxes above did not ship, and the reason is the useful part of this file.**
 A copy button, a `copy-text.ts` helper with a `navigator.clipboard` → `document.execCommand`
