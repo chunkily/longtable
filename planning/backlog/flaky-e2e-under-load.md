@@ -1,7 +1,7 @@
 ---
 title: Specs that pass alone and fail in a full run
 created: 2026-08-09
-status: open
+status: done
 tags: [testing]
 ---
 
@@ -60,3 +60,58 @@ on a field inside it is not that.
   server state.
 - `web/e2e/room.ts` is where a fix belongs if the answer is a gesture helper, so every spec gets
   it at once.
+
+## What shipped
+
+Ten consecutive full runs, no failures. Before this the suite failed roughly one run in three to
+one in five, depending on which of the causes below bit.
+
+**Three separate causes, none of them the one everybody guesses.** "Passes alone, fails in a full
+run" is what all three looked like, and load was not the mechanism in any of them — the same
+lesson [e2e-flakes](e2e-flakes.md) recorded, learned again the hard way:
+
+- **A product race in uploads, and the only one that was really about parallelism.** Storing an
+  image looked before it leapt, twice: `FindAssetByHash` then insert, and `os.Stat` then rename.
+  Two uploads of the same picture both looked, both found nothing, and the loser got a 500 — from
+  the UNIQUE index on `asset.content_hash`, or on Windows from a rename onto a path that now
+  existed (POSIX would have replaced it silently). Parallel workers upload the same fixture bytes,
+  so the suite hit it; two people adding the same map to one table would have hit it in play.
+  Both steps are now safe to lose, and
+  `TestUploadAsset_ConcurrentIdenticalUploadsAllSucceed` fires eight simultaneous uploads and
+  fails without the fix with exactly the error the flaky run showed.
+- **A regression in `token-move-undo.spec.ts`, mine, from the day before.** Making token creation
+  undoable meant the GM's stack was `[create, move]`, so a correctly-declined move-undo fell
+  through and *deleted the token* — and whether the test passed depended on whether the deletion's
+  broadcast beat the pixel probe. The token is made by the player now, leaving the GM's stack
+  holding exactly the move under test.
+- **Copy-pasted setup with copy-pasted waits.** Every spec carried its own `layerInk`,
+  `spawnCentre`, `createToken`, and its own idea of what to wait for. `createToken` waiting for
+  "any ink on the token layer" is fine until a spec has two tokens; a single click to select is
+  fine until a rebuild lands between mousedown and mouseup.
+
+**The fixtures.** `e2e/table.ts` is a Playwright fixture giving a room, a scene and a GM, with
+`table.join()` for each additional person — and **teardown that runs after a failure**, which the
+hand-written `await gm.context.close()` on a test's last line does not. A failing test used to
+leak its browser contexts, and each leaked context kept a live socket and a connected participant
+for the rest of the run: one real failure quietly made everything after it stranger. `e2e/map.ts`
+holds the canvas probes and token gestures, with the *correct* waits in one place — `createToken`
+returns where the token landed and waits for ink at that square, `selectToken` clicks until the
+panel agrees.
+
+Six specs are migrated (`token-edit`, `token-delete`, `token-move-undo`, `token-selection`,
+`token-slide`, `token-trackers`) — the canvas-heavy ones, which is where every flake lived. The
+rest still build their own contexts and are candidates for the same treatment; nothing about them
+is broken, they just don't have the teardown guarantee yet.
+
+**Two things that look like tidying and are not, for whoever migrates the rest:**
+
+- `await player.context.close()` is sometimes the *action under test* — `token-edit`'s owner
+  picker ("Bob shuts his laptop") and `measure`'s disconnect cleanup both close a context on
+  purpose. A regex that strips teardown will delete the test. Ask what each close is for.
+- Removing a spec's own `openRoomAsGM` without also giving it the fixture leaves it creating
+  contexts and never closing them, which is worse than where it started.
+
+**Not fixed, and still open**: the `token-trackers` hang recorded in
+[e2e-hang-after-token-edit](e2e-hang-after-token-edit.md) has not been seen in these ten runs, but
+ten runs is not enough to call a one-in-six flake dead. That item stays open. If it returns, its
+own note is the place to start — the trace instructions there are still the right first move.
