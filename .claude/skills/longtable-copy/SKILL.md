@@ -57,8 +57,15 @@ Real before-and-afters, all from `web/src/routes/+page.svelte`:
 | Six characters. A link to the room works too — paste the whole thing. | Room codes are six-characters long like `ab23ef`. | Two sentences and an em dash to say one thing |
 | Join room | Join | The heading above it already said room |
 | Your name (GM) | Your name | The form is the GM form; the suffix was for the writer's benefit |
+| Start a new table. You'll be its GM, and you'll get a code to hand out. | I'm starting a new game. | Three clauses, and the next screen already says both of the last two |
 
-The pattern across all five: **the rewrite is shorter and states a fact; the original explains.**
+The pattern across all six: **the rewrite is shorter and states a fact; the original explains.**
+
+The last two rows are one pair and worth reading together. They sit side by side on the welcome
+screen, under `Join a room` and `Create a room`, and for a while they disagreed: one was the user's
+voice in four words, the other was three clauses of mine. **A rule applied to one control and not
+its neighbour is worse than not applying it at all** — the inconsistency reads as a mistake, where
+either voice used consistently would have read as a choice. When a rule lands, sweep the row.
 
 **`aria-label` and `title` count**, and are held to the same rules with one exception: they may name
 what the visible label leaves to context, because a screen reader user has no surrounding card to

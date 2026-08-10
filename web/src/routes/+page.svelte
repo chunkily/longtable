@@ -174,9 +174,7 @@
 				<span class="flex items-center gap-2 text-base font-semibold">
 					<PlusIcon class="size-5" /> Create a room
 				</span>
-				<span class="text-sm font-normal text-muted-foreground">
-					Start a new table. You'll be its GM, and you'll get a code to hand out.
-				</span>
+				<span class="text-sm font-normal text-muted-foreground"> I'm starting a new game. </span>
 			</Button>
 		</div>
 	{:else if step === 'join'}
