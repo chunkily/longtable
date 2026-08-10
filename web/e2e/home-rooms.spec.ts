@@ -110,7 +110,7 @@ test('a room code can be pasted as a link or typed as six characters', async ({ 
 		await page.goto('/');
 		await page.getByRole('button', { name: 'Join a room' }).click();
 		await page.getByLabel('Room code').fill(pasted);
-		await page.getByRole('button', { name: 'Join room' }).click();
+		await page.getByRole('button', { name: 'Join', exact: true }).click();
 		await expect(page).toHaveURL(new RegExp(`/r/${slug}$`));
 		await context.close();
 	}
@@ -122,7 +122,12 @@ test('a room code can be pasted as a link or typed as six characters', async ({ 
 	await page.goto('/');
 	await page.getByRole('button', { name: 'Join a room' }).click();
 	await page.getByLabel('Room code').fill('where is the game');
-	await page.getByRole('button', { name: 'Join room' }).click();
+	// `exact`, because the welcome step's `Join a room` button also
+	// contains "Join" and Playwright matches accessible names by
+	// substring unless told otherwise. It isn't on screen at this point,
+	// but a locator that would go ambiguous the moment the layout changes
+	// is one worth pinning down now.
+	await page.getByRole('button', { name: 'Join', exact: true }).click();
 	await expect(page.getByText("doesn't look like a room code")).toBeVisible();
 	await expect(page).toHaveURL(/\/$/);
 

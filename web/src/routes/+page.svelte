@@ -156,9 +156,7 @@
 				<span class="flex items-center gap-2 text-base font-semibold">
 					<LogInIcon class="size-5" /> Join a room
 				</span>
-				<span class="text-sm font-normal text-muted-foreground">
-					Someone at the table sent you a room code. This is where it goes.
-				</span>
+				<span class="text-sm font-normal text-muted-foreground"> I have a room code. </span>
 			</Button>
 			<Button
 				type="button"
@@ -179,30 +177,34 @@
 			<Card.Header>
 				<Card.Title>Join a room</Card.Title>
 				<Card.Description>
-					Rooms aren't listed anywhere, so the code is the only way in.
+					Room codes are six-characters long like <code>ab23ef</code>.
 				</Card.Description>
 			</Card.Header>
 			<Card.Content class="flex flex-col gap-4">
 				{@render back()}
-				<form class="flex flex-col gap-2" onsubmit={handleJoin}>
-					<Label for="room-code">Room code</Label>
-					<div class="flex gap-2">
-						<Input
-							id="room-code"
-							bind:value={roomCode}
-							placeholder="7wdbtb"
-							autocomplete="off"
-							autocapitalize="off"
-							spellcheck={false}
-						/>
-						<Button type="submit">Join room</Button>
-					</div>
-					<!-- A code reaches people as whatever their group already
-					     pastes at each other, so saying a whole link works saves
-					     the person who has one from trimming it by hand. -->
-					<p class="text-xs text-muted-foreground">
-						Six characters. A link to the room works too — paste the whole thing.
-					</p>
+				<form class="flex flex-col gap-4" onsubmit={handleJoin}>
+					<Label for="room-code" class="items-center text-xl">Room code</Label>
+					<!-- Six characters typed off someone else's screen, so the box
+					     is sized for reading them back rather than for the layout:
+					     monospace so every glyph is the same width, and spaced so
+					     a misread `h9frfp` is easier to spot before submitting.
+
+					     `md:text-5xl` is not decoration — the base Input carries
+					     `md:text-sm`, which would otherwise win at the exact
+					     breakpoint where there is most room, shrinking the box on
+					     a desktop. The indent compensates for the trailing
+					     letter-space that tracking adds after the last character,
+					     which otherwise pushes centred text visibly left. -->
+					<Input
+						id="room-code"
+						bind:value={roomCode}
+						placeholder="------"
+						autocomplete="off"
+						autocapitalize="off"
+						spellcheck={false}
+						class="h-auto py-5 text-center indent-[0.35em] font-mono text-4xl tracking-[0.35em] md:text-5xl"
+					/>
+					<Button type="submit" size="lg" class="h-12 text-base">Join</Button>
 				</form>
 			</Card.Content>
 		</Card.Root>
@@ -220,7 +222,7 @@
 						<Input id="room-name" bind:value={roomName} required />
 					</div>
 					<div class="flex flex-col gap-2">
-						<Label for="gm-name">Your name (GM)</Label>
+						<Label for="gm-name">Your name</Label>
 						<Input id="gm-name" bind:value={gmName} required />
 					</div>
 					<div class="flex flex-col gap-2">
@@ -231,7 +233,7 @@
 							to play. If you lose it, whoever runs the server can reset it.
 						</p>
 					</div>
-					<Button type="submit" disabled={creating} class="self-start">
+					<Button type="submit" disabled={creating} class="self-start" size="lg">
 						{creating ? 'Creating…' : 'Create room'}
 					</Button>
 				</form>
