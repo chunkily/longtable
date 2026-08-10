@@ -236,6 +236,9 @@ comment, treat it as load-bearing: it's usually recording a bug someone already 
 Others worth matching:
 
 - Prose in comments and planning docs uses em dashes and reads like sentences, not telegraphese.
+  **This rule stops at the code.** Anything a user reads — a button, an error, a line of the
+  README — is written the other way, and `longtable-copy` is the authority on how. Applying this
+  bullet to a button is a specific, repeated mistake, not a stylistic difference of opinion.
 - Go errors: `slog.Error` with the internal detail, then a short human message to the client.
   Never leak the internal error over the socket.
 - Svelte 5 runes only (`$state`/`$derived`/`$effect`), enforced in `vite.config.ts`. Plain
@@ -253,6 +256,10 @@ Others worth matching:
 - `.claude/skills/longtable-backlog/` — how `planning/` works: picking an item up, flipping its
   `status:` field when it ships, writing the "What shipped" note, and flipping a user story's
   `status:` field once its criteria are verified against the code.
+- `.claude/skills/longtable-copy/` — how to write anything a *user* reads: on-screen strings, and
+  `README.md` and `docs/`. Read it before adding or renaming a string, however small. The house
+  style below is for comments and planning prose and is actively wrong on a button — that skill
+  exists because the two kept getting mixed up.
 
 ## Keeping these docs current
 
@@ -266,6 +273,7 @@ Each file owns something, and duplication between them is what rots first:
 | `.claude/skills/longtable-feature/references/canvas.md` | Konva layer order and indices, the tool-handler contract |
 | `.claude/skills/longtable-feature/references/testing.md` | the three test harnesses and their helpers |
 | `.claude/skills/longtable-backlog/SKILL.md` | how `planning/` itself works — the status fields, item and story format, what finishing something entails |
+| `.claude/skills/longtable-copy/SKILL.md` | how user-facing text is written — on-screen strings, `README.md`, `docs/`, and the worked before-and-afters the rules come from |
 | `planning/` | why a thing exists, what shipped, what's next |
 
 `planning/backlog/README.md` and `planning/user-stories/README.md` restate those same rules for
@@ -278,6 +286,9 @@ Update them **in the same commit as the change**, not in a later sweep — a doc
 after the fact has already misled someone. The triggers, all cheap:
 
 - Added a package, or moved something in the table above → the layout table here.
+- Wrote or reworded anything a user reads — a string, a README line, a paragraph of `docs/` →
+  `longtable-copy` first. If the wording gets rewritten afterwards, add the before-and-after to
+  that skill's tables in the same commit; the examples are what make it accurate.
 - Added or changed a WS command or event, or who's allowed to send one → the command table in
   `ws-protocol.md`.
 - Added a Konva layer or a tool → the layer table in `canvas.md`, **and** the layer-order
