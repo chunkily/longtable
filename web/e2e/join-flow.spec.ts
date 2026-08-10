@@ -30,7 +30,7 @@ test('a code with no room behind it says so instead of asking questions', async 
 	// the case under test. A malformed one never leaves the home page.
 	await page.goto('/r/zzzzzz');
 
-	await expect(page.getByText('No room with that code')).toBeVisible();
+	await expect(page.getByText('Room not found!')).toBeVisible();
 	await expect(page.getByText('zzzzzz')).toBeVisible();
 
 	// The questions are gone rather than merely joined by an error: every
@@ -39,7 +39,7 @@ test('a code with no room behind it says so instead of asking questions', async 
 	await expect(page.getByRole('button', { name: 'Player', exact: true })).toHaveCount(0);
 	await expect(page.getByRole('button', { name: "I'm the GM" })).toHaveCount(0);
 
-	await page.getByRole('link', { name: 'Back to the start' }).click();
+	await page.getByRole('link', { name: 'Click here to go back home' }).click();
 	await expect(page).toHaveURL(/\/$/);
 
 	await context.close();

@@ -32,7 +32,7 @@ could never have. Typing anything clears it.
 **Room page.** `ApiError` now carries `status`, and `isNotFound` is exported beside it as a guard
 rather than left to callers — a bare `err.status === 404` needs the `instanceof` first, and
 whoever forgets it gets `undefined === 404` and a silent false. The pre-join screen is replaced by
-a "No room with that code" card, with the code repeated back for checking against whatever it was
+a "Room not found!" card, with the code repeated back for checking against whatever it was
 copied from, and a link to the start.
 
 **Only a 404 stops anything, and that distinction is the point.** The catch it replaced swallowed
