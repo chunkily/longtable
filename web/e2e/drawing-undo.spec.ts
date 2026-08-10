@@ -1,5 +1,10 @@
 import { expect, test, type Page } from '@playwright/test';
-import { TOOLBAR_CLEARANCE_Y, mapGestureOrigin, openNewSceneDialog, selectTool } from './room';
+import {
+	TOOLBAR_CLEARANCE_Y,
+	mapGestureOrigin,
+	openNewSceneDialog,
+	selectTool
+} from './fixtures/room';
 
 // Undo and redo over the real stack: each step is a genuine draw.create
 // or draw.delete to the server, so what these check is that a stroke

@@ -1,5 +1,14 @@
-import { expect, test, type Browser, type Page } from '@playwright/test';
-import { joinAsNewPlayer, openNewSceneDialog } from './room';
+import type { Page } from '@playwright/test';
+import { expect, test } from './fixtures/table';
+import {
+	LAYER,
+	createToken,
+	detailsPanel,
+	layerInk,
+	openEditor,
+	saveEditor,
+	selectToken
+} from './fixtures/map';
 
 // Everything a token carries beyond its name and position — size,
 // owner, visibility — set both when it's created and when it's edited.
@@ -9,92 +18,7 @@ import { joinAsNewPlayer, openNewSceneDialog } from './room';
 // Player something different in each direction, and neither direction is
 // visible from the DOM. So this drives two browsers and reads the canvas.
 
-// One <canvas> per Konva layer, in the order game-canvas.svelte adds
-// them: map, grid, fog, drawings, tokens, pings, measurements, preview,
-// selection, hover.
-const TOKEN_LAYER = 4;
-const GRID = 70;
-
-async function layerInk(page: Page, layer: number): Promise<number> {
-	return page.evaluate((index) => {
-		const canvas = document.querySelectorAll('canvas')[index] as HTMLCanvasElement;
-		const context = canvas.getContext('2d')!;
-		const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
-
-		let opaque = 0;
-		for (let i = 3; i < data.length; i += 4) if (data[i] > 0) opaque++;
-		return opaque;
-	}, layer);
-}
-
-async function canvasBox(page: Page) {
-	const box = await page.locator('canvas').first().boundingBox();
-	if (!box) throw new Error('canvas has no bounding box');
-	return box;
-}
-
-// Where a freshly created token lands — the cell at the centre of the
-// creator's view, on a scene still at the identity transform. See
-// token-selection.spec.ts.
-function spawnCentre(box: { width: number; height: number }) {
-	const cell = {
-		x: Math.round(box.width / 2 / GRID),
-		y: Math.round(box.height / 2 / GRID)
-	};
-	return { x: cell.x * GRID + GRID / 2, y: cell.y * GRID + GRID / 2 };
-}
-
-async function openRoomAsGM(browser: Browser, roomName: string) {
-	const context = await browser.newContext();
-	const page = await context.newPage();
-
-	await page.goto('/');
-	await page.getByLabel('Room name').fill(roomName);
-	await page.getByLabel('Your name (GM)').fill('Alice');
-	await page.getByLabel('GM password').fill('hunter2');
-	await page.getByRole('button', { name: 'Create room' }).click();
-
-	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
-	const slug = new URL(page.url()).pathname.split('/').pop()!;
-
-	await openNewSceneDialog(page);
-	await page.getByLabel('Name').fill('Map');
-	await page.getByRole('button', { name: 'Create scene' }).click();
-	await expect(page.locator('canvas').first()).toBeVisible();
-
-	return { context, page, slug };
-}
-
-async function joinRoomAsPlayer(browser: Browser, slug: string) {
-	const context = await browser.newContext();
-	const page = await context.newPage();
-
-	await page.goto(`/r/${slug}`);
-	await joinAsNewPlayer(page, 'Bob');
-	await expect(page.locator('canvas').first()).toBeVisible();
-
-	return { context, page };
-}
-
-// Waits for the dialog to be gone as well as the token to arrive: raw
-// mouse coordinates make no actionability checks, so a dialog still
-// running its exit animation swallows the click meant for the canvas.
-async function createToken(page: Page, name: string) {
-	await page.getByRole('button', { name: 'New token' }).click();
-	await page.getByLabel('Name').fill(name);
-	await page.getByRole('button', { name: 'Create token' }).click();
-	await expect(page.getByRole('button', { name: 'Create token' })).toBeHidden();
-	await expect.poll(() => layerInk(page, TOKEN_LAYER)).toBeGreaterThan(0);
-}
-
-function detailsSection(page: Page) {
-	return page.getByRole('region', { name: 'Selected token' }).first();
-}
-
-async function openEditor(page: Page) {
-	await page.getByRole('button', { name: 'Edit token' }).first().click();
-	await expect(page.getByRole('button', { name: 'Save changes' })).toBeVisible();
-}
+const TOKEN_LAYER = LAYER.tokens;
 
 /**
  * What size the room believes this token is, read back through the edit
@@ -125,40 +49,24 @@ async function clickAway(page: Page) {
 	await page.mouse.click(5, 5);
 }
 
-async function save(page: Page) {
-	await page.getByRole('button', { name: 'Save changes' }).click();
-	await expect(page.getByRole('button', { name: 'Save changes' })).toBeHidden();
-}
-
-// Size and owner used to be settable only after the fact — a token was
-// born 1x1 and unowned, and a GM prepping an encounter had to create
-// each one and then edit it again. Both are now on the creation form.
-test('a GM gives a token its size and owner as it is created', async ({ browser }) => {
-	const gm = await openRoomAsGM(browser, 'Token Create Details');
+test('a GM gives a token its size and owner as it is created', async ({ table }) => {
+	const gm = table.gm;
 	// Bob joins first: the picker offers whoever is connected, and someone
 	// who hasn't arrived yet isn't.
-	const player = await joinRoomAsPlayer(browser, gm.slug);
+	const player = await table.join();
 
-	await gm.page.getByRole('button', { name: 'New token' }).click();
-	await gm.page.getByLabel('Name').fill("Bob's Fighter");
-	await gm.page.getByRole('button', { name: 'Large (2×2 squares)' }).click();
-	await gm.page.getByLabel('Owner').selectOption({ label: 'Bob' });
-	await gm.page.getByRole('button', { name: 'Create token' }).click();
-	await expect(gm.page.getByRole('button', { name: 'Create token' })).toBeHidden();
-	await expect.poll(() => layerInk(gm.page, TOKEN_LAYER)).toBeGreaterThan(0);
-
-	const box = await canvasBox(gm.page);
-	const spawn = spawnCentre(box);
-	await gm.page.mouse.click(box.x + spawn.x, box.y + spawn.y);
-	await expect(detailsSection(gm.page)).toContainText("Bob's Fighter");
+	const spawn = await createToken(gm.page, "Bob's Fighter", {
+		size: 'Large (2×2 squares)',
+		owner: 'Bob'
+	});
+	await selectToken(gm.page, spawn, "Bob's Fighter");
 
 	// Whose token it is has to be legible to the room, not just to the GM
 	// who assigned it — that is the whole point of an owner, and the
 	// Player's client resolves the id through the same roster.
-	await expect(detailsSection(gm.page)).toContainText("Bob's token");
+	await expect(detailsPanel(gm.page)).toContainText("Bob's token");
 	await expect.poll(() => layerInk(player.page, TOKEN_LAYER)).toBeGreaterThan(0);
-	await player.page.mouse.click(box.x + spawn.x, box.y + spawn.y);
-	await expect(detailsSection(player.page)).toContainText("Bob's token");
+	await selectToken(player.page, spawn, "Bob's token");
 
 	// Handing it back is a real edit, so an owner has to be removable —
 	// the update carries the field every time rather than only when it
@@ -166,15 +74,12 @@ test('a GM gives a token its size and owner as it is created', async ({ browser 
 	await openEditor(gm.page);
 	await expect(gm.page.getByLabel('Owner')).toHaveValue(/.+/);
 	await gm.page.getByLabel('Owner').selectOption({ label: 'Nobody (monster or prop)' });
-	await save(gm.page);
+	await saveEditor(gm.page);
 
-	await expect(detailsSection(gm.page)).not.toContainText("Bob's token");
-	await expect(detailsSection(player.page)).not.toContainText("Bob's token");
+	await expect(detailsPanel(gm.page)).not.toContainText("Bob's token");
+	await expect(detailsPanel(player.page)).not.toContainText("Bob's token");
 	// Still selected and still 2x2 — clearing the owner changed one field.
 	await expectSize(gm.page, 'Large (2×2 squares)');
-
-	await gm.context.close();
-	await player.context.close();
 });
 
 // The picker offers who's at the table rather than the room's whole
@@ -187,9 +92,9 @@ test('a GM gives a token its size and owner as it is created', async ({ browser 
 // sends the owner every time and a missing option would make the browser
 // fall back to "Nobody" and quietly unassign them on the next save.
 test('the owner picker offers who is connected, and keeps an owner who leaves', async ({
-	browser
+	table
 }) => {
-	const gm = await openRoomAsGM(browser, 'Token Owner Presence');
+	const gm = table.gm;
 
 	// Alone in the room, and a GM is never offered: owning a token would
 	// grant them nothing they can't already do to every token. So there is
@@ -200,22 +105,15 @@ test('the owner picker offers who is connected, and keeps an owner who leaves', 
 	await expect(gm.page.getByLabel('Owner')).not.toContainText('Alice');
 	await gm.page.getByRole('button', { name: 'Close' }).click();
 
-	const player = await joinRoomAsPlayer(browser, gm.slug);
+	const player = await table.join();
 
-	await gm.page.getByRole('button', { name: 'New token' }).click();
-	await gm.page.getByLabel('Name').fill("Bob's Fighter");
-	await gm.page.getByLabel('Owner').selectOption({ label: 'Bob' });
-	await gm.page.getByRole('button', { name: 'Create token' }).click();
-	await expect(gm.page.getByRole('button', { name: 'Create token' })).toBeHidden();
-	await expect.poll(() => layerInk(gm.page, TOKEN_LAYER)).toBeGreaterThan(0);
-
-	const box = await canvasBox(gm.page);
-	const spawn = spawnCentre(box);
-	await gm.page.mouse.click(box.x + spawn.x, box.y + spawn.y);
-	await expect(detailsSection(gm.page)).toContainText("Bob's token");
+	const spawn = await createToken(gm.page, "Bob's Fighter", { owner: 'Bob' });
+	await selectToken(gm.page, spawn, "Bob's token");
 
 	// Bob shuts his laptop. He's still on the roster — that's a row in the
-	// database — but he is no longer at the table.
+	// database — but he is no longer at the table. This close is the
+	// *action*, not teardown: the fixture closes every context afterwards
+	// anyway, and closing twice is harmless.
 	await player.context.close();
 	await expect(gm.page.getByRole('region', { name: "Who's connected" }).first()).not.toContainText(
 		'Bob'
@@ -228,40 +126,34 @@ test('the owner picker offers who is connected, and keeps an owner who leaves', 
 	// The save that would have silently taken the token off him. Renaming
 	// is the whole intent here; the owner has to come through untouched.
 	await gm.page.getByLabel('Name').fill('Fighter');
-	await save(gm.page);
-	await expect(detailsSection(gm.page)).toContainText('Fighter');
-	await expect(detailsSection(gm.page)).toContainText("Bob's token");
+	await saveEditor(gm.page);
+	await expect(detailsPanel(gm.page)).toContainText('Fighter');
+	await expect(detailsPanel(gm.page)).toContainText("Bob's token");
 
 	// And it's the server's answer too, not just this page's state.
 	await gm.page.reload();
 	await expect(gm.page.locator('canvas').first()).toBeVisible();
-	await gm.page.mouse.click(box.x + spawn.x, box.y + spawn.y);
-	await expect(detailsSection(gm.page)).toContainText("Bob's token");
-
-	await gm.context.close();
+	await selectToken(gm.page, spawn, "Bob's token");
 });
 
-test('a GM renames and resizes a token, and the whole room sees it', async ({ browser }) => {
-	const gm = await openRoomAsGM(browser, 'Token Edit');
-	const player = await joinRoomAsPlayer(browser, gm.slug);
+test('a GM renames and resizes a token, and the whole room sees it', async ({ table }) => {
+	const gm = table.gm;
+	const player = await table.join();
 
-	await createToken(gm.page, 'Goblin');
-	const box = await canvasBox(gm.page);
-	const spawn = spawnCentre(box);
+	const spawn = await createToken(gm.page, 'Goblin');
 	await expect.poll(() => layerInk(player.page, TOKEN_LAYER)).toBeGreaterThan(0);
 	const atOneSquare = await layerInk(player.page, TOKEN_LAYER);
 
-	await gm.page.mouse.click(box.x + spawn.x, box.y + spawn.y);
-	await expect(detailsSection(gm.page)).toContainText('Goblin');
+	await selectToken(gm.page, spawn, 'Goblin');
 
 	await openEditor(gm.page);
 	await gm.page.getByLabel('Name').fill('Hobgoblin');
 	await gm.page.getByRole('button', { name: 'Large (2×2 squares)' }).click();
-	await save(gm.page);
+	await saveEditor(gm.page);
 
 	// The strip reads from room.tokens, so it re-renders from the
 	// broadcast rather than from what was typed.
-	await expect(detailsSection(gm.page)).toContainText('Hobgoblin');
+	await expect(detailsPanel(gm.page)).toContainText('Hobgoblin');
 
 	// A 2x2 token covers four times the ground, on the map of someone who
 	// only knows through the socket.
@@ -271,123 +163,99 @@ test('a GM renames and resizes a token, and the whole room sees it', async ({ br
 	await player.page.reload();
 	await expect(player.page.locator('canvas').first()).toBeVisible();
 	await expect.poll(() => layerInk(player.page, TOKEN_LAYER)).toBeGreaterThan(atOneSquare * 2);
-
-	await gm.context.close();
-	await player.context.close();
 });
 
 // The two halves of the hidden line, which are the only place this
 // command needs to know what the token used to be.
 test('hiding a token takes it off the players map, and revealing it puts it back', async ({
-	browser
+	table
 }) => {
-	const gm = await openRoomAsGM(browser, 'Token Hide');
-	const player = await joinRoomAsPlayer(browser, gm.slug);
+	const gm = table.gm;
+	const player = await table.join();
 
-	await createToken(gm.page, 'Ambusher');
-	const box = await canvasBox(gm.page);
-	const spawn = spawnCentre(box);
+	const spawn = await createToken(gm.page, 'Ambusher');
 	await expect.poll(() => layerInk(player.page, TOKEN_LAYER)).toBeGreaterThan(0);
 
-	await gm.page.mouse.click(box.x + spawn.x, box.y + spawn.y);
-	await expect(detailsSection(gm.page)).toContainText('Ambusher');
+	await selectToken(gm.page, spawn, 'Ambusher');
 
 	await openEditor(gm.page);
 	await gm.page.getByRole('button', { name: 'Hidden from players' }).click();
-	await save(gm.page);
+	await saveEditor(gm.page);
 
 	// Gone for the player. The GM keeps it — dimmed, but still theirs to
 	// see — which is what stops this passing for the wrong reason.
 	await expect.poll(() => layerInk(player.page, TOKEN_LAYER)).toBe(0);
 	expect(await layerInk(gm.page, TOKEN_LAYER)).toBeGreaterThan(0);
-	await expect(detailsSection(gm.page)).toContainText('hidden from players');
+	await expect(detailsPanel(gm.page)).toContainText('hidden from players');
 
 	// Back the other way. The player was never told the token existed, so
 	// what arrives has to be the whole thing rather than a change to
 	// something they are holding.
 	await openEditor(gm.page);
 	await gm.page.getByRole('button', { name: 'Visible', exact: true }).click();
-	await save(gm.page);
+	await saveEditor(gm.page);
 
 	await expect.poll(() => layerInk(player.page, TOKEN_LAYER)).toBeGreaterThan(0);
-
-	await gm.context.close();
-	await player.context.close();
 });
 
-test('a player is offered no way to edit a token they can select', async ({ browser }) => {
-	const gm = await openRoomAsGM(browser, 'Token Edit Player');
-	const player = await joinRoomAsPlayer(browser, gm.slug);
+test('a player is offered no way to edit a token they can select', async ({ table }) => {
+	const gm = table.gm;
+	const player = await table.join();
 
-	await createToken(gm.page, 'Goblin');
-	const box = await canvasBox(player.page);
-	const spawn = spawnCentre(box);
+	const spawn = await createToken(gm.page, 'Goblin');
 	await expect.poll(() => layerInk(player.page, TOKEN_LAYER)).toBeGreaterThan(0);
-
-	await player.page.mouse.click(box.x + spawn.x, box.y + spawn.y);
 
 	// Selecting works for anyone — asserted first, so a missed click can't
 	// make the absent button look like a permission check.
-	await expect(detailsSection(player.page)).toContainText('Goblin');
+	await selectToken(player.page, spawn, 'Goblin');
 	await expect(player.page.getByRole('button', { name: 'Edit token' })).toBeHidden();
-
-	await gm.context.close();
-	await player.context.close();
 });
 
 // The three ways out that keep the token as it was, and the one that
 // asks. The failure this is built around: an edit typed, the dialog
 // dismissed, and the work gone without anything having said so.
-test('cancelling an edit leaves the token alone, whichever way you cancel', async ({ browser }) => {
-	const gm = await openRoomAsGM(browser, 'Token Edit Cancel');
+test('cancelling an edit leaves the token alone, whichever way you cancel', async ({ table }) => {
+	const gm = table.gm;
 
-	await createToken(gm.page, 'Goblin');
-	const box = await canvasBox(gm.page);
-	const spawn = spawnCentre(box);
-	await gm.page.mouse.click(box.x + spawn.x, box.y + spawn.y);
-	await expect(detailsSection(gm.page)).toContainText('Goblin');
+	const spawn = await createToken(gm.page, 'Goblin');
+	await selectToken(gm.page, spawn, 'Goblin');
 
 	// The Cancel button.
 	await openEditor(gm.page);
 	await gm.page.getByLabel('Name').fill('Cancelled by button');
 	await gm.page.getByRole('button', { name: 'Cancel' }).click();
 	await expect(gm.page.getByRole('button', { name: 'Save changes' })).toBeHidden();
-	await expect(detailsSection(gm.page)).toContainText('Goblin');
+	await expect(detailsPanel(gm.page)).toContainText('Goblin');
 
 	// Escape.
 	await openEditor(gm.page);
 	await gm.page.getByLabel('Name').fill('Cancelled by escape');
 	await gm.page.keyboard.press('Escape');
 	await expect(gm.page.getByRole('button', { name: 'Save changes' })).toBeHidden();
-	await expect(detailsSection(gm.page)).toContainText('Goblin');
+	await expect(detailsPanel(gm.page)).toContainText('Goblin');
 
 	// The X in the corner.
 	await openEditor(gm.page);
 	await gm.page.getByLabel('Name').fill('Cancelled by the X');
 	await gm.page.getByRole('button', { name: 'Close' }).click();
 	await expect(gm.page.getByRole('button', { name: 'Save changes' })).toBeHidden();
-	await expect(detailsSection(gm.page)).toContainText('Goblin');
+	await expect(detailsPanel(gm.page)).toContainText('Goblin');
 
 	// Reopening shows the token, not the last thing typed into it — the
 	// form is filled from the token every time it opens.
 	await openEditor(gm.page);
 	await expect(gm.page.getByLabel('Name')).toHaveValue('Goblin');
 	await gm.page.getByRole('button', { name: 'Cancel' }).click();
-
-	await gm.context.close();
 });
 
 // Clicking away is the ambiguous one — as often a misclick as a
 // decision — so it asks instead of guessing, and asks in place of the
 // form rather than on top of it.
-test('clicking away from an edited form asks, with one dialog on screen', async ({ browser }) => {
-	const gm = await openRoomAsGM(browser, 'Token Edit Dismiss');
+test('clicking away from an edited form asks, with one dialog on screen', async ({ table }) => {
+	const gm = table.gm;
 
-	await createToken(gm.page, 'Goblin');
-	const box = await canvasBox(gm.page);
-	const spawn = spawnCentre(box);
-	await gm.page.mouse.click(box.x + spawn.x, box.y + spawn.y);
-	await expect(detailsSection(gm.page)).toContainText('Goblin');
+	const spawn = await createToken(gm.page, 'Goblin');
+	await selectToken(gm.page, spawn, 'Goblin');
 
 	// Nothing typed: clicking away is just closing, with nothing to ask.
 	await openEditor(gm.page);
@@ -413,7 +281,7 @@ test('clicking away from an edited form asks, with one dialog on screen', async 
 	// way out of the editor.
 	await clickAway(gm.page);
 	await gm.page.getByRole('button', { name: 'Discard changes' }).click();
-	await expect(detailsSection(gm.page)).toContainText('Goblin');
+	await expect(detailsPanel(gm.page)).toContainText('Goblin');
 
 	// And saving from it keeps what was typed, which is the whole reason
 	// the values have to survive the swap.
@@ -421,39 +289,31 @@ test('clicking away from an edited form asks, with one dialog on screen', async 
 	await gm.page.getByLabel('Name').fill('Hobgoblin');
 	await clickAway(gm.page);
 	await gm.page.getByRole('button', { name: 'Save changes' }).click();
-	await expect(detailsSection(gm.page)).toContainText('Hobgoblin');
-
-	await gm.context.close();
+	await expect(detailsPanel(gm.page)).toContainText('Hobgoblin');
 });
 
 // Token edits are undoable now, which is what makes every decision
 // above recoverable rather than final.
-test('an edit can be undone and redone, and the room sees both', async ({ browser }) => {
-	const gm = await openRoomAsGM(browser, 'Token Edit Undo');
-	const player = await joinRoomAsPlayer(browser, gm.slug);
+test('an edit can be undone and redone, and the room sees both', async ({ table }) => {
+	const gm = table.gm;
+	const player = await table.join();
 
-	await createToken(gm.page, 'Goblin');
-	const box = await canvasBox(gm.page);
-	const spawn = spawnCentre(box);
-	await gm.page.mouse.click(box.x + spawn.x, box.y + spawn.y);
-	await player.page.mouse.click(box.x + spawn.x, box.y + spawn.y);
-	await expect(detailsSection(player.page)).toContainText('Goblin');
+	const spawn = await createToken(gm.page, 'Goblin');
+	await selectToken(gm.page, spawn, 'Goblin');
+	await selectToken(player.page, spawn, 'Goblin');
 
 	await openEditor(gm.page);
 	await gm.page.getByLabel('Name').fill('Hobgoblin');
-	await save(gm.page);
-	await expect(detailsSection(player.page)).toContainText('Hobgoblin');
+	await saveEditor(gm.page);
+	await expect(detailsPanel(player.page)).toContainText('Hobgoblin');
 
 	// Ctrl+Z puts the old name back for the whole room, not just for the
 	// person who pressed it.
 	await gm.page.keyboard.press('Control+z');
-	await expect(detailsSection(gm.page)).toContainText('Goblin');
-	await expect(detailsSection(player.page)).toContainText('Goblin');
+	await expect(detailsPanel(gm.page)).toContainText('Goblin');
+	await expect(detailsPanel(player.page)).toContainText('Goblin');
 
 	await gm.page.keyboard.press('Control+Shift+z');
-	await expect(detailsSection(gm.page)).toContainText('Hobgoblin');
-	await expect(detailsSection(player.page)).toContainText('Hobgoblin');
-
-	await gm.context.close();
-	await player.context.close();
+	await expect(detailsPanel(gm.page)).toContainText('Hobgoblin');
+	await expect(detailsPanel(player.page)).toContainText('Hobgoblin');
 });

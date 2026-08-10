@@ -6,7 +6,7 @@ import {
 	openRoomMenu,
 	openSeatPicker,
 	takeSeat
-} from './room';
+} from './fixtures/room';
 
 // Taking a seat, from a device that doesn't remember you.
 //

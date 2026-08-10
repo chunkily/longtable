@@ -1,5 +1,5 @@
 import { expect, test, type Browser, type Locator, type Page } from '@playwright/test';
-import { joinAsNewPlayer, openNewSceneDialog } from './room';
+import { joinAsNewPlayer, openNewSceneDialog } from './fixtures/room';
 
 // The turn order, driven from two browsers: half of what it claims is
 // about what the *Player* is shown — an order they can read, minus the

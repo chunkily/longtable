@@ -1,5 +1,10 @@
 import { expect, test, type Page, type WebSocketRoute } from '@playwright/test';
-import { TOOLBAR_CLEARANCE_Y, mapGestureOrigin, openNewSceneDialog, selectTool } from './room';
+import {
+	TOOLBAR_CLEARANCE_Y,
+	mapGestureOrigin,
+	openNewSceneDialog,
+	selectTool
+} from './fixtures/room';
 
 // Drawing renders locally the moment you let go, without waiting for the
 // server. Timing assertions would only prove that the round trip is

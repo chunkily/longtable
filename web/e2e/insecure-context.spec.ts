@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { mapGestureOrigin, openNewSceneDialog, selectTool } from './room';
+import { mapGestureOrigin, openNewSceneDialog, selectTool } from './fixtures/room';
 
 // Everything a Player does on a LAN address, faked on localhost.
 //

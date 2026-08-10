@@ -1,7 +1,47 @@
-# E2E image fixtures
+# What the specs are built on
 
-Real, small PNGs for the specs that upload something. Load them with the `fixture()` helper in
-`../fixtures.ts`, which resolves paths against the module rather than the working directory.
+Everything in `e2e/` that isn't a spec lives here, so the folder above is exactly the list of
+tests. Two kinds of thing, and they share a name because both are what a spec is handed before it
+starts:
+
+| File | What it gives you |
+| --- | --- |
+| `table.ts` | the Playwright fixture: `{ table }` is a room with a scene and a GM, `table.join(name)` adds a person on their own device |
+| `map.ts` | the canvas — ink probes, spawn maths, drags, and the token gestures (`createToken`, `selectToken`, `openEditor`) |
+| `room.ts` | the room's chrome — tools, the menu, the join flow |
+| `images.ts` | `fixture('goblin.png')`, an absolute path to one of the PNGs beside it |
+| `*.png` | the images themselves — see below, both rules matter |
+
+**Start a new spec with `table.ts`, not with a neighbouring spec.** Roughly two thirds of the
+specs predate this folder and still build their own browser contexts by hand, closing them on the
+last line — which is the one line that *doesn't* run when an assertion fails. A leaked context
+keeps a live socket and a connected participant for the rest of the run, so one real failure makes
+everything after it stranger. The fixture's teardown runs whatever the outcome. Copying an old
+spec copies the problem.
+
+```ts
+import { expect, test } from './fixtures/table';
+import { createToken, selectToken, tokenInkAt } from './fixtures/map';
+
+test('a token can be moved', async ({ table }) => {
+	const player = await table.join();
+	const spawn = await createToken(table.gm.page, 'Goblin');
+	// no context bookkeeping, and no teardown to forget
+});
+```
+
+`test.use({ scene: false })` for a room with no scene on it.
+
+The waits in `map.ts` are the ones that turned out to be right, and the specs that were flaky were
+the copies that guessed: `createToken` waits for ink *at the square the token landed on* rather
+than anywhere on the layer, and `selectToken` clicks until the panel names the token rather than
+once, because Konva only fires `click` when both halves land on the same node and `renderTokens`
+rebuilds every group whenever `room.tokens` changes.
+
+# The image fixtures
+
+Real, small PNGs for the specs that upload something. Load them with the `fixture()` helper in `images.ts`, which resolves paths against the module
+rather than the working directory.
 
 All 8x8 except `wide-map.png`, which is 40x12 because its _shape_ is what it's for: the assets
 page reads a staged file's dimensions and questions whether it's really the kind the open tab

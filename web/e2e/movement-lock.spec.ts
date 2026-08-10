@@ -1,5 +1,5 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
-import { joinAsNewPlayer, openNewSceneDialog, openRoomMenu } from './room';
+import { joinAsNewPlayer, openNewSceneDialog, openRoomMenu } from './fixtures/room';
 
 // The room's owner-only movement setting. Two browsers throughout: the
 // claim is about what a *Player* can drag while a GM watches, and the

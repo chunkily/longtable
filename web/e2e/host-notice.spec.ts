@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { openNewSceneDialog } from './room';
+import { openNewSceneDialog } from './fixtures/room';
 
 // The Host's banner. The server half — a flag becoming an endpoint — is
 // covered by `internal/api/notice_test.go`; what needs a browser is the

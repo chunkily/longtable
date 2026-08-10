@@ -1,5 +1,5 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
-import { joinAsGM, joinAsNewPlayer } from './room';
+import { joinAsGM, joinAsNewPlayer } from './fixtures/room';
 
 // The home page lists the rooms this browser has been in, and nothing
 // else. The half that needs a real browser is the privacy one: a second

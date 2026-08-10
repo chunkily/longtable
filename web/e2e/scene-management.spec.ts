@@ -1,6 +1,11 @@
 import { expect, test, type Page, type Browser } from '@playwright/test';
-import { fixture } from './fixtures';
-import { joinAsNewPlayer, openAssetsPage, openNewSceneDialog, openScenesDialog } from './room';
+import { fixture } from './fixtures/images';
+import {
+	joinAsNewPlayer,
+	openAssetsPage,
+	openNewSceneDialog,
+	openScenesDialog
+} from './fixtures/room';
 
 // Reaching a scene other than the one you just made. Before this there
 // was no switcher at all, which is why scene.create used to activate

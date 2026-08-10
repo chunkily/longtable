@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
-import { fixture } from './fixtures';
-import { openAssetsPage, openNewSceneDialog } from './room';
+import { fixture } from './fixtures/images';
+import { openAssetsPage, openNewSceneDialog } from './fixtures/room';
 
 // Assets are prepared on their own page and only picked in the room, so
 // this covers the seam between the two: what the assets page stores has

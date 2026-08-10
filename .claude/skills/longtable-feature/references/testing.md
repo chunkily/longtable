@@ -97,7 +97,25 @@ That spec is deliberately thin, because the arithmetic behind the gesture lives 
 put the maths in a plain module so the part that has to be *correct* is the part that's cheap to
 test, and leave the spec to prove the wiring.
 
-The shared helpers live in **`e2e/room.ts`** — import them, don't re-declare them. They used to be
+**Everything that isn't a spec lives in `e2e/fixtures/`**, so the `e2e/` folder itself is exactly
+the list of tests. Its README is the thing to read before writing a new spec — three shared
+modules, the first two newer than most of the specs:
+
+- **`e2e/fixtures/table.ts`** — the `test` fixture. `{ table }` gives a room with a scene and a GM
+  (`table.gm`), plus `table.join(name)` for each additional person on their own context. **Use it
+  rather than building contexts by hand**: its teardown runs after a failure, and the
+  `await gm.context.close()` on a test's last line does not — a failing test used to leak its
+  contexts, each keeping a live socket and a connected participant for the rest of the run.
+  `test.use({ scene: false })` for a room with no scene.
+- **`e2e/fixtures/map.ts`** — everything about the canvas: `LAYER`, `layerInk`, `inkAt`/`tokenInkAt`,
+  `canvasBox`, `spawnCentre`, `dragToken`, `settleAt`, `watchInkAt`, `createToken`, `selectToken`,
+  `openEditor`, `saveEditor`, `detailsPanel`, `trackerBox`. The waits in here are the ones that
+  were right; the flaky specs were the copies that guessed. `createToken` returns the point the
+  token landed on and waits for ink *there* rather than anywhere on the layer, and `selectToken`
+  clicks until the panel names the token rather than once.
+- **`e2e/fixtures/room.ts`** — driving the room's chrome: `selectTool`, the menu, the join flow.
+
+Import them, don't re-declare them. They used to be
 copy-pasted per spec, which stopped working the moment the full-bleed layout put tools behind a
 family and scene actions behind a menu: "click the button called X" became two or three steps, in
 twenty files.

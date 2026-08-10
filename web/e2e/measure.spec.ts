@@ -1,5 +1,5 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
-import { joinAsNewPlayer, mapGestureOrigin, openNewSceneDialog, selectTool } from './room';
+import { joinAsNewPlayer, mapGestureOrigin, openNewSceneDialog, selectTool } from './fixtures/room';
 
 // A measurement exists only while someone is dragging it out, and it has
 // to be on everyone's map for those few seconds — neither half of that

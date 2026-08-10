@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { PING_LIFETIME_MS, PING_PULSE_INTERVAL_MS } from '../src/lib/ping';
-import { openNewSceneDialog } from './room';
+import { openNewSceneDialog } from './fixtures/room';
 
 // A ping pulses several times over a few seconds rather than flashing
 // once, so it still catches someone who glanced away at the wrong

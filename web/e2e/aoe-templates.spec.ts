@@ -5,7 +5,7 @@ import {
 	mapGestureOrigin,
 	openNewSceneDialog,
 	selectTool
-} from './room';
+} from './fixtures/room';
 
 // Area templates are the measuring tool's gesture wearing a different
 // shape: ephemeral, one per participant, gone when the drag ends. None

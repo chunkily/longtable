@@ -1,5 +1,5 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
-import { joinAsNewPlayer, openNewSceneDialog } from './room';
+import { joinAsNewPlayer, openNewSceneDialog } from './fixtures/room';
 
 // A Player putting their own tokens on the map, and taking them off
 // again. Two browsers throughout: half of what's being claimed is that

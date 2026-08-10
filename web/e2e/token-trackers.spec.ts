@@ -1,151 +1,37 @@
-import { expect, test, type Browser, type Page } from '@playwright/test';
-import { joinAsNewPlayer, openNewSceneDialog } from './room';
+import type { Page } from '@playwright/test';
+import { expect, test } from './fixtures/table';
+import {
+	GRID,
+	LAYER,
+	canvasBox,
+	detailsPanel,
+	layerInk,
+	openEditor,
+	saveEditor,
+	selectToken,
+	spawnCentre,
+	trackerBox
+} from './fixtures/map';
 
 // Hit points, armour class and conditions on a token — and the first
 // thing on a token that someone other than the GM may change, which is
 // the half of this that needs two browsers.
 //
 // The hover card has no DOM behind it (it's a Konva label), so it is
-// read off its own canvas layer the way the selection ring is.
-
-// One <canvas> per Konva layer, in the order game-canvas.svelte adds
-// them: map, grid, fog, drawings, tokens, pings, measurements, preview,
-// selection, hover. Index 9 is the hover card, and it is the only thing
-// on that layer — so any ink there at all is the card being up.
-const TOKEN_LAYER = 4;
-const HOVER_LAYER = 9;
-const GRID = 70;
-
-async function layerInk(page: Page, layer: number): Promise<number> {
-	return page.evaluate((index) => {
-		const canvas = document.querySelectorAll('canvas')[index] as HTMLCanvasElement;
-		const context = canvas.getContext('2d')!;
-		const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
-
-		let opaque = 0;
-		for (let i = 3; i < data.length; i += 4) if (data[i] > 0) opaque++;
-		return opaque;
-	}, layer);
-}
-
-async function canvasBox(page: Page) {
-	const box = await page.locator('canvas').first().boundingBox();
-	if (!box) throw new Error('canvas has no bounding box');
-	return box;
-}
-
-// Where a freshly created token lands — the cell at the centre of the
-// creator's view, on a scene still at the identity transform.
-function spawnCentre(box: { width: number; height: number }) {
-	const cell = {
-		x: Math.round(box.width / 2 / GRID),
-		y: Math.round(box.height / 2 / GRID)
-	};
-	return { x: cell.x * GRID + GRID / 2, y: cell.y * GRID + GRID / 2 };
-}
-
-async function openRoomAsGM(browser: Browser, roomName: string) {
-	const context = await browser.newContext();
-	const page = await context.newPage();
-
-	await page.goto('/');
-	await page.getByLabel('Room name').fill(roomName);
-	await page.getByLabel('Your name (GM)').fill('Alice');
-	await page.getByLabel('GM password').fill('hunter2');
-	await page.getByRole('button', { name: 'Create room' }).click();
-
-	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
-	const slug = new URL(page.url()).pathname.split('/').pop()!;
-
-	await openNewSceneDialog(page);
-	await page.getByLabel('Name').fill('Map');
-	await page.getByRole('button', { name: 'Create scene' }).click();
-	await expect(page.locator('canvas').first()).toBeVisible();
-
-	return { context, page, slug };
-}
-
-async function joinRoomAsPlayer(browser: Browser, slug: string) {
-	const context = await browser.newContext();
-	const page = await context.newPage();
-
-	await page.goto(`/r/${slug}`);
-	await joinAsNewPlayer(page, 'Bob');
-	await expect(page.locator('canvas').first()).toBeVisible();
-
-	return { context, page };
-}
-
-function detailsSection(page: Page) {
-	return page.getByRole('region', { name: 'Selected token' }).first();
-}
-
-async function openEditor(page: Page) {
-	await page.getByRole('button', { name: 'Edit token' }).first().click();
-	await expect(page.getByRole('button', { name: 'Save changes' })).toBeVisible();
-}
-
-async function save(page: Page) {
-	await page.getByRole('button', { name: 'Save changes' }).click();
-	await expect(page.getByRole('button', { name: 'Save changes' })).toBeHidden();
-}
+// read off its own canvas layer the way the selection ring is. Index 9
+// is the only thing on that layer, so any ink there at all is the card
+// being up.
+const HOVER_LAYER = LAYER.hover;
+const TOKEN_LAYER = LAYER.tokens;
 
 async function addCondition(page: Page, text: string) {
 	await page.getByLabel('Conditions').fill(text);
 	await page.getByRole('button', { name: 'Add condition' }).click();
 }
 
-// A tracker's box in the details panel — the same element whether this
-// client may edit the token or not, readonly toggling only whether it
-// takes a step. Scoped to the panel and named "… current value" so it
-// can't collide with the dialog's own "Tracker N value" fields — the
-// panel is rendered twice (desktop sidebar and mobile sheet) and the
-// dialog may be open at the same time.
-//
-// `label` is whatever the slot is called, or "Tracker N" while it has no
-// label yet, which is what the panel shows in that case too.
-function trackerBox(page: Page, label: string) {
-	return detailsSection(page).getByLabel(`${label} current value`);
-}
-
-// Selects the token, waiting for it to be drawn first.
-//
-// **The canvas box is re-read from the page being clicked, never shared
-// between two of them.** That used to be load-bearing: a GM's toolbar
-// carried a row a Player's didn't, so the two canvases sat 44px apart
-// vertically — most of a grid square — and reusing one page's box on the
-// other silently clicked the wrong cell. The full-bleed layout floats the
-// toolbar over the map instead of pushing it down, and `New token` is no
-// longer GM-only anyway, so the two boxes now agree. Keep re-reading
-// regardless: it costs nothing, and the property it relies on is exactly
-// what the next layout change breaks silently.
-//
-// The click is then made inside a poll rather than once, because a
-// single one is unreliable for a separate reason: Konva fires `click`
-// only when mousedown and mouseup land on the same node, and
-// renderTokens destroys and rebuilds every token group on any change to
-// room.tokens — so a rebuild landing between the two halves of a click
-// swallows it (see references/canvas.md). The window is about a frame
-// wide and the human answer is to click again, which is what this does.
-//
-// Every observing page also selects *before* the edit it is watching
-// for, never after. That dodges the worst of that race, and makes the
-// assertion stronger: the panel has to update from the event rather than
-// merely read correctly when clicked again.
-async function selectToken(page: Page, spawn: { x: number; y: number }, name: string) {
-	await expect.poll(() => layerInk(page, TOKEN_LAYER)).toBeGreaterThan(0);
-	const box = await canvasBox(page);
-	await expect
-		.poll(async () => {
-			await page.mouse.click(box.x + spawn.x, box.y + spawn.y);
-			return (await detailsSection(page).textContent()) ?? '';
-		})
-		.toContain(name);
-}
-
-test('a GM sets trackers and conditions, and the whole room can read them', async ({ browser }) => {
-	const gm = await openRoomAsGM(browser, 'Token Trackers');
-	const player = await joinRoomAsPlayer(browser, gm.slug);
+test('a GM sets trackers and conditions, and the whole room can read them', async ({ table }) => {
+	const gm = table.gm;
+	const player = await table.join();
 
 	await gm.page.getByRole('button', { name: 'New token' }).click();
 	await gm.page.getByLabel('Name').fill('Goblin');
@@ -167,7 +53,7 @@ test('a GM sets trackers and conditions, and the whole room can read them', asyn
 	await gm.page.getByLabel('Tracker 2 label').fill('AC');
 	await gm.page.getByLabel('Tracker 2 value').fill('15');
 	await addCondition(gm.page, 'Prone');
-	await save(gm.page);
+	await saveEditor(gm.page);
 
 	// The panel reads from room.tokens, so this is the broadcast coming
 	// back rather than what was typed. The GM may edit this token, so
@@ -176,13 +62,13 @@ test('a GM sets trackers and conditions, and the whole room can read them', asyn
 	await expect(trackerBox(gm.page, 'HP')).toHaveValue('7');
 	await expect(trackerBox(gm.page, 'AC')).toHaveValue('15');
 	await expect(trackerBox(gm.page, 'Tracker 3')).toHaveValue('');
-	await expect(detailsSection(gm.page)).toContainText('Prone');
+	await expect(detailsPanel(gm.page)).toContainText('Prone');
 
 	// The Player owns nothing here, so their boxes are readonly — same
 	// element, same aria-label, just one that won't take a step from them.
 	await expect(trackerBox(player.page, 'HP')).toHaveValue('7');
 	await expect(trackerBox(player.page, 'AC')).toHaveValue('15');
-	await expect(detailsSection(player.page)).toContainText('Prone');
+	await expect(detailsPanel(player.page)).toContainText('Prone');
 
 	// The other half of the acceptance criteria: the same numbers readable
 	// on hover, without going near the details panel. The card has a layer
@@ -199,9 +85,6 @@ test('a GM sets trackers and conditions, and the whole room can read them', asyn
 
 	await player.page.mouse.move(playerBox.x + spawn.x, playerBox.y + spawn.y);
 	await expect.poll(() => layerInk(player.page, HOVER_LAYER)).toBeGreaterThan(0);
-
-	await gm.context.close();
-	await player.context.close();
 });
 
 // Damage is what changes every round, so changing it doesn't cost a
@@ -210,10 +93,10 @@ test('a GM sets trackers and conditions, and the whole room can read them', asyn
 // to be filled in from what the client holds — token.update clears what
 // it isn't told, so a bug here renames the token to nothing.
 test('a number typed into the panel reaches the room, and takes nothing else with it', async ({
-	browser
+	table
 }) => {
-	const gm = await openRoomAsGM(browser, 'Token Trackers Inline');
-	const player = await joinRoomAsPlayer(browser, gm.slug);
+	const gm = table.gm;
+	const player = await table.join();
 
 	await gm.page.getByRole('button', { name: 'New token' }).click();
 	await gm.page.getByLabel('Name').fill('Goblin');
@@ -230,7 +113,7 @@ test('a number typed into the panel reaches the room, and takes nothing else wit
 	// arrives, and a text box for it here would double the strip's width.
 	await openEditor(gm.page);
 	await gm.page.getByLabel('Tracker 1 label').fill('HP');
-	await save(gm.page);
+	await saveEditor(gm.page);
 
 	// The value is not. Committed on blur rather than on every keystroke,
 	// so typing "12" doesn't send a 1 on the way past.
@@ -243,7 +126,7 @@ test('a number typed into the panel reaches the room, and takes nothing else wit
 	// it: the name, and the size that came from a picker in another form.
 	// The size is read back through the editor, since the panel no longer
 	// spells it out.
-	await expect(detailsSection(gm.page)).toContainText('Goblin');
+	await expect(detailsPanel(gm.page)).toContainText('Goblin');
 	await openEditor(gm.page);
 	await expect(gm.page.getByRole('button', { name: 'Large (2×2 squares)' })).toHaveAttribute(
 		'aria-pressed',
@@ -268,9 +151,6 @@ test('a number typed into the panel reaches the room, and takes nothing else wit
 	await expect(gm.page.locator('canvas').first()).toBeVisible();
 	await selectToken(gm.page, spawn, 'Goblin');
 	await expect(trackerBox(gm.page, 'HP')).toHaveValue('');
-
-	await gm.context.close();
-	await player.context.close();
 });
 
 // The step buttons exist only while a box has focus, which is what lets
@@ -280,10 +160,10 @@ test('a number typed into the panel reaches the room, and takes nothing else wit
 // without re-focusing — "the ogre takes 7, then 3" is one interaction,
 // and a panel that closed on the first click would make it two.
 test('the step control appears on focus, adjusts by what it is told, and survives a second click', async ({
-	browser
+	table
 }) => {
-	const gm = await openRoomAsGM(browser, 'Token Trackers Step');
-	const player = await joinRoomAsPlayer(browser, gm.slug);
+	const gm = table.gm;
+	const player = await table.join();
 
 	await gm.page.getByRole('button', { name: 'New token' }).click();
 	await gm.page.getByLabel('Name').fill('Ogre');
@@ -297,7 +177,7 @@ test('the step control appears on focus, adjusts by what it is told, and survive
 
 	await openEditor(gm.page);
 	await gm.page.getByLabel('Tracker 1 label').fill('HP');
-	await save(gm.page);
+	await saveEditor(gm.page);
 
 	const decrease = gm.page.getByRole('button', { name: 'Decrease HP' });
 	const increase = gm.page.getByRole('button', { name: 'Increase HP' });
@@ -345,18 +225,15 @@ test('the step control appears on focus, adjusts by what it is told, and survive
 	await expect(gm.page.locator('canvas').first()).toBeVisible();
 	await selectToken(gm.page, spawn, 'Ogre');
 	await expect(trackerBox(gm.page, 'HP')).toHaveValue('28');
-
-	await gm.context.close();
-	await player.context.close();
 });
 
 // A Player who owns the token gets the boxes too — that's the whole
 // point of the per-field rule, and the panel is where they'll use it.
 test('a player types their own damage into the panel without opening anything', async ({
-	browser
+	table
 }) => {
-	const gm = await openRoomAsGM(browser, 'Token Trackers Inline Owner');
-	const player = await joinRoomAsPlayer(browser, gm.slug);
+	const gm = table.gm;
+	const player = await table.join();
 
 	await gm.page.getByRole('button', { name: 'New token' }).click();
 	await gm.page.getByLabel('Name').fill("Bob's Fighter");
@@ -376,16 +253,13 @@ test('a player types their own damage into the panel without opening anything', 
 
 	await expect(trackerBox(gm.page, 'Tracker 1')).toHaveValue('5');
 	// The name a Player never had a box for is untouched by their edit.
-	await expect(detailsSection(gm.page)).toContainText("Bob's Fighter");
-
-	await gm.context.close();
-	await player.context.close();
+	await expect(detailsPanel(gm.page)).toContainText("Bob's Fighter");
 });
 
 // A token with nothing set on it gets no card, because a card on every
 // token the pointer crossed would make the map unusable mid-fight.
-test('a token with no trackers or conditions shows nothing on hover', async ({ browser }) => {
-	const gm = await openRoomAsGM(browser, 'Token Trackers Empty');
+test('a token with no trackers or conditions shows nothing on hover', async ({ table }) => {
+	const gm = table.gm;
 
 	await gm.page.getByRole('button', { name: 'New token' }).click();
 	await gm.page.getByLabel('Name').fill('Rock');
@@ -400,10 +274,8 @@ test('a token with no trackers or conditions shows nothing on hover', async ({ b
 	// Selecting it proves the pointer really is over the token, so an
 	// empty hover layer can't pass for the wrong reason.
 	await gm.page.mouse.click(box.x + spawn.x, box.y + spawn.y);
-	await expect(detailsSection(gm.page)).toContainText('Rock');
+	await expect(detailsPanel(gm.page)).toContainText('Rock');
 	expect(await layerInk(gm.page, HOVER_LAYER)).toBe(0);
-
-	await gm.context.close();
 });
 
 // The wheel is a step too, so a mouse without a keyboard nearby still
@@ -411,9 +283,9 @@ test('a token with no trackers or conditions shows nothing on hover', async ({ b
 // box has focus, and the by-box itself refuses to scroll below 1, since a
 // step of zero would make the buttons (and the wheel) do nothing.
 test('the wheel steps a focused tracker, and never drops the step size below 1', async ({
-	browser
+	table
 }) => {
-	const gm = await openRoomAsGM(browser, 'Token Trackers Wheel');
+	const gm = table.gm;
 
 	await gm.page.getByRole('button', { name: 'New token' }).click();
 	await gm.page.getByLabel('Name').fill('Troll');
@@ -438,7 +310,7 @@ test('the wheel steps a focused tracker, and never drops the step size below 1',
 			return label.inputValue();
 		})
 		.toBe('HP');
-	await save(gm.page);
+	await saveEditor(gm.page);
 
 	// The relabelled box arriving is the proof the save landed; without
 	// this the next line's failure is a timeout with nothing to read.
@@ -480,16 +352,14 @@ test('the wheel steps a focused tracker, and never drops the step size below 1',
 	await by.hover();
 	await gm.page.mouse.wheel(0, 100);
 	await expect(by).toHaveValue('1');
-
-	await gm.context.close();
 });
 
 // The per-field permission split. An owner tracks their own damage; the
 // name, art, size, owner and visibility stay the GM's, and the form they
 // get says so by not being there.
-test('a player edits the trackers on their own token and nothing else', async ({ browser }) => {
-	const gm = await openRoomAsGM(browser, 'Token Trackers Owner');
-	const player = await joinRoomAsPlayer(browser, gm.slug);
+test('a player edits the trackers on their own token and nothing else', async ({ table }) => {
+	const gm = table.gm;
+	const player = await table.join();
 
 	await gm.page.getByRole('button', { name: 'New token' }).click();
 	await gm.page.getByLabel('Name').fill("Bob's Fighter");
@@ -515,7 +385,7 @@ test('a player edits the trackers on their own token and nothing else', async ({
 	await player.page.getByLabel('Tracker 1 label').fill('HP');
 	await player.page.getByLabel('Tracker 1 value').fill('4');
 	await addCondition(player.page, 'Poisoned');
-	await save(player.page);
+	await saveEditor(player.page);
 
 	// Both sides may edit this token — the GM anything, Bob its numbers —
 	// so both render the value as a box rather than as text.
@@ -524,19 +394,16 @@ test('a player edits the trackers on their own token and nothing else', async ({
 	// It reached the GM, which is the point of a Player being able to do
 	// it at all — the table sees the damage without being told.
 	await expect(trackerBox(gm.page, 'HP')).toHaveValue('4');
-	await expect(detailsSection(gm.page)).toContainText('Poisoned');
+	await expect(detailsPanel(gm.page)).toContainText('Poisoned');
 	// And the name the Player never had a box for came through untouched.
-	await expect(detailsSection(gm.page)).toContainText("Bob's Fighter");
-
-	await gm.context.close();
-	await player.context.close();
+	await expect(detailsPanel(gm.page)).toContainText("Bob's Fighter");
 });
 
 // The other side of the same rule: a token nobody owns is nobody's to
 // edit or delete but the GM's.
-test('a player gets no editor for a token they do not own', async ({ browser }) => {
-	const gm = await openRoomAsGM(browser, 'Token Trackers Not Yours');
-	const player = await joinRoomAsPlayer(browser, gm.slug);
+test('a player gets no editor for a token they do not own', async ({ table }) => {
+	const gm = table.gm;
+	const player = await table.join();
 
 	await gm.page.getByRole('button', { name: 'New token' }).click();
 	await gm.page.getByLabel('Name').fill("Bob's Fighter");
@@ -559,12 +426,9 @@ test('a player gets no editor for a token they do not own', async ({ browser }) 
 	// of the GM's scene that a Player is merely allowed to move.
 	await openEditor(gm.page);
 	await gm.page.getByLabel('Owner').selectOption({ label: 'Nobody (monster or prop)' });
-	await save(gm.page);
+	await saveEditor(gm.page);
 
 	await expect(player.page.getByRole('button', { name: 'Edit token' })).toBeHidden();
 	await expect(player.page.getByRole('button', { name: 'Delete token' })).toBeHidden();
-	await expect(detailsSection(player.page)).toContainText("Bob's Fighter");
-
-	await gm.context.close();
-	await player.context.close();
+	await expect(detailsPanel(player.page)).toContainText("Bob's Fighter");
 });

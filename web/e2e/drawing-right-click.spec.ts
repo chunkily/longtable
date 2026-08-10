@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { mapGestureOrigin, openNewSceneDialog, selectTool } from './room';
+import { mapGestureOrigin, openNewSceneDialog, selectTool } from './fixtures/room';
 
 // Right-dragging used to drive every tool exactly as a left-drag does,
 // because Konva reports all mouse buttons through the same

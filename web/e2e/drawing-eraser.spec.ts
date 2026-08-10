@@ -5,7 +5,7 @@ import {
 	mapGestureOrigin,
 	openNewSceneDialog,
 	selectTool
-} from './room';
+} from './fixtures/room';
 
 // The eraser is the one drawing feature whose rules can't be checked
 // from the DOM: what it erases depends on Konva hit-testing against a

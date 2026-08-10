@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { joinAsNewPlayer } from './room';
+import { joinAsNewPlayer } from './fixtures/room';
 
 // Exercises the full stack for real: Go store + WS hub + frontend
 // reducer, via two separate browser contexts (so each gets its own

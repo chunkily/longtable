@@ -1,5 +1,5 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
-import { openNewSceneDialog, selectTool } from './room';
+import { openNewSceneDialog, selectTool } from './fixtures/room';
 
 // Pinch-to-zoom on a touch device — the one gesture the map was missing,
 // and the reason it was unusable on the tablet people actually bring to

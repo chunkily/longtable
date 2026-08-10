@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { openNewSceneDialog, selectToolFamily } from './room';
+import { openNewSceneDialog, selectToolFamily } from './fixtures/room';
 
 // The selected colour used to be visible only as pixels, which meant
 // nothing could assert it and a screen reader couldn't report it. It is

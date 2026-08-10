@@ -1,5 +1,5 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
-import { joinAsNewPlayer } from './room';
+import { joinAsNewPlayer } from './fixtures/room';
 
 // Who is at the table right now exists only in the server's memory —
 // there is no row to check and no way to see it from one browser. So

@@ -1,5 +1,5 @@
 import { expect, test, type Page, type WebSocketRoute } from '@playwright/test';
-import { openNewSceneDialog } from './room';
+import { openNewSceneDialog } from './fixtures/room';
 
 // A dropped socket used to end the session until someone reloaded, with
 // every command silently doing nothing and only a small status badge to

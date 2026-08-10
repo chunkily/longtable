@@ -1,5 +1,5 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
-import { joinAsGM, joinAsNewPlayer, openSeatPicker } from './room';
+import { joinAsGM, joinAsNewPlayer, openSeatPicker } from './fixtures/room';
 
 // The pre-join screen, which asks one question at a time. The thing
 // worth testing here isn't that joining works — every other spec joins —

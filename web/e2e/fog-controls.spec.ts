@@ -5,7 +5,7 @@ import {
 	openNewSceneDialog,
 	selectTool,
 	selectToolFamily
-} from './room';
+} from './fixtures/room';
 
 // Fog beyond revealing: re-hiding a square, wiping a scene back to fully
 // covered, and uncovering it all at once. Every assertion here is made
