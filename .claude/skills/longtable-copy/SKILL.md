@@ -29,38 +29,31 @@ about why it's there.**
 
 ## On-screen strings
 
-Every rule below is reverse-engineered from a string the GM of this project rewrote by hand.
-
-**The value underneath all of them is being understood instantly — not being short.** Brevity
-usually serves that and so most rules push that way, but where the two part company, comprehension
-wins. The second table below is what taught this, and it is the correction most worth carrying:
-several of those rewrites are *longer* than what they replaced.
+**Read the examples first, and hold the rules loosely.** They generalise one thing that shows up in
+every rewrite below — the original explains where it should state — and that one thing is worth
+trusting. Past it, the evidence thins fast, and the rules are inference rather than instruction.
+See [How much to trust this](#how-much-to-trust-this) before deriving anything new from a single
+row.
 
 1. **Say what, not why.** The reason goes in a comment beside the string, where it belongs and
-   where it can be as long as it needs to be.
-2. **One clause.** No em dashes, no semicolons, no subordinate clause. If it needs two sentences,
-   it usually needs one shorter one.
-3. **Buttons that act are a verb, one or two words.** `Join`, not `Join room` — the card it sits in
-   already said what is being joined. **A button that is someone's way out of a dead end is the
-   exception** and may be as explicit as it needs to be: `Click here to go back home` beat
-   `Back to the start`, because on an error screen "the start" is a riddle and length costs nothing.
+   where it can be as long as it needs to be. This is the one that keeps recurring.
+2. **Prefer one clause**, and don't reach for an em dash. Two sentences of explanation usually
+   wanted to be one short statement.
+3. **Buttons that act are a verb or two.** `Join`, not `Join room` — the card it sits in already
+   said what is being joined. Note that a link *out* of a dead-end screen was rewritten the other
+   way, longer and more explicit, so this isn't a length rule so much as a padding one.
 4. **Don't restate the heading as filler.** A description under `Join a room` explaining what
-   joining a room is has said nothing. **On an error, saying it more than once is allowed** — a
-   reader who has just hit a wall may take in only one of the three lines, and which one is not
-   yours to choose.
-5. **Whose voice depends on whose action it is.** Someone choosing speaks for themselves: `I have a
-   room code`, not `Someone at the table sent you a room code`. The product speaks for itself about
-   what it did: `We couldn't find a room with that code`.
+   joining a room is has said nothing.
+5. **Where someone is choosing, write the option in their voice.** `I have a room code`, not
+   `Someone at the table sent you a room code`.
 6. **Give the format, not the rationale.** `Room codes are six characters like ab23ef` beats
    anything about why codes exist.
 7. **Errors name what to do next**, and sit next to the field they're about rather than in a toast
    that takes itself away. See `planning/backlog/say-a-bad-code-is-bad.md`.
 8. **Cut anything the interface already demonstrates.** A six-character box showing `------` has
    already said how long a code is.
-9. **Take the ordinary phrase over the good one.** `Room not found!` over `No room with that code`;
-   `We couldn't find a room with that code` over `Nothing on this server answers to that`. A phrase
-   the reader has met a hundred times costs them nothing to parse. A better one costs a beat, and
-   that beat is the whole budget.
+9. **Plain beats clever.** `We couldn't find a room with that code` over `Nothing on this server
+   answers to that`. Writing that draws attention to itself is the failure, whatever its length.
 
 Real before-and-afters, all from `web/src/routes/+page.svelte`:
 
@@ -90,16 +83,27 @@ The whole card, from `web/src/routes/r/[slug]/+page.svelte`, rewritten in one pa
 | No room with that code | Room not found! | The phrase everyone has already met beats the more precise one |
 | Room code `7wdbtb` | Room code `7wdbtb` does not exist. | A fragment makes the reader supply the verb; say it |
 | Nothing on this server answers to that. Room codes are six characters — check it against what you were sent, or ask for it again. | We couldn't find a room with that code. | Two sentences of mine, one of them writerly, for one plain sentence — and the product speaks as "we" |
-| Back to the start | Click here to go back home | Longer, and better: "the start" is a riddle on a screen someone reached by accident |
+| Back to the start | Click here to go back home | Longer and more explicit; "the start" reads as a riddle |
 
-**Read this table against rules 3 and 4, which it bends.** Three of the four rewrites are longer,
-and the finished card states the same fact three times — a title, a description and a sentence. By
-the terse reading of the rules that is redundant. It isn't: someone who has just hit a dead end
-reads one line at random, and each of the three stands alone.
+Three of the four came back **longer**, and the finished card states its fact three times over — a
+title, a description and a sentence. Whatever the rules above are describing, it isn't brevity.
+The through-line is the same as everywhere else: mine were composed, and the replacements are the
+plain thing a person would say.
 
-This is the table to reread before trusting the others. The rules describe how the shortest good
-string usually looks; they are not a licence to make a stuck reader work. **Where a rule and being
-understood pull apart, the rule is the thing that gives.**
+## How much to trust this
+
+**These rewrites were quick reactions to tone, not considered design.** They were made in a couple
+of minutes, by someone who knew the writing was off and fixed it without weighing each word. That
+matters for how they should be used.
+
+Use them for **tone**: the direction they all point in is real, because it's the same direction
+every time across three files and a dozen strings. Don't use any single row as evidence for a
+principle — an earlier draft of this file inferred a rule about how error screens should repeat
+themselves from one card, and that rule was invented, not observed.
+
+So: when the copy you're about to write disagrees with a rule here, the rule is probably
+over-fitted and you should write the plain version. When it disagrees with the *examples* — when
+what you have is composed and theirs is plain — you're making the mistake this file is for.
 
 **`aria-label` and `title` count**, and are held to the same rules with one exception: they may name
 what the visible label leaves to context, because a screen reader user has no surrounding card to
@@ -149,9 +153,12 @@ and the fastest way to make a doc worse is to explain something there that anoth
 ## When the rules and an edit disagree
 
 The rules are derived from edits, so an edit always wins over a rule. If the GM rewrites something
-in a way none of the above predicts, **add it to a table here and adjust the rule in the same
-commit** — the examples are worth more than the rules, and this file is only as good as its
-examples.
+in a way none of the above predicts, **add the row in the same commit** — the examples are worth
+more than the rules, and this file is only as good as its examples.
+
+**Adding a row is not the same as adding a rule.** Rows are cheap and always worth having; a new
+rule needs the same move to have shown up several times, in different places. One rewrite is a
+data point and usually means nothing more than "that sounded wrong".
 
 Where a rule genuinely doesn't fit, say so in the commit rather than quietly breaking it. Real
 exceptions exist: the GM password hint on the create form runs three clauses and stays that way,
