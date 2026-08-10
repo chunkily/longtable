@@ -4,7 +4,15 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
-	import { endSession, gmLogin, joinRoom, listSeats, type Seat, type Session } from '$lib/api';
+	import {
+		endSession,
+		gmLogin,
+		isNotFound,
+		joinRoom,
+		listSeats,
+		type Seat,
+		type Session
+	} from '$lib/api';
 	import { clearSession, loadSession, saveSession, touchSession } from '$lib/session';
 	import { hostNotice } from '$lib/host-notice.svelte';
 	import { RoomClient, type Token } from '$lib/room.svelte';
@@ -68,6 +76,9 @@
 	// exactly how someone ends up on a fresh seat beside the one holding
 	// their tokens, which is the mistake seats exist to prevent.
 	let seatsLoaded = $state(false);
+	// Set only when the server has said there is no such room — never by a
+	// failure that merely might mean that. See the catch in onMount.
+	let roomMissing = $state(false);
 	const playerSeats = $derived(seats.filter((s) => s.role !== 'gm'));
 
 	let chatText = $state('');
@@ -138,15 +149,26 @@
 		}
 
 		// No session: this is the pre-join screen, so find out what chairs
-		// are at the table. A failure here isn't fatal — the plain join
-		// form below the list still works, and telling someone the room is
-		// broken when they can simply join would be the worse answer.
+		// are at the table.
 		listSeats(slug)
 			.then((res) => {
 				seatsRoomName = res.roomName;
 				seats = res.seats;
 			})
-			.catch(() => {})
+			.catch((err) => {
+				// A 404 here is the one failure worth stopping for: there is no
+				// room behind this code, and every question the join screen is
+				// about to ask has no answer. Someone who mistyped a character
+				// used to find that out four steps later, after picking a role,
+				// saying they were new, and typing a name into a form that
+				// could only ever fail.
+				//
+				// Anything else stays non-fatal, which is what this catch used
+				// to do for every failure alike: a blip or a 500 says nothing
+				// about whether the room exists, and telling someone their
+				// room is gone when it isn't is the worse mistake of the two.
+				if (isNotFound(err)) roomMissing = true;
+			})
 			.finally(() => (seatsLoaded = true));
 	});
 
@@ -308,104 +330,127 @@
 	{/snippet}
 
 	<div class="mx-auto max-w-md p-6">
-		<Card.Root>
-			<Card.Header>
-				<Card.Title>{seatsRoomName || 'Join room'}</Card.Title>
-				<!-- Named rather than left bare: this string is what someone
-				     reads back to whoever sent it when they end up in the wrong
-				     room, and "room code" is what it's called everywhere else. -->
-				<Card.Description>Room code {slug}</Card.Description>
-			</Card.Header>
-			<Card.Content class="flex flex-col gap-4">
-				{#if step === 'role'}
-					<p class="text-sm text-muted-foreground">How are you joining this table?</p>
-					<div class="flex gap-2">
-						<Button type="button" class="flex-1" onclick={() => (step = 'seats')}>Player</Button>
-						<!-- The GM seat is the one exception to open-claim: it's a
+		{#if roomMissing}
+			<!-- The server has said there is no room here, so the join screen
+			     is replaced rather than annotated: every question it asks —
+			     which side of the table you're on, which chair is yours — has
+			     no answer, and leaving them on screen invites someone to keep
+			     answering them. A mistyped character is by far the likeliest
+			     way to arrive here, so the code is repeated back for checking
+			     against whatever it was copied from. -->
+			<Card.Root>
+				<Card.Header>
+					<Card.Title>No room with that code</Card.Title>
+					<Card.Description>Room code {slug}</Card.Description>
+				</Card.Header>
+				<Card.Content class="flex flex-col gap-4">
+					<p class="text-sm text-muted-foreground">
+						Nothing on this server answers to that. Room codes are six characters — check it against
+						what you were sent, or ask for it again.
+					</p>
+					<Button href={resolve('/')} class="self-start">Back to the start</Button>
+				</Card.Content>
+			</Card.Root>
+		{:else}
+			<Card.Root>
+				<Card.Header>
+					<Card.Title>{seatsRoomName || 'Join room'}</Card.Title>
+					<!-- Named rather than left bare: this string is what someone
+					     reads back to whoever sent it when they end up in the wrong
+					     room, and "room code" is what it's called everywhere else. -->
+					<Card.Description>Room code {slug}</Card.Description>
+				</Card.Header>
+				<Card.Content class="flex flex-col gap-4">
+					{#if step === 'role'}
+						<p class="text-sm text-muted-foreground">How are you joining this table?</p>
+						<div class="flex gap-2">
+							<Button type="button" class="flex-1" onclick={() => (step = 'seats')}>Player</Button>
+							<!-- The GM seat is the one exception to open-claim: it's a
 						     role boundary, so it goes through the room password
 						     rather than being a chair anyone can sit in. -->
-						<Button type="button" variant="outline" class="flex-1" onclick={() => (step = 'gm')}>
-							I'm the GM
-						</Button>
-					</div>
-				{:else if step === 'seats'}
-					{@render back('role')}
-					<!-- Seats come before the name box, because on a device that
+							<Button type="button" variant="outline" class="flex-1" onclick={() => (step = 'gm')}>
+								I'm the GM
+							</Button>
+						</div>
+					{:else if step === 'seats'}
+						{@render back('role')}
+						<!-- Seats come before the name box, because on a device that
 					     doesn't remember you taking one is almost always what you
 					     want: it brings back the tokens you own and your name,
 					     where joining fresh would leave them behind on a chair
 					     nobody is sitting in. Open-claim, no password — see
 					     ADR-0008 and ADR-0007. -->
-					{#if !seatsLoaded}
-						<p class="text-sm text-muted-foreground">Looking for the seats at this table…</p>
-					{:else}
-						<div class="flex flex-col gap-2">
-							<p class="text-sm font-medium">
-								{playerSeats.length > 0
-									? 'Take your seat'
-									: 'Nobody has taken a seat at this table yet.'}
-							</p>
-							{#each playerSeats as seat (seat.participantId)}
-								<!-- Named rather than left to its contents: "Bob" alone is
+						{#if !seatsLoaded}
+							<p class="text-sm text-muted-foreground">Looking for the seats at this table…</p>
+						{:else}
+							<div class="flex flex-col gap-2">
+								<p class="text-sm font-medium">
+									{playerSeats.length > 0
+										? 'Take your seat'
+										: 'Nobody has taken a seat at this table yet.'}
+								</p>
+								{#each playerSeats as seat (seat.participantId)}
+									<!-- Named rather than left to its contents: "Bob" alone is
 								     also what a token is called, and this is the one
 								     control on the page whose whole job is to say whose
 								     chair it is. -->
-								<Button
-									type="button"
-									variant="outline"
-									class="justify-between"
-									aria-label="Take {seat.displayName}'s seat"
-									disabled={joining}
-									onclick={() => handleClaimSeat(seat)}
-								>
-									<span class="truncate">{seat.displayName}</span>
-									{#if seat.connected}
-										<!-- Someone is on it right now. Still claimable — two
+									<Button
+										type="button"
+										variant="outline"
+										class="justify-between"
+										aria-label="Take {seat.displayName}'s seat"
+										disabled={joining}
+										onclick={() => handleClaimSeat(seat)}
+									>
+										<span class="truncate">{seat.displayName}</span>
+										{#if seat.connected}
+											<!-- Someone is on it right now. Still claimable — two
 										     devices on one seat is one person, which is the
 										     whole point — but worth saying so nobody takes a
 										     chair thinking it's spare. -->
-										<Badge variant="secondary">here now</Badge>
-									{/if}
-								</Button>
-							{/each}
-							{#if playerSeats.length > 0}
-								<Separator class="my-1" />
-							{/if}
-							<!-- The last slot in the same list rather than a link
+											<Badge variant="secondary">here now</Badge>
+										{/if}
+									</Button>
+								{/each}
+								{#if playerSeats.length > 0}
+									<Separator class="my-1" />
+								{/if}
+								<!-- The last slot in the same list rather than a link
 							     underneath it, and dashed so it reads as the empty
 							     chair it is: being new is one of the answers to
 							     "which of these is you", not a way out of the
 							     question. It's also the only slot on a table nobody
 							     has sat down at yet. -->
-							<Button
-								type="button"
-								variant="outline"
-								class="justify-start border-dashed"
-								disabled={joining}
-								onclick={() => (step = 'name')}
-							>
-								I'm new here
-							</Button>
-						</div>
-					{/if}
-				{:else}
-					{@render back(step === 'gm' ? 'role' : 'seats')}
-					<form class="flex flex-col gap-4" onsubmit={handleJoin}>
-						<div class="flex flex-col gap-2">
-							<Label for="display-name">Your name</Label>
-							<Input id="display-name" bind:value={displayName} required />
-						</div>
-						{#if step === 'gm'}
-							<div class="flex flex-col gap-2">
-								<Label for="gm-password">GM password</Label>
-								<Input id="gm-password" type="password" bind:value={password} required />
+								<Button
+									type="button"
+									variant="outline"
+									class="justify-start border-dashed"
+									disabled={joining}
+									onclick={() => (step = 'name')}
+								>
+									I'm new here
+								</Button>
 							</div>
 						{/if}
-						<Button type="submit" disabled={joining}>{joining ? 'Joining…' : 'Join'}</Button>
-					</form>
-				{/if}
-			</Card.Content>
-		</Card.Root>
+					{:else}
+						{@render back(step === 'gm' ? 'role' : 'seats')}
+						<form class="flex flex-col gap-4" onsubmit={handleJoin}>
+							<div class="flex flex-col gap-2">
+								<Label for="display-name">Your name</Label>
+								<Input id="display-name" bind:value={displayName} required />
+							</div>
+							{#if step === 'gm'}
+								<div class="flex flex-col gap-2">
+									<Label for="gm-password">GM password</Label>
+									<Input id="gm-password" type="password" bind:value={password} required />
+								</div>
+							{/if}
+							<Button type="submit" disabled={joining}>{joining ? 'Joining…' : 'Join'}</Button>
+						</form>
+					{/if}
+				</Card.Content>
+			</Card.Root>
+		{/if}
 	</div>
 {:else}
 	{#snippet chatPanel(room: RoomClient)}

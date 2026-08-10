@@ -131,6 +131,11 @@ test('six characters get you in, and anything else is refused', async ({ browser
 		await otherPage.getByLabel('Room code').fill(refused);
 		await otherPage.getByRole('button', { name: 'Join', exact: true }).click();
 		await expect(otherPage.getByText("doesn't look like a room code")).toBeVisible();
+		// Under the box and marking it, rather than a toast in the corner:
+		// the message has to still be there when someone looks back at the
+		// field to fix it. `aria-invalid` is the machine-readable half of
+		// that and the part a toast could never have.
+		await expect(otherPage.getByLabel('Room code')).toHaveAttribute('aria-invalid', 'true');
 		await expect(otherPage).toHaveURL(/\/$/);
 		await other.close();
 	}

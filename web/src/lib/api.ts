@@ -67,7 +67,31 @@ export interface AssetDetails {
 	gridOffsetY: number;
 }
 
-class ApiError extends Error {}
+/**
+ * A failure the server described. Carries the status because *which*
+ * failure it was changes what the UI should say: a 404 on a room is
+ * worth telling someone about immediately, while a 500 or a dropped
+ * connection is worth retrying past.
+ */
+export class ApiError extends Error {
+	constructor(
+		message: string,
+		readonly status: number
+	) {
+		super(message);
+	}
+}
+
+/**
+ * Whether a rejection was the server saying "no such thing", as opposed
+ * to anything else that can reject a fetch — a blip, a proxy, a server
+ * that fell over. Written as a guard rather than left to callers because
+ * a bare `err.status === 404` needs the `instanceof` first, and a caller
+ * who forgets it gets `undefined === 404` and a silent false.
+ */
+export function isNotFound(err: unknown): boolean {
+	return err instanceof ApiError && err.status === 404;
+}
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 	const res = await fetch(path, {
@@ -76,7 +100,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 	});
 	if (!res.ok) {
 		const body = await res.json().catch(() => ({}));
-		throw new ApiError(body.error ?? `request failed with status ${res.status}`);
+		throw new ApiError(body.error ?? `request failed with status ${res.status}`, res.status);
 	}
 	// 204 means the request succeeded and said nothing — a DELETE that
 	// worked. Parsing that as JSON throws on an empty body, which would
@@ -214,7 +238,7 @@ export async function uploadAsset(
 	});
 	if (!res.ok) {
 		const body = await res.json().catch(() => ({}));
-		throw new ApiError(body.error ?? `upload failed with status ${res.status}`);
+		throw new ApiError(body.error ?? `upload failed with status ${res.status}`, res.status);
 	}
 	return res.json();
 }
@@ -259,7 +283,7 @@ export async function removeAsset(
 	// parses JSON out of every response.
 	if (!res.ok) {
 		const body = await res.json().catch(() => ({}));
-		throw new ApiError(body.error ?? `removal failed with status ${res.status}`);
+		throw new ApiError(body.error ?? `removal failed with status ${res.status}`, res.status);
 	}
 }
 

@@ -41,7 +41,13 @@ export async function createRoom(
 	await expect(page.getByLabel('Room name')).toBeVisible();
 
 	await page.getByLabel('Room name').fill(roomName);
-	await page.getByLabel('Your name (GM)').fill(gmName);
+	// `Your name`, not `Your name (GM)`. Playwright matches labels by
+	// substring, so the old spelling matched nothing once the form
+	// dropped the suffix — and `fill` on a locator that resolves to
+	// nothing waits out the whole test timeout rather than failing fast.
+	// Every spec creates a room, so that one label cost a 14-minute run
+	// in which 106 tests timed out and 3 passed.
+	await page.getByLabel('Your name').fill(gmName);
 	await page.getByLabel('GM password').fill(password);
 	await page.getByRole('button', { name: 'Create room' }).click();
 	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);

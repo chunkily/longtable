@@ -69,7 +69,10 @@ parameter, the column and the Go identifiers, because nobody is ever asked to sa
 loud. **The home page asks one question at a time** too: a browser holding sessions sees those
 rooms listed, newest first, and every browser gets two large buttons under it — `Join a room`,
 which opens one large six-character box (codes only — a link is meant to be followed, not pasted
-in there), and `Create a room`. A browser with
+in there, and a bad code is answered in danger text under the box rather than a toast), and
+`Create a room`. A code that's well formed but has no room behind it is answered on arrival: the
+pre-join screen is replaced by `No room with that code`, off the seat endpoint's 404 — only a 404,
+since a blip says nothing about whether the room exists. A browser with
 no rooms gets no list at all rather than an empty one, since the two buttons are what it came for.
 Scenes built
 from an uploaded map or a

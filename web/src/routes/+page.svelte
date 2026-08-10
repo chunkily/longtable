@@ -33,6 +33,12 @@
 	let rooms = $state<StoredSession[]>([]);
 
 	let roomCode = $state('');
+	// Shown under the box rather than in a toast. A toast for this lands
+	// in a corner, away from the field that caused it and the field that
+	// has to change to fix it — and it takes itself away again, so
+	// anyone who looked down at their keyboard to retype missed the only
+	// explanation they were given.
+	let codeError = $state('');
 
 	let roomName = $state('');
 	let gmName = $state('');
@@ -47,9 +53,10 @@
 		event.preventDefault();
 		const slug = parseRoomCode(roomCode);
 		if (!slug) {
-			toast.error("That doesn't look like a room code.");
+			codeError = "That doesn't look like a room code.";
 			return;
 		}
+		codeError = '';
 		void goto(resolve('/r/[slug]', { slug }));
 	}
 
@@ -201,11 +208,24 @@
 						autocomplete="off"
 						autocapitalize="off"
 						spellcheck={false}
+						aria-invalid={codeError ? 'true' : undefined}
+						oninput={() => (codeError = '')}
 						class="h-auto py-5 text-center indent-[0.35em] font-mono text-4xl tracking-[0.35em] md:text-5xl"
 					/>
-					<p class="text-center text-sm text-muted-foreground">
-						Room codes are six-characters long like <code>ab23ef</code>.
-					</p>
+					<!-- The error takes the hint's place rather than stacking under
+					     it: the two say the same thing, and the swap keeps the
+					     button from moving down the page at the moment someone is
+					     reaching for it. `role="alert"` so it's announced, since
+					     nothing moves focus here. -->
+					{#if codeError}
+						<p class="text-center text-sm font-medium text-destructive" role="alert">
+							{codeError}
+						</p>
+					{:else}
+						<p class="text-center text-sm text-muted-foreground">
+							Room codes are six-characters long like <code>ab23ef</code>.
+						</p>
+					{/if}
 					<Button type="submit" size="lg" class="h-12 text-base">Join</Button>
 				</form>
 			</Card.Content>

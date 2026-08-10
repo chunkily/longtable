@@ -17,6 +17,34 @@ async function openFreshDevice(browser: Browser, slug: string) {
 	return { context, page };
 }
 
+// A mistyped character is the likeliest way anyone reaches a code that
+// isn't a room, and the join screen used to carry on asking anyway:
+// role, then seats, then a name, then a failed submit. The 404 on the
+// seat list is known immediately, so it is answered immediately.
+test('a code with no room behind it says so instead of asking questions', async ({ browser }) => {
+	const context = await browser.newContext();
+	const page = await context.newPage();
+
+	// Well-formed — six characters from the code alphabet — so this gets
+	// past the home page's parser and fails on the room instead, which is
+	// the case under test. A malformed one never leaves the home page.
+	await page.goto('/r/zzzzzz');
+
+	await expect(page.getByText('No room with that code')).toBeVisible();
+	await expect(page.getByText('zzzzzz')).toBeVisible();
+
+	// The questions are gone rather than merely joined by an error: every
+	// one of them has no answer, and leaving them up invites someone to
+	// keep going.
+	await expect(page.getByRole('button', { name: 'Player', exact: true })).toHaveCount(0);
+	await expect(page.getByRole('button', { name: "I'm the GM" })).toHaveCount(0);
+
+	await page.getByRole('link', { name: 'Back to the start' }).click();
+	await expect(page).toHaveURL(/\/$/);
+
+	await context.close();
+});
+
 test('the join screen asks for a role before it asks for anything else', async ({ browser }) => {
 	const gm = await browser.newContext();
 	const gmPage = await gm.newPage();
