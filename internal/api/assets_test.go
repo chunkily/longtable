@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/gen2brain/webp"
@@ -150,6 +151,64 @@ func TestUploadAsset_DuplicateContentReusesAsset(t *testing.T) {
 
 	if firstAsset.ID != secondAsset.ID {
 		t.Fatalf("uploading identical content twice produced different asset IDs: %q vs %q", firstAsset.ID, secondAsset.ID)
+	}
+}
+
+// The same picture, uploaded by several people at the same moment.
+//
+// This is the sequential test above with the gap closed, and it is the
+// one that matters: both steps of storing an image used to look before
+// they leapt. Two uploads that both looked and both found nothing then
+// collided — the blob on a Windows rename onto a file that now existed,
+// the row on the UNIQUE content hash — and whichever lost got a 500 for
+// a request that had done nothing wrong.
+//
+// It surfaced as e2e flakiness, because parallel workers upload the same
+// fixture bytes, but nothing about it needs a browser: it is two people
+// on one table adding the same map.
+func TestUploadAsset_ConcurrentIdenticalUploadsAllSucceed(t *testing.T) {
+	srv, _ := newTestServer(t)
+	created := createTestRoom(t, srv)
+	content := testPNG(t, 40, 40, color.RGBA{R: 12, G: 90, B: 200, A: 255})
+
+	const uploaders = 8
+	ids := make([]string, uploaders)
+	statuses := make([]int, uploaders)
+
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i := range uploaders {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// Released together, so they are actually racing rather than
+			// queueing politely behind each other.
+			<-start
+			resp := uploadTestAsset(t, srv, created.RoomSlug, created.SessionToken, "map.png", content)
+			statuses[i] = resp.StatusCode
+			if resp.StatusCode == http.StatusCreated {
+				var asset assetPayloadT
+				decodeJSONBody(t, resp, &asset)
+				ids[i] = asset.ID
+			} else {
+				resp.Body.Close()
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	for i, status := range statuses {
+		if status != http.StatusCreated {
+			t.Fatalf("uploader %d got %d, want 201 — identical bytes are never a conflict", i, status)
+		}
+	}
+	// And one asset, not eight: content addressing is the whole reason
+	// these are allowed to collide in the first place.
+	for i, id := range ids {
+		if id != ids[0] {
+			t.Fatalf("uploader %d got asset %q, want the same %q everyone else got", i, id, ids[0])
+		}
 	}
 }
 

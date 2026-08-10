@@ -477,17 +477,15 @@ func (srv *Server) storeImage(image imageproc.Result, filename string) (store.As
 	hash := sha256.Sum256(image.Data)
 	contentHash := hex.EncodeToString(hash[:])
 
-	if existing, err := srv.store.FindAssetByHash(contentHash); err == nil {
-		return existing, nil
-	} else if !errors.Is(err, store.ErrNotFound) {
-		return store.Asset{}, err
-	}
-
+	// No "is it already there?" check in front of either step. Both used
+	// to have one, and both lost the same race to a second upload of the
+	// same picture: the blob write failed on the rename, and the row
+	// failed on the UNIQUE index. Each step is now safe to lose.
 	if err := srv.blobs.Write(contentHash, bytes.NewReader(image.Data)); err != nil {
 		return store.Asset{}, err
 	}
 
-	return srv.store.CreateAsset(
+	return srv.store.FindOrCreateAsset(
 		contentHash,
 		imageproc.WebPFilename(filename),
 		imageproc.MimeType,

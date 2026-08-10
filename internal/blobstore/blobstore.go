@@ -64,7 +64,20 @@ func (s *Store) Write(hash string, src io.Reader) error {
 		return fmt.Errorf("close blob: %w", err)
 	}
 
-	return os.Rename(tmp.Name(), path)
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		// Somebody stored the same bytes between the Stat above and here.
+		// POSIX rename would have replaced their file with our identical
+		// one and said nothing; Windows refuses with "Access is denied",
+		// which turned two people uploading the same picture at the same
+		// moment into a 500 for whichever lost. The path *is* the content's
+		// hash, so a file already sitting there is byte-for-byte what we
+		// were about to write.
+		if _, statErr := os.Stat(path); statErr == nil {
+			return nil
+		}
+		return fmt.Errorf("store blob: %w", err)
+	}
+	return nil
 }
 
 // Open returns a reader for the blob with the given content hash.

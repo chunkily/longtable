@@ -304,6 +304,28 @@ func (s *Store) AssetInRoom(roomID, assetID string) (bool, error) {
 	return true, nil
 }
 
+// FindOrCreateAsset returns the asset with this content hash, creating
+// it if nobody has yet.
+//
+// One statement rather than "look, then insert": two uploads of the same
+// picture at the same moment both looked, both found nothing, and the
+// second insert died on the UNIQUE index — a 500 for a request that had
+// done nothing wrong. `DO NOTHING` makes the loser's insert a no-op, and
+// the read that follows gets the winner's row, which describes the same
+// bytes by definition.
+func (s *Store) FindOrCreateAsset(hash, filename, mimeType string, byteSize int64) (Asset, error) {
+	if _, err := s.db.Exec(
+		`INSERT INTO asset (id, content_hash, filename, mime_type, byte_size, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?)
+		 ON CONFLICT (content_hash) DO NOTHING`,
+		uuid.NewString(), hash, filename, mimeType, byteSize,
+		time.Now().UTC().Format(time.RFC3339Nano),
+	); err != nil {
+		return Asset{}, err
+	}
+	return s.FindAssetByHash(hash)
+}
+
 func (s *Store) CreateAsset(hash, filename, mimeType string, byteSize int64) (Asset, error) {
 	a := Asset{
 		ID:          uuid.NewString(),
