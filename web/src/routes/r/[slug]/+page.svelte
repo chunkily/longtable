@@ -340,15 +340,12 @@
 			     against whatever it was copied from. -->
 			<Card.Root>
 				<Card.Header>
-					<Card.Title>No room with that code</Card.Title>
-					<Card.Description>Room code {slug}</Card.Description>
+					<Card.Title>Room not found!</Card.Title>
+					<Card.Description>Room code {slug} does not exist.</Card.Description>
 				</Card.Header>
 				<Card.Content class="flex flex-col gap-4">
-					<p class="text-sm text-muted-foreground">
-						Nothing on this server answers to that. Room codes are six characters — check it against
-						what you were sent, or ask for it again.
-					</p>
-					<Button href={resolve('/')} class="self-start">Back to the start</Button>
+					<p class="text-sm text-muted-foreground">We couldn't find a room with that code.</p>
+					<Button href={resolve('/')} class="self-start">Click here to go back home</Button>
 				</Card.Content>
 			</Card.Root>
 		{:else}
