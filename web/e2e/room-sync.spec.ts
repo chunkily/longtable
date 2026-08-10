@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { joinAsNewPlayer } from './fixtures/room';
+import { createRoom, joinAsNewPlayer } from './fixtures/room';
 
 // Exercises the full stack for real: Go store + WS hub + frontend
 // reducer, via two separate browser contexts (so each gets its own
@@ -8,14 +8,7 @@ test('GM creates a room and a player joins and syncs chat live', async ({ browse
 	const gmContext = await browser.newContext();
 	const gmPage = await gmContext.newPage();
 
-	await gmPage.goto('/');
-	await gmPage.getByLabel('Room name').fill('Curse of Strahd');
-	await gmPage.getByLabel('Your name (GM)').fill('Alice');
-	await gmPage.getByLabel('GM password').fill('hunter2');
-	await gmPage.getByRole('button', { name: 'Create room' }).click();
-
-	await expect(gmPage).toHaveURL(/\/r\/[a-z0-9]+/);
-	const slug = new URL(gmPage.url()).pathname.split('/').pop()!;
+	const slug = await createRoom(gmPage, 'Curse of Strahd');
 
 	// By role rather than by text: since every page got a real <title>,
 	// SvelteKit's live-region announcer holds "Curse of Strahd —

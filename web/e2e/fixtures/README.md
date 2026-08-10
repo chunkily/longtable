@@ -4,17 +4,17 @@ Everything in `e2e/` that isn't a spec lives here, so the folder above is exactl
 tests. Two kinds of thing, and they share a name because both are what a spec is handed before it
 starts:
 
-| File | What it gives you |
-| --- | --- |
-| `table.ts` | the Playwright fixture: `{ table }` is a room with a scene and a GM, `table.join(name)` adds a person on their own device |
-| `map.ts` | the canvas — ink probes, spawn maths, drags, and the token gestures (`createToken`, `selectToken`, `openEditor`) |
-| `room.ts` | the room's chrome — tools, the menu, the join flow |
-| `images.ts` | `fixture('goblin.png')`, an absolute path to one of the PNGs beside it |
-| `*.png` | the images themselves — see below, both rules matter |
+| File        | What it gives you                                                                                                                           |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `table.ts`  | the Playwright fixture: `{ table }` is a room with a scene and a GM, `table.join(name)` adds a person on their own device                   |
+| `map.ts`    | the canvas — ink probes, spawn maths, drags, and the token gestures (`createToken`, `selectToken`, `openEditor`)                            |
+| `room.ts`   | getting into a room — `createRoom` from the home page, the three ways to join one — and the room's own chrome: tools, the menu, the dialogs |
+| `images.ts` | `fixture('goblin.png')`, an absolute path to one of the PNGs beside it                                                                      |
+| `*.png`     | the images themselves — see below, both rules matter                                                                                        |
 
 **Start a new spec with `table.ts`, not with a neighbouring spec.** Roughly two thirds of the
 specs predate this folder and still build their own browser contexts by hand, closing them on the
-last line — which is the one line that *doesn't* run when an assertion fails. A leaked context
+last line — which is the one line that _doesn't_ run when an assertion fails. A leaked context
 keeps a live socket and a connected participant for the rest of the run, so one real failure makes
 everything after it stranger. The fixture's teardown runs whatever the outcome. Copying an old
 spec copies the problem.
@@ -32,8 +32,13 @@ test('a token can be moved', async ({ table }) => {
 
 `test.use({ scene: false })` for a room with no scene on it.
 
+A spec that needs a room but not the fixture's people — one that starts its own contexts for its
+own reasons — should still reach for `createRoom` rather than filling the form itself. The home
+page asks one question at a time now, so "create a room" is a click, a wait and three fills, and
+the wait is the part that is easy to leave out and hard to debug without.
+
 The waits in `map.ts` are the ones that turned out to be right, and the specs that were flaky were
-the copies that guessed: `createToken` waits for ink *at the square the token landed on* rather
+the copies that guessed: `createToken` waits for ink _at the square the token landed on_ rather
 than anywhere on the layer, and `selectToken` clicks until the panel names the token rather than
 once, because Konva only fires `click` when both halves land on the same node and `renderTokens`
 rebuilds every group whenever `room.tokens` changes.
@@ -57,11 +62,12 @@ request never gets past the decode), and the only symptom on screen is an asset 
 empty — the error toast expires before a 5s locator timeout does. Encode new ones; don't edit
 these.
 
-**Every fixture needs pixels no other fixture has.** Assets are content-addressed and
-`web/.e2e-data/longtable.db` is never reset between runs, so two fixtures with identical content
-resolve to _one_ asset row — under whichever filename got there first, months ago, in an
-unrelated spec. A flat colour nobody else used is enough. Current fixtures are one flat colour
-each and their hashes are distinct.
+**Every fixture needs pixels no other fixture has.** Assets are content-addressed, so two fixtures
+with identical content resolve to _one_ asset row — under whichever filename got there first, in
+whatever unrelated spec ran before yours. A flat colour nobody else used is enough. Current
+fixtures are one flat colour each and their hashes are distinct. (`web/.e2e-data/longtable.db` is
+wiped at the start of every run now, which bounds this to one run rather than to the whole history
+of the checkout. It doesn't remove it: spec order within a run is enough.)
 
 Uploading by path (`setInputFiles(fixture('goblin.png'))`) sends the file's real basename, which
 keeps the name a spec asserts on (`goblin.webp`, after the WebP re-encode) tied to the bytes that

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { openNewSceneDialog } from './fixtures/room';
+import { createRoom, openNewSceneDialog } from './fixtures/room';
 
 // The Host's banner. The server half — a flag becoming an endpoint — is
 // covered by `internal/api/notice_test.go`; what needs a browser is the
@@ -58,12 +58,7 @@ test('a new message comes back for someone who dismissed the old one', async ({ 
 test('the room makes room for it rather than sliding under it', async ({ page }) => {
 	await serveNotice(page, 'Back up at 9pm');
 
-	await page.goto('/');
-	await page.getByLabel('Room name').fill('Notice Room');
-	await page.getByLabel('Your name (GM)').fill('Alice');
-	await page.getByLabel('GM password').fill('hunter2');
-	await page.getByRole('button', { name: 'Create room' }).click();
-	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
+	await createRoom(page, 'Notice Room');
 
 	await openNewSceneDialog(page);
 	await page.getByLabel('Name').fill('Map');

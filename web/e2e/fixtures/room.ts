@@ -12,6 +12,44 @@ import { expect, type Page } from '@playwright/test';
  */
 
 /**
+ * Creates a room from the home page and lands in it, returning its room
+ * code.
+ *
+ * Every spec needs a room, and every spec used to spell this out: three
+ * fills and a submit. The home page asks one question at a time now — the
+ * create form is behind a button rather than sitting on the page — so
+ * this is the one place that knows the steps.
+ *
+ * Two waits, and neither is decoration. `networkidle` guards the click
+ * against landing before hydration, which on this page does nothing at
+ * all and leaves the form that never opened; it's the guard
+ * `planning/backlog/e2e-flakes.md` settled on for the same race. Waiting
+ * for the name box afterwards then *proves* hydration finished, which is
+ * why the fills below it can't be reconciled back to empty the way they
+ * could when the form was on the page from the start.
+ */
+export async function createRoom(
+	page: Page,
+	roomName: string,
+	options: { gmName?: string; password?: string } = {}
+): Promise<string> {
+	const { gmName = 'Alice', password = 'hunter2' } = options;
+
+	await page.goto('/');
+	await page.waitForLoadState('networkidle');
+	await page.getByRole('button', { name: 'Create a room' }).click();
+	await expect(page.getByLabel('Room name')).toBeVisible();
+
+	await page.getByLabel('Room name').fill(roomName);
+	await page.getByLabel('Your name (GM)').fill(gmName);
+	await page.getByLabel('GM password').fill(password);
+	await page.getByRole('button', { name: 'Create room' }).click();
+	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
+
+	return new URL(page.url()).pathname.split('/').pop()!;
+}
+
+/**
  * The pre-join screen asks which side of the screen you're on before it
  * asks anything else, so every arrival is at least two clicks now. These
  * three helpers are the three ways in; specs should use them rather than

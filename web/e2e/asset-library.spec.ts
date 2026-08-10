@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { fixture } from './fixtures/images';
-import { openAssetsPage, openNewSceneDialog } from './fixtures/room';
+import { createRoom, openAssetsPage, openNewSceneDialog } from './fixtures/room';
 
 // Assets are prepared on their own page and only picked in the room, so
 // this covers the seam between the two: what the assets page stores has
@@ -12,21 +12,12 @@ import { openAssetsPage, openNewSceneDialog } from './fixtures/room';
 // Uploads come from e2e/fixtures — real encoded images in colours no
 // other fixture uses, which their README explains the reasons for.
 
-async function createRoomAsGM(page: Page, roomName: string) {
-	await page.goto('/');
-	await page.getByLabel('Room name').fill(roomName);
-	await page.getByLabel('Your name (GM)').fill('Alice');
-	await page.getByLabel('GM password').fill('hunter2');
-	await page.getByRole('button', { name: 'Create room' }).click();
-	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
-}
-
 test('an asset added on the assets page is named, searchable, and offered in both dialogs', async ({
 	browser
 }) => {
 	const roomA = await browser.newContext();
 	const pageA = await roomA.newPage();
-	await createRoomAsGM(pageA, 'Library A');
+	await createRoom(pageA, 'Library A');
 
 	await openAssetsPage(pageA);
 
@@ -117,7 +108,7 @@ test('an asset added on the assets page is named, searchable, and offered in bot
 	// enforces server-side, reflected in the picker.
 	const roomB = await browser.newContext();
 	const pageB = await roomB.newPage();
-	await createRoomAsGM(pageB, 'Library B');
+	await createRoom(pageB, 'Library B');
 	await openNewSceneDialog(pageB);
 	await expect(pageB.getByText('Nothing in the library yet')).toBeVisible();
 	await expect(pageB.getByRole('button', { name: 'Swamp road' })).toHaveCount(0);
@@ -129,7 +120,7 @@ test('an asset added on the assets page is named, searchable, and offered in bot
 test('aligning a map bakes the offset into the image and pre-fills the scene grid size', async ({
 	page
 }) => {
-	await createRoomAsGM(page, 'Grid Alignment');
+	await createRoom(page, 'Grid Alignment');
 	await openAssetsPage(page);
 
 	// Alignment belongs to maps, so it's the Maps tab that offers it — it
@@ -190,7 +181,7 @@ test('aligning a map bakes the offset into the image and pre-fills the scene gri
 test('a library entry can be renamed, and re-adding the same bytes renames rather than duplicates', async ({
 	page
 }) => {
-	await createRoomAsGM(page, 'Library Editing');
+	await createRoom(page, 'Library Editing');
 	await openAssetsPage(page);
 
 	await page.getByLabel('Choose images to add').setInputFiles(fixture('map.png'));
@@ -248,7 +239,7 @@ test('a library entry can be renamed, and re-adding the same bytes renames rathe
 test('the library keeps tokens and maps apart, shows token art whole, and can be corrected', async ({
 	page
 }) => {
-	await createRoomAsGM(page, 'Two Tabs');
+	await createRoom(page, 'Two Tabs');
 	await openAssetsPage(page);
 
 	await page.getByLabel('Choose images to add').setInputFiles(fixture('goblin.png'));
@@ -304,7 +295,7 @@ test('the library keeps tokens and maps apart, shows token art whole, and can be
 // Tokens after following a link out of the scene dialog is how a map
 // gets filed as token art, which is the thing the tabs exist to prevent.
 test('a picker links to the half of the assets page it is asking for', async ({ page }) => {
-	await createRoomAsGM(page, 'Picker Link');
+	await createRoom(page, 'Picker Link');
 
 	await openNewSceneDialog(page);
 	const toMaps = page.getByRole('link', { name: 'Add maps' });
@@ -333,7 +324,7 @@ test('a picker links to the half of the assets page it is asking for', async ({ 
 test('a staged file whose shape disagrees with the open tab says so, and can be moved', async ({
 	page
 }) => {
-	await createRoomAsGM(page, 'Shape Guess');
+	await createRoom(page, 'Shape Guess');
 	await openAssetsPage(page);
 
 	// Staged on the Tokens tab, so that's what it would be filed as — but
@@ -362,7 +353,7 @@ test('a staged file whose shape disagrees with the open tab says so, and can be 
 });
 
 test('an asset can be taken off the room shelf without deleting the picture', async ({ page }) => {
-	await createRoomAsGM(page, 'Asset Removal');
+	await createRoom(page, 'Asset Removal');
 	await openAssetsPage(page);
 
 	await page.getByLabel('Choose images to add').setInputFiles(fixture('goblin.png'));

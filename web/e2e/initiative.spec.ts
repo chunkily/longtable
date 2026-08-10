@@ -1,5 +1,5 @@
 import { expect, test, type Browser, type Locator, type Page } from '@playwright/test';
-import { joinAsNewPlayer, openNewSceneDialog } from './fixtures/room';
+import { createRoom, joinAsNewPlayer, openNewSceneDialog } from './fixtures/room';
 
 // The turn order, driven from two browsers: half of what it claims is
 // about what the *Player* is shown — an order they can read, minus the
@@ -14,14 +14,7 @@ async function openRoomAsGM(browser: Browser, roomName: string) {
 	const context = await browser.newContext();
 	const page = await context.newPage();
 
-	await page.goto('/');
-	await page.getByLabel('Room name').fill(roomName);
-	await page.getByLabel('Your name (GM)').fill('Alice');
-	await page.getByLabel('GM password').fill('hunter2');
-	await page.getByRole('button', { name: 'Create room' }).click();
-
-	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
-	const slug = new URL(page.url()).pathname.split('/').pop()!;
+	const slug = await createRoom(page, roomName);
 
 	await openNewSceneDialog(page);
 	await page.getByLabel('Name').fill('Map');

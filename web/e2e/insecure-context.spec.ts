@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { mapGestureOrigin, openNewSceneDialog, selectTool } from './fixtures/room';
+import { createRoom, mapGestureOrigin, openNewSceneDialog, selectTool } from './fixtures/room';
 
 // Everything a Player does on a LAN address, faked on localhost.
 //
@@ -44,13 +44,7 @@ async function layerInk(page: Page, layer: number): Promise<number> {
 }
 
 async function createRoomWithScene(page: Page, name: string) {
-	await page.goto('/');
-	await page.getByLabel('Room name').fill(name);
-	await page.getByLabel('Your name (GM)').fill('Alice');
-	await page.getByLabel('GM password').fill('hunter2');
-	await page.getByRole('button', { name: 'Create room' }).click();
-
-	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
+	await createRoom(page, name);
 	await openNewSceneDialog(page);
 	await page.getByLabel('Name').fill('Map');
 	await page.getByRole('button', { name: 'Create scene' }).click();

@@ -32,9 +32,9 @@ func runRoomCommand(args []string) error {
 		dbPath := fset.String("db", "longtable.db", "path to the SQLite database file")
 		fset.Parse(args[1:])
 		if fset.NArg() != 1 {
-			// flags must come before the slug: `-db path` is parsed as a
-			// flag only if it precedes the positional argument.
-			return fmt.Errorf("usage: longtable room reset-password [-db path] <slug>")
+			// flags must come before the room code: `-db path` is parsed as
+			// a flag only if it precedes the positional argument.
+			return fmt.Errorf("usage: longtable room reset-password [-db path] <room-code>")
 		}
 		return roomResetPassword(*dbPath, fset.Arg(0))
 
@@ -60,7 +60,11 @@ func roomList(dbPath string) error {
 	}
 
 	tw := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
-	fmt.Fprintln(tw, "SLUG\tNAME\tCREATED")
+	// CODE, not SLUG: this column is the thing a Host reads back to a GM
+	// over the phone, and "room code" is what it's called everywhere a
+	// person can see it. `slug` survives as the column and the route
+	// parameter, which nobody is ever asked to say out loud.
+	fmt.Fprintln(tw, "CODE\tNAME\tCREATED")
 	for _, room := range rooms {
 		fmt.Fprintf(tw, "%s\t%s\t%s\n", room.Slug, room.Name, room.CreatedAt)
 	}
@@ -77,7 +81,7 @@ func roomResetPassword(dbPath, slug string) error {
 	room, err := s.GetRoomBySlug(slug)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			return fmt.Errorf("no room with slug %q", slug)
+			return fmt.Errorf("no room with code %q", slug)
 		}
 		return fmt.Errorf("look up room: %w", err)
 	}

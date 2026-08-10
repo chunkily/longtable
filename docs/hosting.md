@@ -10,6 +10,11 @@ After running it, you can visit the application in a browser at
 
 From here you can create a room, share your screen and get to playing!
 
+Every room has a six-character **room code** — `7wdbtb`, say — which is both the
+last part of its address and the thing anyone else types into **Join a room** on
+the home page. It's the only way into a room: rooms aren't listed anywhere, for
+anyone.
+
 ### Letting others join
 
 The application can also be accessed by devices on the same network so they can
@@ -40,14 +45,14 @@ available setting, and their defaults — once that feature is implemented.
 
 Longtable was designed to be hosted and administrated by people who aren't
 necessarily the GMs of every room. If someone loses GM access to a room because
-they lost the link or forgot the password, only the host can help recover
+they lost the room code or forgot the password, only the host can help recover
 access.
 
 Two recovery scenarios are documented here for hosts to help GMs that don't have
 access to the hosting machine, and each should take less than a minute to do.
 You will need to run the commands in a terminal!
 
-### They've lost the link
+### They've lost the room code
 
 Ask what the room's called, or roughly when they set it up. Either will do:
 
@@ -55,8 +60,10 @@ Ask what the room's called, or roughly when they set it up. Either will do:
 longtable room list
 ```
 
-That prints every room as `SLUG NAME CREATED`. The slug is the link — a room
-with slug `7wdbtb` lives at `http://<your-server>:8080/r/7wdbtb`.
+That prints every room as `CODE NAME CREATED`. The code is the whole address —
+a room with the code `7wdbtb` lives at `http://<your-server>:8080/r/7wdbtb`, and
+someone who has the code can also type it straight into the box behind **Join a
+room** on the home page.
 
 Room names aren't unique, so if two look right, the date usually settles it. If
 it doesn't, send both and let them tell you which is theirs — they'll know from
@@ -65,16 +72,16 @@ what's inside within seconds, and that's quicker than either of you guessing.
 ### They've forgotten the GM password
 
 ```bash
-longtable room reset-password <slug>
+longtable room reset-password <room-code>
 ```
 
 This assigns a new randomly generated password to the room and prints it out on
 the screen.
 
-Do check the slug before pressing enter, though. There's no confirmation and no
+Do check the code before pressing enter, though. There's no confirmation and no
 undo, so a typo here locks out a second GM who hadn't lost anything — which
 turns one person's small problem into two people's larger one.
 
 Send the new password some way other than the room's own chat, since that's the
 thing they can't reach yet. Whoever holds it can take the room as a GM, so treat
-it about as carefully as the link itself.
+it about as carefully as the room code itself.

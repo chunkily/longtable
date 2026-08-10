@@ -101,7 +101,7 @@ npm --prefix web run check && npm --prefix web run lint
 
 See [`docs/`](docs/) for guides on hosting and configuring a server.
 
-**Lost a room link, or a GM password?** Rooms aren't listed anywhere public, so there's no
+**Lost a room code, or a GM password?** Rooms aren't listed anywhere public, so there's no
 self-service recovery — ask whoever runs the server. They can find a room by its name or the date
 it was made, and reset a GM password without the old one:
 [recovering a room](docs/hosting.md#getting-a-gm-back-into-their-room).

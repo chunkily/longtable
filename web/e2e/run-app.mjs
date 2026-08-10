@@ -51,12 +51,16 @@ mkdirSync(dataDir, { recursive: true });
 // Every run starts from an empty database.
 //
 // It used to accumulate, and by the time anyone noticed it held a
-// thousand rooms — all of which the home page lists. The create-room form
-// sits under that list, so `getByRole('button', { name: 'Create room' })`
-// was scrolling past a screen-height of links that other workers were
-// still adding to, and occasionally clicking where the button had just
-// been. That failure looked like "room creation is flaky" and was really
-// "the page under test is a thousand rooms tall".
+// thousand rooms. The home page listed every one of them with the
+// create-room form underneath, and a page that tall took long enough to
+// hydrate that a spec filling the form immediately lost its values to
+// Svelte reconciling the inputs back to empty — the click then submitted
+// nothing and the page stayed put. `planning/backlog/e2e-flakes.md` has
+// the whole diagnosis, including the coordinate-based one it replaced.
+//
+// Two things have moved since: the page lists only the rooms this
+// browser has been in, and creating one is behind a button rather than
+// under the list. Neither makes a stale database a good idea.
 //
 // Wiping at start rather than at the end deliberately: whatever the last
 // run left is still there to inspect when something fails, which is most

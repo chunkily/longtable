@@ -47,6 +47,12 @@ The home page lists the rooms this browser has sessions for, most recently opene
 carrying the room's name, the name you go by there and whether you're its GM. Below it, a box that
 takes an invite; below that, the create form as before. `GET /api/rooms` is gone.
 
+**Superseded in part, 2026-08-10.** The list and its ordering are unchanged, but the two things
+under it are not: they're behind large buttons on a welcome screen now, and the empty state that
+this item added is gone rather than reworded. See
+[home-page-welcome-screen](home-page-welcome-screen.md). `parseInvite` is `parseRoomCode` in
+`web/src/lib/room-code.ts` — the paragraph below still describes what it does, under its old name.
+
 **The design question in the item above answered itself: the session already holds the room name.**
 `sessionResponse` has carried `roomName` since rooms were first built, so neither of the two
 options — cache it at join time, or add an endpoint to resolve slugs — was needed. Worth the two

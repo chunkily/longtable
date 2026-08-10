@@ -1,6 +1,7 @@
 import { expect, test, type Page, type Browser } from '@playwright/test';
 import { fixture } from './fixtures/images';
 import {
+	createRoom,
 	joinAsNewPlayer,
 	openAssetsPage,
 	openNewSceneDialog,
@@ -33,14 +34,9 @@ async function createRoomAsGM(browser: Browser, roomName: string) {
 	const context = await browser.newContext();
 	const page = await context.newPage();
 
-	await page.goto('/');
-	await page.getByLabel('Room name').fill(roomName);
-	await page.getByLabel('Your name (GM)').fill('Alice');
-	await page.getByLabel('GM password').fill('hunter2');
-	await page.getByRole('button', { name: 'Create room' }).click();
-	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
+	const slug = await createRoom(page, roomName);
 
-	return { context, page, slug: new URL(page.url()).pathname.split('/').pop()! };
+	return { context, page, slug };
 }
 
 async function joinAsPlayer(browser: Browser, slug: string) {

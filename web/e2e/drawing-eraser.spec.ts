@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
 	TOOLBAR_CLEARANCE_Y,
+	createRoom,
 	joinAsNewPlayer,
 	mapGestureOrigin,
 	openNewSceneDialog,
@@ -91,14 +92,7 @@ test('a GM erases anyone drawing, a player only their own', async ({ browser }) 
 	const gmContext = await browser.newContext();
 	const gmPage = await gmContext.newPage();
 
-	await gmPage.goto('/');
-	await gmPage.getByLabel('Room name').fill('Ink Test');
-	await gmPage.getByLabel('Your name (GM)').fill('Alice');
-	await gmPage.getByLabel('GM password').fill('hunter2');
-	await gmPage.getByRole('button', { name: 'Create room' }).click();
-
-	await expect(gmPage).toHaveURL(/\/r\/[a-z0-9]+/);
-	const slug = new URL(gmPage.url()).pathname.split('/').pop()!;
+	const slug = await createRoom(gmPage, 'Ink Test');
 
 	await openNewSceneDialog(gmPage);
 	await gmPage.getByLabel('Name').fill('Map');
@@ -152,13 +146,7 @@ test('a GM erases anyone drawing, a player only their own', async ({ browser }) 
 // same drag produced a circle of radius ~223 around (100,100), which
 // passes through none of the points asserted here.
 test('the ellipse tool fills the box it is dragged out in', async ({ page }) => {
-	await page.goto('/');
-	await page.getByLabel('Room name').fill('Ellipse');
-	await page.getByLabel('Your name (GM)').fill('Alice');
-	await page.getByLabel('GM password').fill('hunter2');
-	await page.getByRole('button', { name: 'Create room' }).click();
-
-	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
+	await createRoom(page, 'Ellipse');
 	await openNewSceneDialog(page);
 	await page.getByLabel('Name').fill('Map');
 	await page.getByRole('button', { name: 'Create scene' }).click();
@@ -193,13 +181,7 @@ test('the ellipse tool fills the box it is dragged out in', async ({ page }) => 
 // passes over — testing just where the pointer landed would leave all
 // three standing.
 test('the eraser clears every stroke it is dragged across', async ({ page }) => {
-	await page.goto('/');
-	await page.getByLabel('Room name').fill('Sweep');
-	await page.getByLabel('Your name (GM)').fill('Alice');
-	await page.getByLabel('GM password').fill('hunter2');
-	await page.getByRole('button', { name: 'Create room' }).click();
-
-	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
+	await createRoom(page, 'Sweep');
 	await openNewSceneDialog(page);
 	await page.getByLabel('Name').fill('Map');
 	await page.getByRole('button', { name: 'Create scene' }).click();
@@ -227,13 +209,7 @@ test('the eraser clears every stroke it is dragged across', async ({ page }) => 
 });
 
 test('the eraser grabs a stroke from beside it, not only dead-on', async ({ page }) => {
-	await page.goto('/');
-	await page.getByLabel('Room name').fill('Near Miss');
-	await page.getByLabel('Your name (GM)').fill('Alice');
-	await page.getByLabel('GM password').fill('hunter2');
-	await page.getByRole('button', { name: 'Create room' }).click();
-
-	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
+	await createRoom(page, 'Near Miss');
 	await openNewSceneDialog(page);
 	await page.getByLabel('Name').fill('Map');
 	await page.getByRole('button', { name: 'Create scene' }).click();

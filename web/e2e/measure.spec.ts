@@ -1,5 +1,11 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
-import { joinAsNewPlayer, mapGestureOrigin, openNewSceneDialog, selectTool } from './fixtures/room';
+import {
+	createRoom,
+	joinAsNewPlayer,
+	mapGestureOrigin,
+	openNewSceneDialog,
+	selectTool
+} from './fixtures/room';
 
 // A measurement exists only while someone is dragging it out, and it has
 // to be on everyone's map for those few seconds — neither half of that
@@ -31,14 +37,7 @@ async function openRoomAsGM(browser: Browser, roomName: string) {
 	const context = await browser.newContext();
 	const page = await context.newPage();
 
-	await page.goto('/');
-	await page.getByLabel('Room name').fill(roomName);
-	await page.getByLabel('Your name (GM)').fill('Alice');
-	await page.getByLabel('GM password').fill('hunter2');
-	await page.getByRole('button', { name: 'Create room' }).click();
-
-	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
-	const slug = new URL(page.url()).pathname.split('/').pop()!;
+	const slug = await createRoom(page, roomName);
 
 	await openNewSceneDialog(page);
 	await page.getByLabel('Name').fill('Map');

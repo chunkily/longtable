@@ -6,7 +6,7 @@
 //
 //	longtable [serve] [-addr :8080] [-db longtable.db] [-assets longtable-assets]
 //	longtable room list [-db longtable.db]
-//	longtable room reset-password [-db longtable.db] <slug>
+//	longtable room reset-password [-db longtable.db] <room-code>
 package main
 
 import (

@@ -24,6 +24,7 @@ architecture and current state live here instead**, and keeping them true is par
 | `internal/db/` | SQLite wiring (`modernc.org/sqlite`, no CGO) |
 | `assets.go` (root) | `go:embed`s `web/build`. Has to be at the root — embed can't reach outside its own directory |
 | `web/src/lib/api.ts`, `session.ts` | REST client; per-room session in `localStorage` |
+| `web/src/lib/room-code.ts` | turns whatever someone pasted — a link, a path, six characters — into a room code |
 | `web/src/lib/room.svelte.ts` | `RoomClient`: the WS protocol wrapped in Svelte 5 runes state |
 | `web/src/lib/token-fields.ts` | what a `token.update` carries and whether two of them are the same — the one answer behind the dialog's "anything typed?", `updateToken`'s no-op guard and undo's "still how I left it?" |
 | `web/src/lib/components/game-canvas.svelte` | the whole Konva map: layers, tools, rendering |
@@ -34,7 +35,7 @@ architecture and current state live here instead**, and keeping them true is par
 | `web/src/lib/components/initiative-panel.svelte` | the turn order in the rail's second panel — one component for both roles, with the GM's controls left off for everyone else |
 | `internal/ws/initiative.go` | the tracker's six commands and its one event, split out of `hub.go` |
 | `web/src/routes/r/[slug]/+page.svelte` | the room page — join form, then the full-bleed shell: map, floating toolbar, side rail (or bottom sheet) |
-| `web/e2e/fixtures/` | everything the specs are built on, so `e2e/` itself is just the tests: the `table` fixture (a room, a scene, a GM, and teardown that survives a failure), the canvas helpers, the room-chrome helpers, and the upload images. Its README is the starting point for a new spec |
+| `web/e2e/fixtures/` | everything the specs are built on, so `e2e/` itself is just the tests: the `table` fixture (a room, a scene, a GM, and teardown that survives a failure), the canvas helpers, the room-chrome helpers (including `createRoom`, which every spec goes through), and the upload images. Its README is the starting point for a new spec |
 | `web/src/routes/r/[slug]/assets/+page.svelte` | the assets page — the only way art enters a room's library, and the only way one leaves: tabbed by token/map, with name, credit, grid alignment, search |
 | `web/e2e/` | Playwright specs; several read canvas pixels because Konva has no DOM |
 | `planning/` | backlog, user stories, ADRs (`decisions/`), role glossary |
@@ -59,10 +60,17 @@ roster. Claiming is open, with no password or approval; the GM's seat is the exc
 through the room password, which also means a second GM login reuses that seat instead of growing
 the roster. A GM can add a seat before anyone arrives and remove a finished one from `Manage
 room`; leaving a room ends that device's session and leaves the seat behind to come back to.
-**Rooms are not listed anywhere** — the home page shows
-only the rooms this browser holds a session for, newest first, with a box to paste an invite link
-or bare code into; there is no server endpoint that enumerates rooms, and `longtable room list` is
-the only way to see them all, which is the Host's job and needs the database file. Scenes built
+**Rooms are not listed anywhere** — there is no server endpoint that enumerates
+them, and `longtable room list` is the only way to see them all, which is the Host's job and needs
+the database file. The way into one is its **room code**: six characters, and the word used for it
+everywhere a person can read one — both steps of the home page, the pre-join screen, the README,
+the hosting guide, and that CLI's `CODE NAME CREATED` header. `slug` survives as the route
+parameter, the column and the Go identifiers, because nobody is ever asked to say a URL shape out
+loud. **The home page asks one question at a time** too: a browser holding sessions sees those
+rooms listed, newest first, and every browser gets two large buttons under it — `Join a room`,
+which opens a box taking a bare code or a whole pasted link, and `Create a room`. A browser with
+no rooms gets no list at all rather than an empty one, since the two buttons are what it came for.
+Scenes built
 from an uploaded map or a
 picked library asset and managed from one dialog (make, switch, delete, swap the map under one),
 tokens (**anyone creates them**, from the same `New token` icon on the toolbar and up to twenty at

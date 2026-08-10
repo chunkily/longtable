@@ -13,9 +13,9 @@ So that I can get back to my game without hunting through everyone else's, and w
 - [ ] The home page lists only rooms this browser has joined or created, newest use first
 - [ ] Each row says which room it is and whether I'm its GM or a Player there
 - [ ] No room I haven't joined appears anywhere in the web UI, for anyone
-- [ ] I can join a room by pasting an invite link or its code
+- [ ] I can join a room by pasting a link or typing its room code
 - [ ] I can remove a room from my own list without affecting the room or anyone else's list
-- [ ] With no rooms yet, the page says how to get into one rather than showing an empty list
+- [ ] With no rooms yet, the page offers the two ways into one rather than showing an empty list
 - [ ] Creating a room puts it straight into my list
 
 ## Notes
@@ -38,3 +38,10 @@ down before this one gets built.
 The removal criterion is the same gesture as
 [leave-room-button](../backlog/leave-room-button.md); whichever lands first should do both, since
 "leave this room" and "take it off my list" are one action to the person doing it.
+
+**Amended 2026-08-10**, by [home-page-welcome-screen](../backlog/home-page-welcome-screen.md). The
+empty-state criterion was first read as "write better words in the empty card", and the card was
+still the biggest thing on a first-time visitor's screen. It is now a welcome screen with the two
+actions on it and no list at all, which is what the criterion was reaching for. The other change is
+vocabulary: **room code**, not "invite link" — the wording here and everywhere public moved
+together.

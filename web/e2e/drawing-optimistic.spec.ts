@@ -1,6 +1,7 @@
 import { expect, test, type Page, type WebSocketRoute } from '@playwright/test';
 import {
 	TOOLBAR_CLEARANCE_Y,
+	createRoom,
 	mapGestureOrigin,
 	openNewSceneDialog,
 	selectTool
@@ -41,12 +42,7 @@ async function inkAt(page: Page, point: { x: number; y: number }): Promise<numbe
 }
 
 async function createRoomWithScene(page: Page, name: string) {
-	await page.goto('/');
-	await page.getByLabel('Room name').fill(name);
-	await page.getByLabel('Your name (GM)').fill('Alice');
-	await page.getByLabel('GM password').fill('hunter2');
-	await page.getByRole('button', { name: 'Create room' }).click();
-	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
+	await createRoom(page, name);
 
 	await openNewSceneDialog(page);
 	await page.getByLabel('Name').fill('Map');

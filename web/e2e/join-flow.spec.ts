@@ -1,5 +1,5 @@
-import { expect, test, type Browser, type Page } from '@playwright/test';
-import { joinAsGM, joinAsNewPlayer, openSeatPicker } from './fixtures/room';
+import { expect, test, type Browser } from '@playwright/test';
+import { createRoom, joinAsGM, joinAsNewPlayer, openSeatPicker } from './fixtures/room';
 
 // The pre-join screen, which asks one question at a time. The thing
 // worth testing here isn't that joining works — every other spec joins —
@@ -8,16 +8,6 @@ import { joinAsGM, joinAsNewPlayer, openSeatPicker } from './fixtures/room';
 // screen at once, and two thirds of that was addressed to somebody else.
 //
 // No scene is created in these rooms: nothing here needs a canvas.
-
-async function createRoom(page: Page, roomName: string) {
-	await page.goto('/');
-	await page.getByLabel('Room name').fill(roomName);
-	await page.getByLabel('Your name (GM)').fill('Alice');
-	await page.getByLabel('GM password').fill('hunter2');
-	await page.getByRole('button', { name: 'Create room' }).click();
-	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
-	return new URL(page.url()).pathname.split('/').pop()!;
-}
 
 /** A device with no stored session, arriving at the pre-join screen. */
 async function openFreshDevice(browser: Browser, slug: string) {

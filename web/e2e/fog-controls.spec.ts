@@ -1,5 +1,6 @@
 import { expect, test, type Page, type Browser } from '@playwright/test';
 import {
+	createRoom,
 	joinAsNewPlayer,
 	mapGestureOrigin,
 	openNewSceneDialog,
@@ -59,13 +60,7 @@ async function createRoomWithScene(browser: Browser, name: string) {
 	const context = await browser.newContext();
 	const page = await context.newPage();
 
-	await page.goto('/');
-	await page.getByLabel('Room name').fill(name);
-	await page.getByLabel('Your name (GM)').fill('Alice');
-	await page.getByLabel('GM password').fill('hunter2');
-	await page.getByRole('button', { name: 'Create room' }).click();
-	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
-	const slug = new URL(page.url()).pathname.split('/').pop()!;
+	const slug = await createRoom(page, name);
 
 	await openNewSceneDialog(page);
 	await page.getByLabel('Name').fill('Map');

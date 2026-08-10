@@ -311,7 +311,10 @@
 		<Card.Root>
 			<Card.Header>
 				<Card.Title>{seatsRoomName || 'Join room'}</Card.Title>
-				<Card.Description>{slug}</Card.Description>
+				<!-- Named rather than left bare: this string is what someone
+				     reads back to whoever sent it when they end up in the wrong
+				     room, and "room code" is what it's called everywhere else. -->
+				<Card.Description>Room code {slug}</Card.Description>
 			</Card.Header>
 			<Card.Content class="flex flex-col gap-4">
 				{#if step === 'role'}

@@ -1,5 +1,5 @@
 import { test as base, expect, type BrowserContext, type Page } from '@playwright/test';
-import { joinAsNewPlayer, openNewSceneDialog } from './room';
+import { createRoom, joinAsNewPlayer, openNewSceneDialog } from './room';
 
 /**
  * A room with people at it, as a Playwright fixture.
@@ -63,13 +63,7 @@ export const test = base.extend<TableOptions & { table: Table }>({
 		const gm = await device();
 		// Named after the test, so a room found in the database while
 		// debugging says which test left it there.
-		await gm.page.goto('/');
-		await gm.page.getByLabel('Room name').fill(testInfo.title.slice(0, 60));
-		await gm.page.getByLabel('Your name (GM)').fill('Alice');
-		await gm.page.getByLabel('GM password').fill('hunter2');
-		await gm.page.getByRole('button', { name: 'Create room' }).click();
-		await expect(gm.page).toHaveURL(/\/r\/[a-z0-9]+/);
-		const slug = new URL(gm.page.url()).pathname.split('/').pop()!;
+		const slug = await createRoom(gm.page, testInfo.title.slice(0, 60));
 
 		if (scene) {
 			await openNewSceneDialog(gm.page);

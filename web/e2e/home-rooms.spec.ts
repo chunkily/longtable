@@ -1,21 +1,12 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
-import { joinAsGM, joinAsNewPlayer } from './fixtures/room';
+import { createRoom, joinAsGM, joinAsNewPlayer } from './fixtures/room';
 
-// The home page lists the rooms this browser has been in, and nothing
-// else. The half that needs a real browser is the privacy one: a second
-// context has its own localStorage, so it stands in for somebody else's
-// laptop on the same LAN, and it must not be able to see the first
-// person's rooms — by any route, including asking the server directly.
-
-async function createRoom(page: Page, roomName: string, gmName = 'Alice') {
-	await page.goto('/');
-	await page.getByLabel('Room name').fill(roomName);
-	await page.getByLabel('Your name (GM)').fill(gmName);
-	await page.getByLabel('GM password').fill('hunter2');
-	await page.getByRole('button', { name: 'Create room' }).click();
-	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
-	return new URL(page.url()).pathname.split('/').pop()!;
-}
+// The home page: what a browser that has never been anywhere is offered,
+// and the rooms it has been to once it has. The half that needs a real
+// browser is the privacy one — a second context has its own
+// localStorage, so it stands in for somebody else's laptop on the same
+// LAN, and it must not be able to see the first person's rooms by any
+// route, including asking the server directly.
 
 async function joinRoom(browser: Browser, slug: string, name: string) {
 	const context = await browser.newContext();
@@ -30,6 +21,32 @@ async function joinRoom(browser: Browser, slug: string, name: string) {
 
 const yourRooms = (page: Page) => page.getByRole('region', { name: 'Your rooms' });
 
+// Nobody arrives here expecting a list. They arrive having been sent a
+// code, or wanting to start a table — so those are the two things on
+// screen, and the list of rooms you have none of isn't drawn at all.
+test('a browser that has never been anywhere is offered the two things it can do', async ({
+	page
+}) => {
+	await page.goto('/');
+
+	await expect(page.getByRole('button', { name: 'Join a room' })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Create a room' })).toBeVisible();
+	await expect(yourRooms(page)).toHaveCount(0);
+
+	// Each button opens its own step, and neither is on screen until it is
+	// asked for: the old page put an empty list, a code box and a
+	// three-field create form up at once.
+	await page.getByRole('button', { name: 'Join a room' }).click();
+	await expect(page.getByLabel('Room code')).toBeVisible();
+	await expect(page.getByLabel('Room name')).toHaveCount(0);
+
+	// A wrong turn costs a click, not a reload.
+	await page.getByRole('button', { name: 'Back' }).click();
+	await page.getByRole('button', { name: 'Create a room' }).click();
+	await expect(page.getByLabel('Room name')).toBeVisible();
+	await expect(page.getByLabel('Room code')).toHaveCount(0);
+});
+
 test('a room you create is on your home page, and nobody else can see it', async ({ browser }) => {
 	const mine = await browser.newContext();
 	const minePage = await mine.newPage();
@@ -41,11 +58,13 @@ test('a room you create is on your home page, and nobody else can see it', async
 	await expect(yourRooms(minePage).getByText('GM')).toBeVisible();
 
 	// A different browser is a different person on the same server. They
-	// were never told the link, so they see nothing.
+	// were never given the code, so they see nothing — and the list isn't
+	// there at all rather than being there and empty.
 	const theirs = await browser.newContext();
 	const theirsPage = await theirs.newPage();
 	await theirsPage.goto('/');
-	await expect(theirsPage.getByText('Nothing here yet')).toBeVisible();
+	await expect(theirsPage.getByRole('button', { name: 'Join a room' })).toBeVisible();
+	await expect(yourRooms(theirsPage)).toHaveCount(0);
 	await expect(theirsPage.getByText('Mikes Surprise Party')).toHaveCount(0);
 
 	// And not by asking the server either — the endpoint that used to
@@ -60,7 +79,7 @@ test('a room you create is on your home page, and nobody else can see it', async
 	await theirs.close();
 });
 
-test('a player who joins by link gets the room on their own home page', async ({ browser }) => {
+test('a player who joins by code gets the room on their own home page', async ({ browser }) => {
 	const gm = await browser.newContext();
 	const gmPage = await gm.newPage();
 	const slug = await createRoom(gmPage, 'Curse of Strahd');
@@ -77,31 +96,34 @@ test('a player who joins by link gets the room on their own home page', async ({
 	await player.context.close();
 });
 
-// Pasting an invite is the only way into a room you haven't been in, so
-// it has to take the forms an invite actually arrives in.
-test('an invite can be pasted as a link or as a bare code', async ({ browser }) => {
+// A room code is the only way into a room you haven't been in, so the box
+// has to take the forms it actually arrives in — six characters read off
+// someone's screen, or the whole link they pasted at you.
+test('a room code can be pasted as a link or typed as six characters', async ({ browser }) => {
 	const gm = await browser.newContext();
 	const gmPage = await gm.newPage();
 	const slug = await createRoom(gmPage, 'Tomb of Horrors');
 
-	for (const invite of [`http://localhost:5173/r/${slug}`, slug]) {
+	for (const pasted of [`http://localhost:5173/r/${slug}`, slug]) {
 		const context = await browser.newContext();
 		const page = await context.newPage();
 		await page.goto('/');
-		await page.getByLabel('Have an invite?').fill(invite);
-		await page.getByRole('button', { name: 'Join' }).click();
+		await page.getByRole('button', { name: 'Join a room' }).click();
+		await page.getByLabel('Room code').fill(pasted);
+		await page.getByRole('button', { name: 'Join room' }).click();
 		await expect(page).toHaveURL(new RegExp(`/r/${slug}$`));
 		await context.close();
 	}
 
-	// Something that isn't an invite says so and stays put, rather than
+	// Something that isn't a code says so and stays put, rather than
 	// navigating to a room that was never going to exist.
 	const context = await browser.newContext();
 	const page = await context.newPage();
 	await page.goto('/');
-	await page.getByLabel('Have an invite?').fill('where is the game');
-	await page.getByRole('button', { name: 'Join' }).click();
-	await expect(page.getByText("doesn't look like an invite")).toBeVisible();
+	await page.getByRole('button', { name: 'Join a room' }).click();
+	await page.getByLabel('Room code').fill('where is the game');
+	await page.getByRole('button', { name: 'Join room' }).click();
+	await expect(page.getByText("doesn't look like a room code")).toBeVisible();
 	await expect(page).toHaveURL(/\/$/);
 
 	await context.close();
@@ -115,14 +137,14 @@ test('forgetting a room drops it from this list and leaves the room alone', asyn
 
 	await gmPage.goto('/');
 	await gmPage.getByRole('button', { name: 'Forget Forgettable Keep' }).click();
-	await expect(gmPage.getByText('Nothing here yet')).toBeVisible();
+	await expect(yourRooms(gmPage)).toHaveCount(0);
 
 	// Survives a reload, so it really left storage rather than just the
 	// rendered list.
 	await gmPage.reload();
-	await expect(gmPage.getByText('Nothing here yet')).toBeVisible();
+	await expect(yourRooms(gmPage)).toHaveCount(0);
 
-	// The room itself is untouched — the link still works, and a GM who
+	// The room itself is untouched — the code still works, and a GM who
 	// forgot it can log back in with the password.
 	await gmPage.goto(`/r/${slug}`);
 	await joinAsGM(gmPage, 'Alice', 'hunter2');

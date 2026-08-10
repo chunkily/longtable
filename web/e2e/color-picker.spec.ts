@@ -1,18 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
-import { openNewSceneDialog, selectToolFamily } from './fixtures/room';
+import { createRoom, openNewSceneDialog, selectToolFamily } from './fixtures/room';
 
 // The selected colour used to be visible only as pixels, which meant
 // nothing could assert it and a screen reader couldn't report it. It is
 // now carried on aria-pressed, so both problems are one attribute.
 
 async function createRoomWithScene(page: Page) {
-	await page.goto('/');
-	await page.getByLabel('Room name').fill('Colours');
-	await page.getByLabel('Your name (GM)').fill('Alice');
-	await page.getByLabel('GM password').fill('hunter2');
-	await page.getByRole('button', { name: 'Create room' }).click();
-
-	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
+	await createRoom(page, 'Colours');
 	await openNewSceneDialog(page);
 	await page.getByLabel('Name').fill('Map');
 	await page.getByRole('button', { name: 'Create scene' }).click();

@@ -1,5 +1,5 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
-import { openNewSceneDialog, selectTool } from './fixtures/room';
+import { createRoom, openNewSceneDialog, selectTool } from './fixtures/room';
 
 // Pinch-to-zoom on a touch device — the one gesture the map was missing,
 // and the reason it was unusable on the tablet people actually bring to
@@ -83,12 +83,7 @@ async function openRoomAsGM(browser: Browser, roomName: string) {
 	const context = await browser.newContext({ hasTouch: true });
 	const page = await context.newPage();
 
-	await page.goto('/');
-	await page.getByLabel('Room name').fill(roomName);
-	await page.getByLabel('Your name (GM)').fill('Alice');
-	await page.getByLabel('GM password').fill('hunter2');
-	await page.getByRole('button', { name: 'Create room' }).click();
-	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
+	await createRoom(page, roomName);
 
 	await openNewSceneDialog(page);
 	await page.getByLabel('Name').fill('Map');

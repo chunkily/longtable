@@ -113,7 +113,8 @@ modules, the first two newer than most of the specs:
   were right; the flaky specs were the copies that guessed. `createToken` returns the point the
   token landed on and waits for ink *there* rather than anywhere on the layer, and `selectToken`
   clicks until the panel names the token rather than once.
-- **`e2e/fixtures/room.ts`** — driving the room's chrome: `selectTool`, the menu, the join flow.
+- **`e2e/fixtures/room.ts`** — getting into a room and driving its chrome: `createRoom`,
+  `selectTool`, the menu, the join flow.
 
 Import them, don't re-declare them. They used to be
 copy-pasted per spec, which stopped working the moment the full-bleed layout put tools behind a
@@ -139,6 +140,12 @@ twenty files.
   a menu entry**: it's a mode of the Scenes dialog, so `openNewSceneDialog` goes through
   `openScenesDialog` first. Creating a scene closes the whole dialog rather than returning to the
   list, which is what lets a spec click the canvas straight afterwards.
+- `createRoom(page, roomName)` — the home page asks one question at a time, so creating a room is a
+  click on `Create a room`, a wait for the form, three fills and a submit. Returns the room code.
+  **Never spell this out in a spec.** Two of the steps are waits with reasons: `networkidle` before
+  the click, because a click landing before hydration does nothing and leaves you waiting on a form
+  that never opened, and the form's own appearance afterwards, which is what proves hydration
+  finished before anything gets filled in.
 - `joinAsNewPlayer(page, name)` / `takeSeat(page, seatName)` / `joinAsGM(page, name, password)` /
   `openSeatPicker(page)` — the pre-join screen asks which side of the screen you're on before it
   asks anything else, so getting into a room is never one `fill` and one click any more. Filling
@@ -251,8 +258,8 @@ Clicking it afterwards moves the grid, not the staged file. This matters even wh
 doesn't care about tabs: the scene and replace-map pickers open on Maps, so a map filed as token
 art simply isn't in the grid the spec then clicks in. The regex anchor is worth copying — the tab
 is named `Maps 1`, counts included, and Playwright matches names by substring unless told
-otherwise. `fixture()` comes from `e2e/fixtures.ts`
-and the images live in `e2e/fixtures/` (see its README). It works on a hidden
+otherwise. `fixture()` comes from `e2e/fixtures/images.ts`
+and the images live beside it (see that folder's README). It works on a hidden
 `<input type="file">` — visibility doesn't matter to Playwright the way it does to a real click —
 so there's no need for a visible-input workaround.
 

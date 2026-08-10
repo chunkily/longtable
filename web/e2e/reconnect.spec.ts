@@ -1,5 +1,5 @@
 import { expect, test, type Page, type WebSocketRoute } from '@playwright/test';
-import { openNewSceneDialog } from './fixtures/room';
+import { createRoom, openNewSceneDialog } from './fixtures/room';
 
 // A dropped socket used to end the session until someone reloaded, with
 // every command silently doing nothing and only a small status badge to
@@ -44,12 +44,7 @@ async function interceptableSocket(page: Page) {
 }
 
 async function createRoomWithScene(page: Page, name: string) {
-	await page.goto('/');
-	await page.getByLabel('Room name').fill(name);
-	await page.getByLabel('Your name (GM)').fill('Alice');
-	await page.getByLabel('GM password').fill('hunter2');
-	await page.getByRole('button', { name: 'Create room' }).click();
-	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
+	await createRoom(page, name);
 
 	await openNewSceneDialog(page);
 	await page.getByLabel('Name').fill('Map');
