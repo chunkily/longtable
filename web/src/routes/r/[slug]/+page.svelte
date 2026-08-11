@@ -15,6 +15,7 @@
 	} from '$lib/api';
 	import { clearSession, loadSession, saveSession, touchSession } from '$lib/session';
 	import { hostNotice } from '$lib/host-notice.svelte';
+	import { loadFogOpacity, saveFogOpacity } from '$lib/fog-opacity';
 	import { RoomClient, type Token } from '$lib/room.svelte';
 	import { DEFAULT_LINE_WIDTH_FEET, type SnapMode } from '$lib/aoe';
 	import { familyHasStrip, familyOf, type Tool } from '$lib/tool-family';
@@ -99,6 +100,12 @@
 	// gives length and direction, never width.
 	let lineWidthFeet = $state(DEFAULT_LINE_WIDTH_FEET);
 	let strokeColor = $state('#000000');
+	// The GM's own preference, same reasoning as the theme control: it's
+	// how fog looks on this screen, not room state, so it's read from
+	// localStorage up front and written back on every change rather than
+	// carried on the wire.
+	let fogOpacity = $state(loadFogOpacity());
+	$effect(() => saveFogOpacity(fogOpacity));
 
 	// Which of the two switchable panels the side rail is showing. The
 	// menu is the third foot icon but isn't a panel — it opens over
@@ -716,6 +723,7 @@
 					{strokeColor}
 					{snapMode}
 					{lineWidthFeet}
+					{fogOpacity}
 					bind:selectedTokenId
 					bind:this={canvasRef}
 				/>
@@ -797,6 +805,7 @@
 							bind:strokeColor
 							bind:snapMode
 							bind:lineWidthFeet
+							bind:fogOpacity
 							{isGM}
 						/>
 					</div>
@@ -900,6 +909,7 @@
 					bind:strokeColor
 					bind:snapMode
 					bind:lineWidthFeet
+					bind:fogOpacity
 					{isGM}
 				/>
 			</div>

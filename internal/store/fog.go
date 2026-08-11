@@ -56,8 +56,9 @@ func (s *Store) HideCells(sceneID string, cells []FogCell) error {
 	return tx.Commit()
 }
 
-// ClearFog re-hides a whole scene at once, returning it to the fully
-// covered state a scene starts in.
+// ClearFog re-hides a whole scene at once — the classic dungeon-crawl
+// starting point, though it's no longer where a scene starts on its
+// own; see the fog materialisation in handleSceneCreate.
 func (s *Store) ClearFog(sceneID string) error {
 	_, err := s.db.Exec(`DELETE FROM fog_cell WHERE scene_id = ?`, sceneID)
 	return err

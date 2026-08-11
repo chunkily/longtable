@@ -9,8 +9,10 @@
 	// borderline at 375px and measure's doesn't fit, and a horizontally
 	// scrolling bar floating over a pannable canvas is a gesture conflict.
 	import { Button } from '$lib/components/ui/button';
+	import { Slider } from '$lib/components/ui/slider';
 	import type { RoomClient } from '$lib/room.svelte';
 	import { LINE_WIDTH_CHOICES_FEET, type SnapMode } from '$lib/aoe';
+	import { MAX_FOG_OPACITY, MIN_FOG_OPACITY } from '$lib/fog-opacity';
 	import { familyOf, type Tool } from '$lib/tool-family';
 	import Pen from '@lucide/svelte/icons/pen';
 	import Slash from '@lucide/svelte/icons/slash';
@@ -32,6 +34,7 @@
 		strokeColor = $bindable('#000000'),
 		snapMode = $bindable('intersections'),
 		lineWidthFeet = $bindable(),
+		fogOpacity = $bindable(0.5),
 		isGM
 	}: {
 		room: RoomClient;
@@ -40,6 +43,7 @@
 		strokeColor?: string;
 		snapMode?: SnapMode;
 		lineWidthFeet?: number;
+		fogOpacity?: number;
 		isGM: boolean;
 	} = $props();
 
@@ -214,7 +218,7 @@
 			size="sm"
 			aria-label="Reveal fog"
 			aria-pressed={activeTool === 'fog-reveal'}
-			title="Drag over covered squares to uncover them"
+			title="Reveal"
 			onclick={() => (activeTool = 'fog-reveal')}
 		>
 			<Eye class="h-4 w-4" />
@@ -224,7 +228,7 @@
 			size="sm"
 			aria-label="Hide fog"
 			aria-pressed={activeTool === 'fog-hide'}
-			title="Drag over revealed squares to cover them again"
+			title="Hide"
 			onclick={() => (activeTool = 'fog-hide')}
 		>
 			<EyeOff class="h-4 w-4" />
@@ -248,6 +252,21 @@
 			     session's worth of revealed fog with no undo — worth fixing
 			     the first time someone actually hits it. -->
 			<Button variant="outline" size="sm" onclick={() => room.resetFog(sceneId)}>Reset fog</Button>
+		</div>
+		<!-- The GM's own screen only — a Player's cover is always opaque, so
+		     this has nothing to control there. Persisted per browser rather
+		     than sent anywhere; see $lib/fog-opacity. -->
+		<div class="flex items-center gap-2 border-l pl-2">
+			<span class="text-xs text-muted-foreground">Fog opacity</span>
+			<Slider
+				type="single"
+				bind:value={fogOpacity}
+				min={MIN_FOG_OPACITY}
+				max={MAX_FOG_OPACITY}
+				step={0.05}
+				class="w-24"
+				aria-label="Fog opacity"
+			/>
 		</div>
 	</div>
 {/if}

@@ -18,10 +18,12 @@
 	import type { Tool } from '$lib/tool-family';
 	import { pinchStep, touchCentre, touchDistance, type Point } from '$lib/pinch';
 	import { PING_PULSES, PING_PULSE_INTERVAL_MS, PING_PULSE_SECONDS } from '$lib/ping';
+	import { DEFAULT_FOG_OPACITY } from '$lib/fog-opacity';
 	import { setTrackers, trackerText } from '$lib/room.svelte';
 	import type {
 		Drawing,
 		DrawingPoint,
+		FogCell,
 		Measurement,
 		Ping,
 		RoomClient,
@@ -49,6 +51,7 @@
 		strokeColor = '#000000',
 		snapMode = 'intersections',
 		lineWidthFeet = DEFAULT_LINE_WIDTH_FEET,
+		fogOpacity = DEFAULT_FOG_OPACITY,
 		selectedTokenId = $bindable(null)
 	}: {
 		room: RoomClient;
@@ -57,6 +60,8 @@
 		/** Where template points may land. Purely a local input aid. */
 		snapMode?: SnapMode;
 		lineWidthFeet?: number;
+		/** The GM's own preference for how dark fog looks on their screen. */
+		fogOpacity?: number;
 		/**
 		 * The token this client has selected, or null. Bound rather than
 		 * owned here because the room page draws the details section that
@@ -491,14 +496,15 @@
 		return values.length;
 	}
 
-	// Deliberately not tracking room.drawings or room.tokens: either one
-	// would rebuild the map image, every grid line and every fog cell for
-	// a change that only touched a single stroke or a single token's
-	// position — and drawing, erasing and dragging tokens are the most
+	// Deliberately not tracking room.drawings, room.tokens or
+	// room.fogCells: any of the three would rebuild the map image, every
+	// grid line and every fog cell for a change that only touched a
+	// single stroke, a single token's position, or one painted cell —
+	// and drawing, erasing, dragging tokens and painting fog are the most
 	// frequent things that happen to a scene. They get their own effects
 	// below.
 	$effect(() => {
-		track(room.scene, room.fogCells, room.you);
+		track(room.scene, room.you);
 		render();
 	});
 
@@ -522,6 +528,18 @@
 	$effect(() => {
 		track(room.drawings);
 		if (stage) renderDrawings();
+	});
+
+	// Its own effect for the same reason drawings and tokens have theirs
+	// (see the note above): fogOpacity fires on every tick of the GM
+	// dragging their opacity slider, and pairing that with the full
+	// rebuild would redraw the map, grid and every token for no reason.
+	$effect(() => {
+		track(room.fogCells, room.scene, room.you, fogOpacity);
+		const scene = room.scene;
+		if (stage && scene) {
+			renderFog(scene.gridSize, scene.width || 0, scene.height || 0, fogOpacity);
+		}
 	});
 
 	// activeTool is tracked here, not only by the handler effect below,
@@ -608,14 +626,8 @@
 		};
 	}
 
-	// --- pointer-driven tools: fog paint, freehand/line/rect/circle
+	// --- pointer-driven tools: fog rect, freehand/line/rect/circle
 	// drawing, and ping. Exactly one owns the stage's pointer at a time. ---
-
-	let painting = false;
-	// Transient drag-stroke bookkeeping, cleared every stroke — not
-	// template state, so a plain Map (not SvelteMap) is correct.
-	// eslint-disable-next-line svelte/prefer-svelte-reactivity
-	let pendingCells = new Map<string, { x: number; y: number }>();
 
 	let drawStart: DrawingPoint | null = null;
 	let freehandPoints: DrawingPoint[] = [];
@@ -790,8 +802,6 @@
 	// inside stopMeasuring() it stays frozen on every other map with no
 	// end event ever coming.
 	function retractInFlightGesture() {
-		painting = false;
-		pendingCells.clear();
 		stopErasing();
 		stopMeasuring();
 		clearPreview();
@@ -835,33 +845,43 @@
 		const gridSize = scene.gridSize;
 		const sceneId = scene.id;
 
-		// Revealing and hiding are the same gesture over the same cells in
-		// opposite directions, so they share a handler and differ only in
-		// which command the sweep ends with.
+		// Revealing and hiding both rubber-band a rectangle from a fixed
+		// start point, the same shape line/rect/ellipse drag below — and
+		// commit every cell inside it in one command on release. An L-shaped
+		// room is two drags, not a reason for a freeform sweep: a rectangle
+		// covers what that shape needs without asking for a steady hand
+		// along the way, and a plain click (no drag at all) still resolves
+		// to the one cell under the pointer, for a single-square touch-up.
 		if (activeTool === 'fog-reveal' || activeTool === 'fog-hide') {
 			if (room.you?.role !== 'gm') return; // fog stays GM-only
 			const hiding = activeTool === 'fog-hide';
 			stage.on('mousedown.tool touchstart.tool', (e) => {
 				if (!isPrimaryPointer(e)) return;
-				painting = true;
-				paintAtPointer(gridSize, hiding);
+				const pos = stage!.getRelativePointerPosition();
+				if (!pos) return;
+				drawStart = pos;
+				previewShape = buildFogPreviewShape(gridSize, pos, pos, hiding);
+				previewLayer.add(previewShape);
 			});
 			stage.on('mousemove.tool touchmove.tool', () => {
-				if (painting) paintAtPointer(gridSize, hiding);
+				if (!drawStart || !previewShape) return;
+				const pos = stage!.getRelativePointerPosition();
+				if (!pos) return;
+				updateFogPreviewShape(previewShape as Konva.Rect, gridSize, drawStart, pos);
+				previewLayer.batchDraw();
 			});
 			stage.on('mouseup.tool touchend.tool', (e) => {
 				if (!isPrimaryPointer(e)) return;
-				if (!painting) return;
-				painting = false;
-				if (pendingCells.size > 0) {
-					const cells = Array.from(pendingCells.values());
-					// A sweep sends every cell it crossed, including ones already
+				if (drawStart) {
+					const pos = stage!.getRelativePointerPosition() ?? drawStart;
+					const cells = fogCellsInRange(fogCellRange(gridSize, drawStart, pos));
+					// Every cell in the rectangle is sent, including ones already
 					// in the target state — both commands are idempotent server
-					// side, which is what lets the gesture stay this simple.
+					// side, which is what lets this stay a plain bounding box.
 					if (hiding) room.hideFog(sceneId, cells);
 					else room.revealFog(sceneId, cells);
 				}
-				pendingCells.clear();
+				clearPreview();
 			});
 			return;
 		}
@@ -1082,35 +1102,68 @@
 		}
 	}
 
-	// The two fog tools mark their swept cells in different colours so a
-	// GM mid-drag can tell which direction they're painting in. Neither
-	// is what the cell will end up looking like — that arrives with the
-	// broadcast, which re-renders the layer from scratch.
+	// The two fog tools tint their drag rectangle in different colours so a
+	// GM mid-drag can tell which direction they're painting in. Neither is
+	// what the cells will end up looking like — that arrives with the
+	// broadcast, which re-renders the fog layer from scratch.
 	const FOG_REVEAL_PREVIEW = 'yellow';
 	const FOG_HIDE_PREVIEW = '#dc2626';
 
-	function paintAtPointer(gridSize: number, hiding: boolean) {
-		// Pointer position adjusted for the stage's own pan/zoom, so
-		// painting still lands on the right cell after the camera moves.
-		const pos = stage?.getRelativePointerPosition();
-		if (!pos) return;
-		const cell = { x: Math.floor(pos.x / gridSize), y: Math.floor(pos.y / gridSize) };
-		const key = `${cell.x},${cell.y}`;
-		if (pendingCells.has(key)) return;
-		pendingCells.set(key, cell);
+	// The grid cells a drag from a to b covers, inclusive at both ends —
+	// floor at each corner independently rather than measuring a span, so
+	// a==b (a plain click) always resolves to exactly the one cell under
+	// the pointer instead of an empty range.
+	function fogCellRange(gridSize: number, a: DrawingPoint, b: DrawingPoint) {
+		return {
+			x0: Math.floor(Math.min(a.x, b.x) / gridSize),
+			y0: Math.floor(Math.min(a.y, b.y) / gridSize),
+			x1: Math.floor(Math.max(a.x, b.x) / gridSize),
+			y1: Math.floor(Math.max(a.y, b.y) / gridSize)
+		};
+	}
 
-		fogLayer.add(
-			new Konva.Rect({
-				x: cell.x * gridSize,
-				y: cell.y * gridSize,
-				width: gridSize,
-				height: gridSize,
-				fill: hiding ? FOG_HIDE_PREVIEW : FOG_REVEAL_PREVIEW,
-				opacity: 0.35,
-				listening: false
-			})
-		);
-		fogLayer.batchDraw();
+	function fogCellsInRange(range: ReturnType<typeof fogCellRange>): FogCell[] {
+		const cells: FogCell[] = [];
+		for (let y = range.y0; y <= range.y1; y++) {
+			for (let x = range.x0; x <= range.x1; x++) {
+				cells.push({ x, y });
+			}
+		}
+		return cells;
+	}
+
+	function buildFogPreviewShape(
+		gridSize: number,
+		a: DrawingPoint,
+		b: DrawingPoint,
+		hiding: boolean
+	): Konva.Rect {
+		const shape = new Konva.Rect({
+			fill: hiding ? FOG_HIDE_PREVIEW : FOG_REVEAL_PREVIEW,
+			opacity: 0.35,
+			listening: false
+		});
+		updateFogPreviewShape(shape, gridSize, a, b);
+		return shape;
+	}
+
+	// Snapped to whole cells on every move rather than the raw pixel
+	// rectangle, so the preview always shows exactly the set
+	// fogCellsInRange will send — not a rectangle that disagrees with it
+	// at the edges.
+	function updateFogPreviewShape(
+		shape: Konva.Rect,
+		gridSize: number,
+		a: DrawingPoint,
+		b: DrawingPoint
+	) {
+		const range = fogCellRange(gridSize, a, b);
+		shape.setAttrs({
+			x: range.x0 * gridSize,
+			y: range.y0 * gridSize,
+			width: (range.x1 - range.x0 + 1) * gridSize,
+			height: (range.y1 - range.y0 + 1) * gridSize
+		});
 	}
 
 	async function render() {
@@ -1147,7 +1200,7 @@
 
 		await renderMap(scene.mapAssetId, width, height);
 		renderGrid();
-		renderFog(scene.gridSize, width, height);
+		renderFog(scene.gridSize, width, height, fogOpacity);
 		renderDrawings();
 		renderTokens(scene.gridSize);
 	}
@@ -1219,7 +1272,7 @@
 		gridLayer.batchDraw();
 	}
 
-	function renderFog(gridSize: number, width: number, height: number) {
+	function renderFog(gridSize: number, width: number, height: number, opacity: number) {
 		fogLayer.destroyChildren();
 		if (width <= 0 || height <= 0) {
 			fogLayer.batchDraw();
@@ -1231,44 +1284,35 @@
 			width,
 			height,
 			fill: 'black',
-			opacity: isGM ? 0.35 : 1,
+			// GM still needs to see the map under the fog, so the cover is
+			// translucent rather than opaque like the player's, at whatever
+			// strength they've set (default 0.5). It used to be a fixed 0.35,
+			// with revealed cells punched out at the same 0.35 opacity — but
+			// destination-out multiplies alpha rather than clearing it, so
+			// revealed cells stayed at ~0.23 instead of 0 and the two states
+			// were nearly indistinguishable on some map art. Revealed cells
+			// are now punched fully clear (below), so the cover alone carries
+			// the hidden/revealed contrast and needs to read clearly on its own.
+			opacity: isGM ? opacity : 1,
 			listening: false
 		});
 		fogLayer.add(cover);
 
-		if (!isGM) {
-			// players never see through fog at all, so revealed cells are
-			// punched out of the cover entirely
-			for (const cell of room.fogCells) {
-				fogLayer.add(
-					new Konva.Rect({
-						x: cell.x * gridSize,
-						y: cell.y * gridSize,
-						width: gridSize,
-						height: gridSize,
-						fill: 'black',
-						globalCompositeOperation: 'destination-out',
-						listening: false
-					})
-				);
-			}
-		} else {
-			// GM sees everything; revealed cells just get a lighter tint so
-			// they can tell what's currently visible to players
-			for (const cell of room.fogCells) {
-				fogLayer.add(
-					new Konva.Rect({
-						x: cell.x * gridSize,
-						y: cell.y * gridSize,
-						width: gridSize,
-						height: gridSize,
-						fill: 'black',
-						opacity: 0.35,
-						globalCompositeOperation: 'destination-out',
-						listening: false
-					})
-				);
-			}
+		// Revealed cells are punched out of the cover entirely for both roles —
+		// players never see through fog at all, and the GM needs the true map
+		// under a revealed cell, not a lighter shade of the same tint.
+		for (const cell of room.fogCells) {
+			fogLayer.add(
+				new Konva.Rect({
+					x: cell.x * gridSize,
+					y: cell.y * gridSize,
+					width: gridSize,
+					height: gridSize,
+					fill: 'black',
+					globalCompositeOperation: 'destination-out',
+					listening: false
+				})
+			);
 		}
 
 		fogLayer.batchDraw();

@@ -1115,6 +1115,11 @@ type fogSceneRequest struct {
 	SceneID string `json:"sceneId"`
 }
 
+// The cap on req.Cells below reuses maxRevealAllCells: a hand-swept
+// drag was self-limiting (bounded by how many pointer-move events a
+// human drag produces), but the rectangle fog tool sends every cell in
+// its bounding box in one command, so a corner-to-corner drag across a
+// large map can now reach the same scale reveal-all is capped against.
 func (h *Hub) handleFogReveal(ctx context.Context, c *client, raw json.RawMessage) {
 	if !h.requireGM(ctx, c) {
 		return
@@ -1123,6 +1128,10 @@ func (h *Hub) handleFogReveal(ctx context.Context, c *client, raw json.RawMessag
 	var req fogCellsRequest
 	if err := decodePayload(raw, &req); err != nil || req.SceneID == "" || len(req.Cells) == 0 {
 		h.sendError(ctx, c, "invalid fog.reveal payload")
+		return
+	}
+	if len(req.Cells) > maxRevealAllCells {
+		h.sendError(ctx, c, fmt.Sprintf("that's %d cells, too many to reveal at once", len(req.Cells)))
 		return
 	}
 	if !h.requireSceneInRoom(ctx, c, req.SceneID) {
@@ -1153,6 +1162,10 @@ func (h *Hub) handleFogHide(ctx context.Context, c *client, raw json.RawMessage)
 	var req fogCellsRequest
 	if err := decodePayload(raw, &req); err != nil || req.SceneID == "" || len(req.Cells) == 0 {
 		h.sendError(ctx, c, "invalid fog.hide payload")
+		return
+	}
+	if len(req.Cells) > maxRevealAllCells {
+		h.sendError(ctx, c, fmt.Sprintf("that's %d cells, too many to hide at once", len(req.Cells)))
 		return
 	}
 	if !h.requireSceneInRoom(ctx, c, req.SceneID) {
@@ -1250,7 +1263,9 @@ func (h *Hub) handleFogReset(ctx context.Context, c *client, raw json.RawMessage
 	})
 }
 
-// maxRevealAllCells caps what one fog.revealAll may materialise. The
+// maxRevealAllCells caps what one fog.revealAll, fog.reveal or fog.hide
+// may materialise (the latter two via the rectangle fog tool, which can
+// name every cell in a large bounding box in a single command). The
 // count grows with the product of the map's dimensions in grid squares,
 // and every cell is both a row inserted and an entry in the payload
 // every client receives. 40,000 is a 200x200 grid — far past any map
@@ -1605,6 +1620,20 @@ func (h *Hub) handleSceneCreate(ctx context.Context, c *client, raw json.RawMess
 		slog.Error("ws: create scene failed", "error", err)
 		h.sendError(ctx, c, "failed to create scene")
 		return
+	}
+
+	// A new scene starts fully revealed, not fully covered: a Player
+	// looking at a scene nobody has painted fog on yet should see the
+	// map, not an unexplained black rectangle that reads as broken
+	// rather than "nothing revealed". Best-effort and silent on
+	// failure — the same cap handleFogRevealAll enforces applies here
+	// (sceneFogCells refuses a scene too large to materialise), and a
+	// scene that size just starts covered like it always has. Scene
+	// creation itself must not fail over this cosmetic default.
+	if cells, err := sceneFogCells(scene); err == nil {
+		if err := h.store.RevealCells(scene.ID, cells); err != nil {
+			slog.Error("ws: reveal fog for new scene failed", "error", err)
+		}
 	}
 
 	h.broadcast(ctx, c.roomID, "scene.created", map[string]any{"scene": scenePayload(scene)})

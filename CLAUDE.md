@@ -99,7 +99,11 @@ set in the edit dialog — which **stages** its changes, unlike the panel: `Save
 three-way question (`Back`, `Discard changes`, `Save changes`) rather than stacking a second
 dialog. A GM may change all of it on any token while a Player may change the trackers and
 conditions on one they own),
-fog the GM paints on and off a square at a time (plus reveal-all and reset for the whole scene),
+fog the GM reveals and hides by dragging a rectangle (a plain click covers just the one cell under
+it), starting fully revealed on a new scene rather than fully covered — a Player looking at a
+scene nobody has painted fog on yet sees the map, not an unexplained black rectangle — plus
+reveal-all and reset for the whole scene. The GM's own cover opacity is a slider on the fog
+family's strip, persisted per browser like the theme control rather than sent anywhere,
 drawings (freehand/line/rect/ellipse) with an eraser, and per-session undo/redo covering
 drawing, erasing, token creation, token deletion, token edits and token moves (an undo passes over
 a token someone else has changed since, rather than dragging it back out from under them),

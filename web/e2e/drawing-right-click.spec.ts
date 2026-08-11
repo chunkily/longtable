@@ -32,11 +32,9 @@ async function layerInk(page: Page, layer: number): Promise<number> {
 }
 
 // Total alpha across a layer, rather than a count of pixels that have
-// any. Fog needs this: a GM's cover is drawn at 0.35 opacity and revealed
-// cells are punched out at 0.35 as well, so revealing lowers a pixel's
-// alpha without ever taking it to zero — layerInk above counts exactly
-// the same number of pixels before and after a reveal and reports no
-// change at all.
+// any. More granular than layerInk above for a partial fog reveal: both
+// notice *that* something changed, but only this one can tell five
+// revealed cells apart from fifty.
 async function layerAlpha(page: Page, layer: number): Promise<number> {
 	return page.evaluate((index) => {
 		const canvas = document.querySelectorAll('canvas')[index] as HTMLCanvasElement;
@@ -160,9 +158,15 @@ test('right-dragging the fog tool reveals nothing', async ({ page }) => {
 	const origin = await mapGestureOrigin(page);
 
 	await selectFogTool(page);
-	// Fog starts as a cover over the scene, and revealing takes alpha out
-	// of it, so a reveal shows up as the layer losing alpha rather than
-	// gaining anything.
+	// A scene starts fully revealed now (see
+	// planning/backlog/fog-gm-view-contrast.md), so this test resets fog
+	// first to get the covered baseline it actually wants to probe. Given
+	// time to land rather than read straight after the click: the reset is
+	// a command round trip plus a Konva redraw, and >0 is satisfied by a
+	// layer still mid-transition just as easily as by the settled one —
+	// this bit a first attempt at a poll on exactly that.
+	await page.getByRole('button', { name: 'Reset fog', exact: true }).click();
+	await page.waitForTimeout(300);
 	const covered = await layerAlpha(page, FOG_LAYER);
 	expect(covered).toBeGreaterThan(0);
 
