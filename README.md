@@ -1,6 +1,6 @@
 # Longtable
 
-A simple virtual tabletop (VTT) for playing Dungeons and Dragons online — for
+A **simple** virtual tabletop (VTT) for playing Dungeons and Dragons online — for
 hobbyist groups who want a way to run their game digitally without paying for a
 subscription or software licenses using hardware they already own.
 
@@ -8,36 +8,58 @@ Longtable runs as a single program that one person in the group (usually the GM)
 downloads and starts up on their own computer; everyone else just opens it in
 their web browser to join.
 
-## v1 scope
+## Features
 
-Core tabletop only: map upload, token placement/movement, fog of war, a basic
-dice roller, and real-time sync between the GM and players. No character sheets
-or rules automation yet.
+- Self hosted, so you own all the data.
+- No accounts, no external logins.
+- Rooms with real time sharing.
+- Unlimited map scenes using your own art.
+- Per token tracking of conditions and stats.
+- Fog of war, painted per tile.
+- Freehand and shape drawing, pings, distance and area-of-effect measuring.
+- An initiative tracker.
+- Chat, with a builtin dice roller.
+- Light and dark themes.
+- Mobile responsive UI.
+- Fully open source with a permissive license.
 
-## Building and running locally
+Explicitly out of scope:
+
+- Animated maps: an uploaded GIF becomes a still image
+- Automated fog: All fog is hidden and revealed manually by a GM.
+
+If these features are important to you, you might want to look elsewhere!
+
+## Quickstart
+
+TODO: Populate this section in the future when releases are ready.
+
+## Documentation
+
+See [`docs/`](docs/) for guides on hosting and configuring a server.
+
+**Lost a room code, or a GM password?** Ask whoever runs the server. They can find a room by its
+name or the date it was made, and reset a GM password without the old one:
+[recovering a room](docs/hosting.md#getting-a-gm-back-into-their-room). There's no self-service
+recovery, because rooms aren't listed anywhere public.
+
+## Building
+
+Prerequisites to build the application from source:
+
+- [Go](https://go.dev) 1.26.5 or newer
+- [Node.js](https://nodejs.org) 22 or newer, with npm
+
+Then run the following.
 
 ```bash
 cd web && npm install && npm run build && cd ..
 go build -tags nodynamic -o longtable ./cmd/longtable
-./longtable
 ```
 
-Serves on `:8080` by default (`-addr` and `-db` flags to override). On startup it prints
-the addresses everyone else can connect to — one per network interface, so you don't have to
-go looking for your own IP:
+### Testing
 
-```
-INFO longtable: listening addr=:8080 db=longtable.db assets=longtable-assets
-INFO longtable: reachable at url=http://192.168.1.23:8080 interface=Ethernet
-```
-
-`-banner "Back up at 9pm"` puts a message across the top of every page for
-everyone on the server, which each of them can dismiss. Changing the text brings
-it back for people who dismissed the last one.
-
-## Running the tests
-
-Three suites, all run from the repo root.
+This project has 3 test suites.
 
 **Go:**
 
@@ -62,12 +84,3 @@ Then run the suite:
 ```bash
 cd web && npx playwright test
 ```
-
-## Documentation
-
-See [`docs/`](docs/) for guides on hosting and configuring a server.
-
-**Lost a room code, or a GM password?** Ask whoever runs the server. They can find a room by its
-name or the date it was made, and reset a GM password without the old one:
-[recovering a room](docs/hosting.md#getting-a-gm-back-into-their-room). There's no self-service
-recovery, because rooms aren't listed anywhere public.
