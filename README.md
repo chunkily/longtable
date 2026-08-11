@@ -51,7 +51,13 @@ go test -tags nodynamic ./internal/... ./cmd/...
 npm --prefix web run test
 ```
 
-**End-to-end:**
+**End-to-end.** Install the browser once:
+
+```bash
+cd web && npx playwright install chromium
+```
+
+Then run the suite:
 
 ```bash
 cd web && npx playwright test
