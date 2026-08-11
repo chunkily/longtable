@@ -37,65 +37,25 @@ it back for people who dismissed the last one.
 
 ## Running the tests
 
-Three suites. All of these run from the repo root, and CI runs all of them on
-every push and pull request.
+Three suites, all run from the repo root.
 
-**Go** — the sync hub, the store and its migrations, the REST API, the dice
-parser:
+**Go:**
 
 ```bash
 go test -tags nodynamic ./internal/... ./cmd/...
 ```
 
-Scope it to `./internal/... ./cmd/...` rather than `./...`: the repo root also
-contains `web/node_modules`, which the go tool would otherwise walk looking for
-packages. CI additionally runs with `-race`, which needs cgo and so won't work
-against the CGO-free SQLite driver on a default Windows setup — Linux CI covers
-it.
-
-`-tags nodynamic` keeps the WebP encoder on its pure-Go path rather than picking
-up a system libwebp if one happens to be installed, so a build behaves the same
-on every machine. Leaving it off still compiles and passes, but you'd be testing
-a different encoder from the one a Host's downloaded binary uses.
-
-**Frontend unit tests** — the WebSocket client's state handling, and the pure
-geometry modules (grid distance, drawing hit-testing). Vitest, no browser:
+**Frontend unit tests:**
 
 ```bash
 npm --prefix web run test
 ```
 
-**End-to-end** — Playwright, driving real browsers against the real thing: it
-builds the frontend, builds the Go binary that embeds it, and runs that single
-binary, so the tests exercise what a Host actually starts rather than a dev
-server. Nothing to start first:
+**End-to-end:**
 
 ```bash
 cd web && npx playwright test
 ```
-
-The e2e suite needs port **8080** free, and writes to its own
-scratch database under `web/.e2e-data/` (never your local `longtable.db`), which
-it wipes at the start of each run so results don't depend on what ran before. First
-run needs the browser: `npx playwright install chromium`. On Windows the first
-run may also raise a firewall prompt for the freshly built server binary — it's
-built to a fixed path, so approving it once is enough.
-
-Several specs work by reading pixels off the Konva canvas, since the map has no
-DOM to assert against. To run just one while working on it:
-
-```bash
-cd web && npx playwright test measure.spec.ts
-```
-
-Two more checks that aren't tests but will fail CI:
-
-```bash
-npm --prefix web run check && npm --prefix web run lint
-```
-
-`check` is svelte-check (types), `lint` is prettier plus eslint;
-`npm --prefix web run format` fixes formatting.
 
 ## Documentation
 

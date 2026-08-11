@@ -67,6 +67,11 @@ For anything the DOM can't show: Konva rendering, multi-client sync, server-enfo
 disconnects. `npx playwright test` builds the frontend, builds the Go binary that embeds it, and
 runs that one binary on **:8080** (see `playwright.config.ts` and `e2e/run-app.mjs`).
 
+A checkout needs `npx playwright install chromium` once before any of that works — the failure is
+a "browser not found" error at the first spec, not a missing dependency anyone would recognise.
+This used to be in the README's testing section and moved here when that was cut back to the three
+commands; CI installs it in `.github/workflows/ci.yml`, so nothing in the pipeline notices.
+
 **The suite does not run against `npm run dev`, and putting it back would reintroduce a bug.**
 Vite discovers dependencies lazily and force-reloads every connected client when it re-optimizes
 ("optimized dependencies changed. reloading"), which loses whatever a test was mid-way through.
