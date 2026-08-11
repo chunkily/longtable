@@ -178,14 +178,6 @@
 				<span class="text-sm font-normal text-muted-foreground"> I'm starting a new game. </span>
 			</Button>
 		</div>
-
-		<!-- The welcome step only. The other two ask one question each, and
-		     a second control under one of them is a second question. This
-		     is the step someone lands on, and the room's own menu carries
-		     the same control for anyone already at a table. -->
-		<div class="max-w-64">
-			<ThemeToggle />
-		</div>
 	{:else if step === 'join'}
 		<Card.Root>
 			<Card.Header>
@@ -269,4 +261,17 @@
 			</Card.Content>
 		</Card.Root>
 	{/if}
+</div>
+
+<!-- Every step, not just the welcome one. It was in the flow under the
+     two buttons to begin with, which meant it could only be on the step
+     that had room for it; floating, it costs no layout anywhere and the
+     join and create cards can keep asking one question each.
+
+     Bottom-right rather than the usual top-right corner: the Host's
+     banner is `fixed` across the top of every page, and this would
+     either collide with it or have to read `hostNotice.height` and move
+     down. The bottom-right corner is empty on all three steps. -->
+<div class="fixed right-4 bottom-4 z-40">
+	<ThemeToggle variant="floating" />
 </div>

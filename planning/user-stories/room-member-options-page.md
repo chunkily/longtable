@@ -10,7 +10,7 @@ So that a preference I set once stays set, without living inside a room I might 
 
 ## Acceptance criteria
 
-- [x] Reachable from the app: the room menu, and the home page's welcome step
+- [x] Reachable from the app: the room menu, and a floating control on the home page
 - [x] Lets me override the color theme (system / light / dark); persisted to client storage
 - [x] Changes take effect immediately, without a reload
 

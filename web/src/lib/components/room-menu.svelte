@@ -183,7 +183,7 @@
 			     there is no settings page to send them to, and a route
 			     holding one control would be a page that lies about how
 			     much is on it. -->
-			<div class="border-t px-1 pt-2 pb-1">
+			<div class="border-t py-2">
 				<ThemeToggle />
 			</div>
 			<div class="border-t pt-1">

@@ -32,7 +32,7 @@ architecture and current state live here instead**, and keeping them true is par
 | `web/src/lib/components/map-toolbar.svelte`, `tool-strip.svelte` | the floating tool row, and the active family's contextual strip |
 | `web/src/lib/components/room-menu.svelte` | the menu behind the side panel's third icon: Scenes, Assets, Manage room, Leave room |
 | `web/src/lib/host-notice.svelte.ts`, `components/host-notice.svelte` | the Host's `-banner` message: fetched once, dismissable, and the height everything else moves down by |
-| `web/src/lib/components/theme-toggle.svelte` | System/Light/Dark, in the room menu and on the home page. The scheme itself is `mode-watcher`, wired up in `+layout.svelte`, plus the boot script in `app.html` that beats the flash of light |
+| `web/src/lib/components/theme-toggle.svelte` | System/Light/Dark as three icon buttons, in two shapes: a labelled row for the room menu and a floating pill for the home page's corner. The scheme itself is `mode-watcher`, wired up in `+layout.svelte`, plus the boot script in `app.html` that beats the flash of light |
 | `web/src/lib/components/initiative-panel.svelte` | the turn order in the rail's second panel — one component for both roles, with the GM's controls left off for everyone else |
 | `internal/ws/initiative.go` | the tracker's six commands and its one event, split out of `hub.go` |
 | `web/src/routes/r/[slug]/+page.svelte` | the room page — join form, then the full-bleed shell: map, floating toolbar, side rail (or bottom sheet) |
@@ -159,8 +159,11 @@ All of it syncs live; everything but pings and measurements persists.
 
 **The app has a dark scheme**, and it follows the device unless told otherwise. `mode-watcher` in
 `+layout.svelte` puts the `dark` class on `<html>` and keeps it in step with the OS live; a
-System/Light/Dark control in the room menu and on the home page's welcome step overrides that per
-browser, stored under `longtable:theme`. There is deliberately **no options page** — one control
+System/Light/Dark control overrides that per browser, stored under `longtable:theme`. It is three
+icon buttons — sun, moon, and a monitor for System — and appears twice: as a labelled row in the
+room menu, and as a pill floating in the **bottom-right** corner of the home page. Bottom-right
+rather than the usual top-right because the Host's banner is `fixed` across the top of every page,
+and a control up there would either collide with it or have to read `hostNotice.height` and move. There is deliberately **no options page** — one control
 doesn't earn a route, and a full-bleed room would have needed a menu entry to reach it anyway
 (`planning/backlog/options-page.md` records why it was dropped). Two things are worth knowing
 before touching any of this. The inline boot script in `web/src/app.html` is what stops the white

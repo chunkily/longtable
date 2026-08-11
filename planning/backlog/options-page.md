@@ -29,7 +29,8 @@ committing to hex values).
 ## Dropped 2026-08-11
 
 The last paragraph above called it: [dark-mode](dark-mode.md) shipped its control straight into
-the room menu and the home page's welcome step, and there is nothing left for a page to hold.
+the room menu and a floating pill in the home page's corner, and there is nothing left for a page
+to hold.
 
 The argument that settled it wasn't only "one setting is too few". The room page is full-bleed,
 with no header and no nav — a `/options` route would have needed an entry in the room menu to be

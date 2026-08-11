@@ -130,6 +130,10 @@ test('a choice made on the home page overrides the device and outlives a reload'
 	const context = await browser.newContext({ colorScheme: 'dark' });
 	const page = await context.newPage();
 	await page.goto('/');
+	// The buttons carry an icon and no text, so these names come from
+	// their aria-labels. That's the accessible name either way, which is
+	// why swapping the words for a sun and a moon left every locator here
+	// alone.
 	await page.getByRole('button', { name: 'Light', exact: true }).click();
 	await expect(page.locator('html')).not.toHaveClass(/dark/);
 
@@ -147,6 +151,31 @@ test('a choice made on the home page overrides the device and outlives a reload'
 	// good.
 	await page.getByRole('button', { name: 'System', exact: true }).click();
 	await expect(page.locator('html')).toHaveClass(/dark/);
+
+	await context.close();
+});
+
+// It floats in the corner rather than sitting in the flow, which is what
+// lets it be on every step: the join and create steps each ask one
+// question, and a control under one of them would have been a second.
+// It used to be under the welcome step's two buttons and reachable from
+// nowhere else.
+test('the corner control is on every step of the home page', async ({ browser }) => {
+	const context = await browser.newContext({ colorScheme: 'dark' });
+	const page = await context.newPage();
+	await page.goto('/');
+
+	const dark = page.getByRole('button', { name: 'Dark', exact: true });
+	await expect(dark).toBeVisible();
+
+	await page.getByRole('button', { name: 'Join a room' }).click();
+	await expect(page.getByLabel('Room code')).toBeVisible();
+	await expect(dark).toBeVisible();
+
+	// Clickable, not merely on screen — a fixed corner control is exactly
+	// the shape that ends up under something else.
+	await page.getByRole('button', { name: 'Light', exact: true }).click();
+	await expect(page.locator('html')).not.toHaveClass(/dark/);
 
 	await context.close();
 });

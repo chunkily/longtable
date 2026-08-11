@@ -51,9 +51,10 @@ So what actually shipped:
   does nothing here: `ssr = false` means nothing a component renders reaches the HTML the browser
   is served, and a script inserted through `{@html}` never executes anyway. Head-script injection
   is turned off and app.html carries a real one. Confirmed present in `web/build/index.html`.
-- **`ThemeToggle`** (`$lib/components/theme-toggle.svelte`): System / Light / Dark, bound to
-  `userPrefersMode` rather than the resolved `mode`, so "following the device" stays visible as
-  its own answer.
+- **`ThemeToggle`** (`$lib/components/theme-toggle.svelte`): System / Light / Dark as three icon
+  buttons, bound to `userPrefersMode` rather than the resolved `mode`, so "following the device"
+  stays visible as its own answer. Two shapes from one component — a labelled row for the room
+  menu, a floating pill for the home page's corner.
 - **Two canvas colours**, in `game-canvas.svelte`. The grid was `#00000022`, invisible on a dark
   background, and the no-map slab was zinc-200, a lit rectangle in a dark room. Both are now
   `{ light, dark }` pairs. The broken-image slab moved to mid-grey: it used to be the *exact*
@@ -66,9 +67,9 @@ The item above says this depends on [options-page](options-page.md), and that pa
 exist. Its own note anticipated this: *"If dark mode ends up shipping a plain three-way control
 somewhere in the room chrome, this item may have nothing left in it."* That's what happened. The
 control sits in the room menu — beside Leave room, which is the other thing there that changes
-only this browser — and on the home page's welcome step. A route holding one control would be a
-page that lies about how much is on it, and from a full-bleed room it would need an entry in that
-same menu to be reachable at all, so the page was a hop rather than a home.
+only this browser — and floats in the bottom-right corner of the home page. A route holding one
+control would be a page that lies about how much is on it, and from a full-bleed room it would
+need an entry in that same menu to be reachable at all, so the page was a hop rather than a home.
 
 Not reachable from: the pre-join screen, and the assets page. Both are passed through rather than
 sat in, and both are one step from somewhere that has it. If a second device setting ever turns
