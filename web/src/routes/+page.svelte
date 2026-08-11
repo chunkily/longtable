@@ -14,6 +14,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as Card from '$lib/components/ui/card';
+	import ThemeToggle from '$lib/components/theme-toggle.svelte';
 
 	/**
 	 * Which question the page is asking.
@@ -176,6 +177,14 @@
 				</span>
 				<span class="text-sm font-normal text-muted-foreground"> I'm starting a new game. </span>
 			</Button>
+		</div>
+
+		<!-- The welcome step only. The other two ask one question each, and
+		     a second control under one of them is a second question. This
+		     is the step someone lands on, and the room's own menu carries
+		     the same control for anyone already at a table. -->
+		<div class="max-w-64">
+			<ThemeToggle />
 		</div>
 	{:else if step === 'join'}
 		<Card.Root>

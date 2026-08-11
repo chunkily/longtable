@@ -4,6 +4,41 @@
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="text-scale" content="scale" />
+		<script>
+			// Puts the page in the right colour scheme before the first paint.
+			//
+			// mode-watcher does this too, from +layout.svelte, and normally
+			// its own head script would be enough. It isn't here: this is a
+			// single-page app (`ssr = false`), so nothing a component renders
+			// — including anything it puts in <svelte:head> — exists in the
+			// HTML the browser gets. The app's JavaScript has to load and
+			// hydrate first, and until it does the page is painted from
+			// `:root`, which is the light palette. A GM opening a dark room
+			// gets a white flash across the whole window every time.
+			//
+			// The storage key and the `dark` class are the contract with
+			// mode-watcher and have to match what +layout.svelte configures.
+			// Spelled out rather than imported because this runs before any
+			// module does.
+			(function () {
+				try {
+					var stored = localStorage.getItem('longtable:theme');
+					var dark =
+						stored === 'dark' ||
+						((!stored || stored === 'system') &&
+							window.matchMedia('(prefers-color-scheme: dark)').matches);
+					if (dark) document.documentElement.classList.add('dark');
+					// Tells the browser which scheme its own widgets are sitting
+					// on, so scrollbars and the number inputs on the tracker
+					// strip don't stay light against a dark panel.
+					document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+				} catch {
+					// localStorage throws when a browser has storage blocked
+					// altogether. That leaves the light palette, which is what
+					// every browser got before any of this existed.
+				}
+			})();
+		</script>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">

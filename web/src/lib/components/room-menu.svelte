@@ -10,6 +10,7 @@
 	// be more machinery than the thing it holds.
 	import { resolve } from '$app/paths';
 	import { Button } from '$lib/components/ui/button';
+	import ThemeToggle from '$lib/components/theme-toggle.svelte';
 	import type { RoomClient } from '$lib/room.svelte';
 	import Menu from '@lucide/svelte/icons/menu';
 	import Images from '@lucide/svelte/icons/images';
@@ -174,6 +175,16 @@
 					<RefreshCw class="h-4 w-4" />
 					Reset view
 				</Button>
+			</div>
+			<!-- Down here with Leave room rather than up with Scenes and
+			     Assets, because those change the room and these two change
+			     only this browser. The room page is where anyone spends the
+			     evening, so this is where the light gets turned down —
+			     there is no settings page to send them to, and a route
+			     holding one control would be a page that lies about how
+			     much is on it. -->
+			<div class="border-t px-1 pt-2 pb-1">
+				<ThemeToggle />
 			</div>
 			<div class="border-t pt-1">
 				<Button

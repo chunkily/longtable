@@ -215,6 +215,8 @@ The effects are split by cost on purpose:
   also where `activeTool` is tracked, because token draggability is the only thing in the whole
   render path that reads it — pairing it with `render()` made every tool switch redraw the map.
 - Pings, measurements and the eraser's halo each get their own.
+- The colour scheme gets one, and it is the only place `mode.current` is read. Everything else
+  reaches the scheme through `stageScheme`, a plain `let` — see below.
 
 Both of those effects call the same render function `render()` calls, so a scene change runs it
 twice. That is deliberate: a scene change is rare, and the alternative — teaching `render()` to
@@ -242,6 +244,30 @@ things that fall out of it, all already handled:
 These tweens are transient, unlike the selection ring's `Konva.Animation`, which is why they can
 live on the token layer rather than earning one of their own. `prefers-reduced-motion` turns them
 off.
+
+## Light and dark on the stage
+
+Two things Konva paints follow the app's colour scheme, and only two: `MAP_PLACEHOLDER`, the slab
+shown where a scene has no map image, and `GRID_LINE`. Both sit against the container's
+`bg-muted`, which flips with the theme, so a black 13%-opacity grid disappears entirely on a dark
+background. Everything else painted here — strokes, pings, measurements, the eraser's halo, the
+selection ring — is *map content* and stays put in both schemes; the dark-map drawing palette is a
+separate problem with its own backlog item.
+
+They're explicit `{ light, dark }` pairs rather than reads of the CSS custom properties, because a
+canvas takes colour strings and has never heard of `var()`.
+
+**The scheme is read reactively in exactly one effect**, which assigns a plain `let stageScheme`
+and calls `render()` itself. The render functions read that variable, never `mode.current`. This
+is the same hazard `resetView` documents above: the render functions run inside half a dozen
+different effects, and one reactive read on the way past would give every one of them a dependency
+on the theme. `stageScheme` is seeded from the current scheme rather than defaulting to light —
+defaulting meant a dark browser rendered light first and immediately re-rendered, putting two
+loads of the same map image in flight at once.
+
+A full `render()` for a colour change is more than strictly needed and costs nothing: themes flip
+a handful of times an evening, and the map image is already in `imageCache`. Doing less would mean
+maintaining a second list of which render functions read the scheme.
 
 ## Optimistic rendering
 

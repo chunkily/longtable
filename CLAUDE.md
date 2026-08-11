@@ -32,6 +32,7 @@ architecture and current state live here instead**, and keeping them true is par
 | `web/src/lib/components/map-toolbar.svelte`, `tool-strip.svelte` | the floating tool row, and the active family's contextual strip |
 | `web/src/lib/components/room-menu.svelte` | the menu behind the side panel's third icon: Scenes, Assets, Manage room, Leave room |
 | `web/src/lib/host-notice.svelte.ts`, `components/host-notice.svelte` | the Host's `-banner` message: fetched once, dismissable, and the height everything else moves down by |
+| `web/src/lib/components/theme-toggle.svelte` | System/Light/Dark, in the room menu and on the home page. The scheme itself is `mode-watcher`, wired up in `+layout.svelte`, plus the boot script in `app.html` that beats the flash of light |
 | `web/src/lib/components/initiative-panel.svelte` | the turn order in the rail's second panel — one component for both roles, with the GM's controls left off for everyone else |
 | `internal/ws/initiative.go` | the tracker's six commands and its one event, split out of `hub.go` |
 | `web/src/routes/r/[slug]/+page.svelte` | the room page — join form, then the full-bleed shell: map, floating toolbar, side rail (or bottom sheet) |
@@ -131,7 +132,8 @@ and this browser's address as readonly fields, one click to select either. There
 anywhere, and that's a decision, not a gap — see
 `planning/backlog/share-room-code-from-room.md`. Under it the menu holds Scenes, Assets, Manage
 room and Leave room (making a scene is a mode of the Scenes dialog rather than a menu entry of its
-own). Below `lg` the rail becomes a bottom sheet with those icons pinned to the bottom edge, the
+own), and above Leave room a **System/Light/Dark** control — grouped with it because those two are
+the only things in the menu that change this browser rather than the room. Below `lg` the rail becomes a bottom sheet with those icons pinned to the bottom edge, the
 contextual strip docks into it rather than floating, the selected token becomes a bar above the
 icons shown only when something is selected, and redo and reset view move from the toolbar into
 the menu. A dropped socket reconnects on
@@ -155,6 +157,21 @@ through, and joins the uploading room's library — content-addressed globally s
 share one file, but a room only ever sees what it added itself, under its own name and credit.
 All of it syncs live; everything but pings and measurements persists.
 
+**The app has a dark scheme**, and it follows the device unless told otherwise. `mode-watcher` in
+`+layout.svelte` puts the `dark` class on `<html>` and keeps it in step with the OS live; a
+System/Light/Dark control in the room menu and on the home page's welcome step overrides that per
+browser, stored under `longtable:theme`. There is deliberately **no options page** — one control
+doesn't earn a route, and a full-bleed room would have needed a menu entry to reach it anyway
+(`planning/backlog/options-page.md` records why it was dropped). Two things are worth knowing
+before touching any of this. The inline boot script in `web/src/app.html` is what stops the white
+flash, and it can't be moved into a component: `ssr = false` means nothing a component renders
+reaches the served HTML, so the scheme has to be applied before the app exists. And on the canvas,
+`mode.current` is read in exactly **one** effect, which assigns a plain `stageScheme` the render
+functions read — a reactive read inside a render function gives every effect that calls one a
+dependency on the theme, which is the same trap `resetView` carries a comment about. Only two
+things Konva paints follow the scheme: the grid, and the slab shown where a scene has no map.
+Strokes, pings and the rest are map content and stay put.
+
 On startup the server prints the LAN addresses players can use, one line per interface with the
 interface's name — a Host binding `-addr` to one interface is answered with that address alone,
 since enumerating the rest would be a lie about where the server is.
@@ -171,7 +188,9 @@ movement lock, and is still waiting on room privacy, deleting a room, and a swit
 token creation off. Nothing caps how many tokens one Player may have standing. Fog has no automatic vision from tokens, no prebuilt releases, no way for a Host
 to remove a moderated asset server-wide or cap upload sizes per room (a room removing something
 from its own library is a different, smaller thing, and does exist). The drawing tools still have
-no stroke-width or fill control; both are open items and both now have a strip to land on.
+no stroke-width or fill control; both are open items and both now have a strip to land on. The
+theme control isn't on the pre-join screen or the assets page — both are passed through rather
+than sat in, and both are one step from somewhere that has it.
 
 Two bugs used to bite specifically when the app was used the way it's meant to be — a GM hosting
 and everyone else on `http://192.168.x.x:8080` from their own device — while never showing up on

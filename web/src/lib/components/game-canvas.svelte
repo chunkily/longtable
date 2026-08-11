@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onDestroy, onMount, untrack } from 'svelte';
+	import { mode } from 'mode-watcher';
 	import Konva from 'konva';
 	import { assetUrl } from '$lib/api';
 	import { DRAWING_STROKE_WIDTH, pickDrawing, strokeWidthOf } from '$lib/drawing-hit';
@@ -82,6 +83,28 @@
 	// screen pixels either side of it.
 	const ERASE_HIGHLIGHT_PADDING = 6;
 	const ERASE_HIGHLIGHT_COLOR = '#f59e0b';
+	// The stage's own furniture, and the only part of the canvas that
+	// follows the app's colour scheme. Everything else painted here —
+	// strokes, pings, measurements, the eraser's halo — is map content and
+	// stays put in both schemes; the dark-map drawing palette is a
+	// separate problem with its own backlog item.
+	//
+	// These two need it because they sit against the container's
+	// `bg-muted`, which does flip. A grid ruled in 13%-opacity black
+	// vanishes on a dark background, and the light slab shown where a
+	// scene has no map is a lit rectangle in the middle of a dark room.
+	//
+	// Written as explicit pairs rather than read off the CSS custom
+	// properties: Konva paints into a canvas, which takes colour strings
+	// and has never heard of `var()`.
+	const MAP_PLACEHOLDER = { light: '#e4e4e7', dark: '#3f3f46' };
+	const GRID_LINE = { light: '#00000022', dark: '#ffffff26' };
+	// A map that failed to load is a different thing from a scene with no
+	// map at all, and the two have to stay apart in both schemes. This
+	// used to be the dark placeholder's exact value, which was fine while
+	// the placeholder was always light and would have made the two
+	// identical the moment it wasn't. Mid-grey reads as neither.
+	const MAP_LOAD_FAILED = '#71717a';
 	// Measurement lines are one colour for everyone rather than per
 	// participant: they're transient, and at most one per person is on
 	// the map at a time with their name on it.
@@ -163,6 +186,23 @@
 	// Tracks the active scene so a switch to a different scene resets
 	// the camera, rather than carrying over an unrelated pan/zoom.
 	let lastSceneId: string | null = null;
+
+	// Which half of MAP_PLACEHOLDER/GRID_LINE the render functions read.
+	//
+	// Deliberately a plain variable rather than `$state` or a read of
+	// `mode.current` where it's used. The render functions run inside
+	// several different effects, and a reactive read in one of them would
+	// give every one of those effects a dependency on the theme — the same
+	// shape as the bug in resetView() below, where a read on the way past
+	// made clicking a token rebuild the map. One effect owns this and
+	// re-renders explicitly; nothing else has to know.
+	//
+	// Seeded from the current scheme rather than defaulting to light, so
+	// a browser that is already dark renders once. Defaulting meant the
+	// first paint was light and the effect below immediately re-rendered
+	// over it — two renderMap calls, two image loads of the same URL in
+	// flight at once, and whichever finished last winning.
+	let stageScheme: 'light' | 'dark' = mode.current === 'dark' ? 'dark' : 'light';
 
 	// Imperative Konva bookkeeping, not template state — doesn't need to
 	// be a SvelteMap since nothing reactive reads it.
@@ -460,6 +500,23 @@
 	$effect(() => {
 		track(room.scene, room.fogCells, room.you);
 		render();
+	});
+
+	// The one place the theme is read reactively. `mode.current` is
+	// mode-watcher's resolved scheme, so this fires both for someone
+	// choosing Dark and for the OS flipping under a browser following it.
+	//
+	// A full render() for a colour change is more than it needs, and
+	// costs nothing: a theme flips a handful of times in an evening, and
+	// the map image is already in imageCache. Doing less would mean
+	// keeping a second list of which render functions read the scheme.
+	$effect(() => {
+		const next = mode.current === 'dark' ? 'dark' : 'light';
+		untrack(() => {
+			if (next === stageScheme) return;
+			stageScheme = next;
+			if (stage) render();
+		});
 	});
 
 	$effect(() => {
@@ -1106,10 +1163,10 @@
 					const img = await loadImage(assetUrl(mapAssetId));
 					mapLayer.add(new Konva.Image({ image: img, width, height }));
 				} catch {
-					mapLayer.add(new Konva.Rect({ width, height, fill: '#3f3f46' }));
+					mapLayer.add(new Konva.Rect({ width, height, fill: MAP_LOAD_FAILED }));
 				}
 			} else {
-				mapLayer.add(new Konva.Rect({ width, height, fill: '#e4e4e7' }));
+				mapLayer.add(new Konva.Rect({ width, height, fill: MAP_PLACEHOLDER[stageScheme] }));
 			}
 		}
 
@@ -1138,12 +1195,13 @@
 		const startY = Math.floor(viewTop / gridSize) * gridSize;
 		// Constant on-screen thickness regardless of zoom level.
 		const strokeWidth = 1 / scale;
+		const stroke = GRID_LINE[stageScheme];
 
 		for (let x = startX; x <= viewRight; x += gridSize) {
 			gridLayer.add(
 				new Konva.Line({
 					points: [x, viewTop, x, viewBottom],
-					stroke: '#00000022',
+					stroke,
 					strokeWidth
 				})
 			);
@@ -1152,7 +1210,7 @@
 			gridLayer.add(
 				new Konva.Line({
 					points: [viewLeft, y, viewRight, y],
-					stroke: '#00000022',
+					stroke,
 					strokeWidth
 				})
 			);
