@@ -36,7 +36,7 @@ Envelope both ways:
 | `fog.reveal` | GM only | yes | `fog.revealed` |
 | `fog.hide` | GM only | yes | `fog.hidden` |
 | `fog.revealAll` | GM only | yes | `fog.revealed` |
-| `fog.reset` | GM only | yes | `fog.reset` |
+| `fog.reset` | GM only | yes | `fog.hidden` |
 | `scene.create` | GM only | yes | `scene.created` (+ `scene.activated` if it's the room's first) |
 | `scene.setActive` | GM only | yes | `scene.activated` |
 | `scene.delete` | GM only | yes | `scene.deleted` |
@@ -92,12 +92,42 @@ from them, and would leave `messageVisibleTo` with no content to redact selectiv
 place. A message with no recorded author (like an unattributed drawing) is nobody's to delete but
 a GM's, at either stage — and once deleted, the GM who did it is the only one still privileged.
 
-`fog.revealAll` deliberately broadcasts `fog.revealed` rather than an event of its own: it
-enumerates the scene's cells server-side (`sceneFogCells`) and sends them as an ordinary reveal,
-so clients need no extra case and the server stays the only thing that decides what cells a scene
-has. It's refused for a scene with no width/height or no grid, and capped at
-`maxRevealAllCells` — the count is quadratic in map size and every cell is both a row and an
-entry in the payload every client receives.
+### Fog
+
+Fog is the set of **hidden** cells, packed 32 to an integer. Its unit everywhere except the two
+painting commands is the `FogChunk` — `{y, chunkX, mask}`, where bit *n* of `mask` is the cell at
+`x = chunkX*32 + n`, set when hidden. A chunk that isn't stored (or that reaches mask 0, at which
+point it's dropped) is 32 revealed cells, so **absent is the only spelling of revealed** on both
+sides of the wire. `internal/store/fog.go` and `web/src/lib/fog.ts` are the two halves of that
+format and have to agree bit for bit; both shift and mask rather than divide, so a cell at a
+negative x floors into the chunk below zero instead of colliding with a positive one.
+
+Storing what's hidden rather than what's revealed is what makes a new scene cost nothing — it
+comes up fully revealed because it holds no rows, not because anything materialised them. Packing
+is what keeps a deliberately fogged one cheap: a 200x200-cell map fully covered is 1,400 chunks
+rather than 40,000 cells, in the table *and* in the payload every client receives.
+
+`fog.reveal` and `fog.hide` take cells (`{sceneId, cells}`) because cells are what the rectangle
+tool paints in; the server groups them into chunks. Both are idempotent, and both broadcast only
+the chunks whose mask actually **changed**, at their new value — so a drag over ground already in
+the target state broadcasts nothing at all. `maxPaintedCells` caps the incoming list, since a
+corner-to-corner rectangle names every cell inside it.
+
+Both whole-scene buttons reuse those two events rather than having their own, so clients need no
+extra case:
+
+- `fog.revealAll` deletes the scene's rows and broadcasts `fog.revealed` with every chunk it
+  removed, zeroed. It needs no scene bounds and has no cap — it only has to describe chunks that
+  actually hold fog, however large the map is.
+- `fog.reset` covers everything, and is therefore the one that enumerates the scene's bounds
+  (`sceneFogChunks`, capped at `maxFogChunks`) and is refused for a scene with no width/height or
+  no grid. Its `fog.hidden` delta also carries any chunk *outside* those bounds zeroed — fog
+  painted left of or above the origin — or a client would keep drawing fog the server just
+  deleted.
+
+The cap and the bounds check used to sit on `fog.revealAll` and the free `DELETE` on `fog.reset`.
+They swapped places when fog started storing what's hidden, which is worth knowing if an old
+comment says otherwise.
 
 Only the room's *first* scene auto-activates. A later `scene.create` is prep work, so it stays
 off screen until the GM switches to it — before the scene picker existed it activated
@@ -339,11 +369,11 @@ picture and `resetAfterSync` drops anything in flight, so a reconnect converges 
 
 `state.sync`, `chat.posted`, `chat.deleted`, `chat.purged`, `token.created`, `token.moved`,
 `token.updated`, `token.deleted`, `participant.connected`, `participant.disconnected`,
-`fog.revealed`, `fog.hidden`, `fog.reset`, `scene.activated`, `scene.created`, `scene.updated`,
+`fog.revealed`, `fog.hidden`, `scene.activated`, `scene.created`, `scene.updated`,
 `scene.deleted`, `room.updated`, `initiative.updated`, `drawing.created`, `drawing.deleted`,
 `ping`, `measure.updated`, `measure.ended`, `error`.
 
-`state.sync` and `scene.activated` both carry the same full picture — `{scene, tokens, fogCells,
+`state.sync` and `scene.activated` both carry the same full picture — `{scene, tokens, fogChunks,
 drawings}` built by `sceneStatePayload` — so a client can render immediately without another
 round trip. `state.sync` adds `room`, `you`, the last 50 chat messages (newest first; the client
 reverses them), and `scenes`: every scene in the room, for the picker. `messagePayloads` builds

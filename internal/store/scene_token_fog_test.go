@@ -95,8 +95,8 @@ func TestDeleteScene_TakesItsTokensFogAndDrawingsWithIt(t *testing.T) {
 		if _, err := s.CreateToken(Token{SceneID: sc.ID, Name: "Goblin", Width: 1, Height: 1}); err != nil {
 			t.Fatalf("CreateToken: %v", err)
 		}
-		if err := s.RevealCells(sc.ID, []FogCell{{X: 1, Y: 1}}); err != nil {
-			t.Fatalf("RevealCells: %v", err)
+		if _, err := s.HideCells(sc.ID, []FogCell{{X: 1, Y: 1}}); err != nil {
+			t.Fatalf("HideCells: %v", err)
 		}
 		if _, err := s.CreateDrawing(Drawing{
 			SceneID: sc.ID,
@@ -118,8 +118,8 @@ func TestDeleteScene_TakesItsTokensFogAndDrawingsWithIt(t *testing.T) {
 	if tokens, err := s.ListTokensForScene(scene.ID); err != nil || len(tokens) != 0 {
 		t.Fatalf("tokens = %+v (err %v), want none left", tokens, err)
 	}
-	if cells, err := s.ListFogCells(scene.ID); err != nil || len(cells) != 0 {
-		t.Fatalf("fog cells = %+v (err %v), want none left", cells, err)
+	if chunks, err := s.ListFogChunks(scene.ID); err != nil || len(chunks) != 0 {
+		t.Fatalf("fog chunks = %+v (err %v), want none left", chunks, err)
 	}
 	if drawings, err := s.ListDrawingsForScene(scene.ID); err != nil || len(drawings) != 0 {
 		t.Fatalf("drawings = %+v (err %v), want none left", drawings, err)
@@ -129,8 +129,8 @@ func TestDeleteScene_TakesItsTokensFogAndDrawingsWithIt(t *testing.T) {
 	if tokens, err := s.ListTokensForScene(survivor.ID); err != nil || len(tokens) != 1 {
 		t.Fatalf("survivor tokens = %+v (err %v), want 1", tokens, err)
 	}
-	if cells, err := s.ListFogCells(survivor.ID); err != nil || len(cells) != 1 {
-		t.Fatalf("survivor fog = %+v (err %v), want 1", cells, err)
+	if chunks, err := s.ListFogChunks(survivor.ID); err != nil || len(chunks) != 1 {
+		t.Fatalf("survivor fog = %+v (err %v), want 1", chunks, err)
 	}
 	if drawings, err := s.ListDrawingsForScene(survivor.ID); err != nil || len(drawings) != 1 {
 		t.Fatalf("survivor drawings = %+v (err %v), want 1", drawings, err)
@@ -152,8 +152,8 @@ func TestSetSceneMap_SwapsTheImageAndBoundsButKeepsWhatIsOnIt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateToken: %v", err)
 	}
-	if err := s.RevealCells(scene.ID, []FogCell{{X: 1, Y: 1}}); err != nil {
-		t.Fatalf("RevealCells: %v", err)
+	if _, err := s.HideCells(scene.ID, []FogCell{{X: 1, Y: 1}}); err != nil {
+		t.Fatalf("HideCells: %v", err)
 	}
 
 	asset, err := s.CreateAsset("hash", "map.webp", "image/webp", 10)
@@ -183,8 +183,8 @@ func TestSetSceneMap_SwapsTheImageAndBoundsButKeepsWhatIsOnIt(t *testing.T) {
 	if len(tokens) != 1 || tokens[0].ID != token.ID || tokens[0].X != 2 || tokens[0].Y != 3 {
 		t.Fatalf("tokens = %+v, want the original still at (2,3)", tokens)
 	}
-	if cells, err := s.ListFogCells(scene.ID); err != nil || len(cells) != 1 {
-		t.Fatalf("fog cells = %+v (err %v), want the revealed cell kept", cells, err)
+	if chunks, err := s.ListFogChunks(scene.ID); err != nil || len(chunks) != 1 {
+		t.Fatalf("fog chunks = %+v (err %v), want the hidden cell kept", chunks, err)
 	}
 }
 
@@ -317,129 +317,5 @@ func TestMoveToken(t *testing.T) {
 	}
 	if tokens[0].X != 5 || tokens[0].Y != 6 {
 		t.Fatalf("token position = (%v, %v), want (5, 6)", tokens[0].X, tokens[0].Y)
-	}
-}
-
-func TestRevealCells_Idempotent(t *testing.T) {
-	s := newTestStore(t)
-
-	room, _, err := s.CreateRoom("Room", "GM", "password")
-	if err != nil {
-		t.Fatalf("CreateRoom: %v", err)
-	}
-	scene, err := s.CreateScene(room.ID, "Scene", nil, 70, 10, 10)
-	if err != nil {
-		t.Fatalf("CreateScene: %v", err)
-	}
-
-	cells := []FogCell{{X: 1, Y: 1}, {X: 2, Y: 2}}
-	if err := s.RevealCells(scene.ID, cells); err != nil {
-		t.Fatalf("RevealCells: %v", err)
-	}
-	if err := s.RevealCells(scene.ID, cells); err != nil {
-		t.Fatalf("RevealCells (repeat): %v", err)
-	}
-
-	got, err := s.ListFogCells(scene.ID)
-	if err != nil {
-		t.Fatalf("ListFogCells: %v", err)
-	}
-	if len(got) != 2 {
-		t.Fatalf("len(cells) = %d, want 2 (revealing twice must not duplicate)", len(got))
-	}
-}
-
-// twoScenesWithFog gives two scenes in one room, both with the same
-// cells revealed — the setup that catches a hide or clear that forgets
-// to scope itself, since fog coordinates repeat across every scene.
-func twoScenesWithFog(t *testing.T) (*Store, Scene, Scene) {
-	t.Helper()
-
-	s := newTestStore(t)
-	room, _, err := s.CreateRoom("Room", "GM", "password")
-	if err != nil {
-		t.Fatalf("CreateRoom: %v", err)
-	}
-
-	cells := []FogCell{{X: 1, Y: 1}, {X: 2, Y: 2}}
-	scenes := make([]Scene, 2)
-	for i, name := range []string{"First", "Second"} {
-		sc, err := s.CreateScene(room.ID, name, nil, 70, 700, 700)
-		if err != nil {
-			t.Fatalf("CreateScene(%s): %v", name, err)
-		}
-		if err := s.RevealCells(sc.ID, cells); err != nil {
-			t.Fatalf("RevealCells(%s): %v", name, err)
-		}
-		scenes[i] = sc
-	}
-	return s, scenes[0], scenes[1]
-}
-
-func TestHideCells_RemovesOnlyTheNamedCellsInThatScene(t *testing.T) {
-	s, scene, other := twoScenesWithFog(t)
-
-	if err := s.HideCells(scene.ID, []FogCell{{X: 1, Y: 1}}); err != nil {
-		t.Fatalf("HideCells: %v", err)
-	}
-
-	got, err := s.ListFogCells(scene.ID)
-	if err != nil {
-		t.Fatalf("ListFogCells: %v", err)
-	}
-	if len(got) != 1 || got[0] != (FogCell{X: 2, Y: 2}) {
-		t.Fatalf("cells = %+v, want only (2,2) left", got)
-	}
-
-	// The other scene has a (1,1) of its own, which this hide must not reach.
-	otherCells, err := s.ListFogCells(other.ID)
-	if err != nil {
-		t.Fatalf("ListFogCells(other): %v", err)
-	}
-	if len(otherCells) != 2 {
-		t.Fatalf("other scene cells = %+v, want both still revealed", otherCells)
-	}
-}
-
-func TestHideCells_UnrevealedCellIsANoOp(t *testing.T) {
-	s, scene, _ := twoScenesWithFog(t)
-
-	// Hiding what was never revealed is how an eraser-style sweep behaves
-	// at the edges of the painted area, so it has to be silent rather than
-	// an error.
-	if err := s.HideCells(scene.ID, []FogCell{{X: 9, Y: 9}}); err != nil {
-		t.Fatalf("HideCells: %v", err)
-	}
-
-	got, err := s.ListFogCells(scene.ID)
-	if err != nil {
-		t.Fatalf("ListFogCells: %v", err)
-	}
-	if len(got) != 2 {
-		t.Fatalf("len(cells) = %d, want 2 untouched", len(got))
-	}
-}
-
-func TestClearFog_EmptiesOneSceneOnly(t *testing.T) {
-	s, scene, other := twoScenesWithFog(t)
-
-	if err := s.ClearFog(scene.ID); err != nil {
-		t.Fatalf("ClearFog: %v", err)
-	}
-
-	got, err := s.ListFogCells(scene.ID)
-	if err != nil {
-		t.Fatalf("ListFogCells: %v", err)
-	}
-	if len(got) != 0 {
-		t.Fatalf("cells = %+v, want none", got)
-	}
-
-	otherCells, err := s.ListFogCells(other.ID)
-	if err != nil {
-		t.Fatalf("ListFogCells(other): %v", err)
-	}
-	if len(otherCells) != 2 {
-		t.Fatalf("other scene cells = %+v, want both still revealed", otherCells)
 	}
 }

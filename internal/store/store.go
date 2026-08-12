@@ -109,12 +109,24 @@ func (s *Store) createTables() error {
 		);
 		CREATE INDEX IF NOT EXISTS idx_token_scene ON token(scene_id);
 
-		CREATE TABLE IF NOT EXISTS fog_cell (
+		-- Fog is the set of *hidden* cells, 32 of them packed into each
+		-- row's mask: bit n is the cell at x = chunk_x*32 + n. An absent
+		-- row means those 32 cells are revealed, which is what makes a
+		-- fresh scene — revealed everywhere — cost no rows at all. See
+		-- internal/store/fog.go for why it's stored this way round.
+		CREATE TABLE IF NOT EXISTS fog_mask (
 			scene_id  TEXT NOT NULL REFERENCES scene(id) ON DELETE CASCADE,
-			cell_x    INTEGER NOT NULL,
 			cell_y    INTEGER NOT NULL,
-			PRIMARY KEY (scene_id, cell_x, cell_y)
+			chunk_x   INTEGER NOT NULL,
+			mask      INTEGER NOT NULL,
+			PRIMARY KEY (scene_id, cell_y, chunk_x)
 		);
+		-- fog_cell held one row per *revealed* cell, the inverse of the
+		-- above and 32x the rows. Dropped rather than migrated: it stored
+		-- the complement of what fog_mask stores, so every row would have
+		-- to be inverted against scene bounds that unbounded scenes don't
+		-- have. Painted fog in an existing database is lost on upgrade.
+		DROP TABLE IF EXISTS fog_cell;
 
 		CREATE TABLE IF NOT EXISTS drawing (
 			id                        TEXT PRIMARY KEY,

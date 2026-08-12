@@ -251,7 +251,7 @@
 			     single action, and the cost is that a misclick drops a
 			     session's worth of revealed fog with no undo — worth fixing
 			     the first time someone actually hits it. -->
-			<Button variant="outline" size="sm" onclick={() => room.resetFog(sceneId)}>Reset fog</Button>
+			<Button variant="outline" size="sm" onclick={() => room.resetFog(sceneId)}>Hide all</Button>
 		</div>
 		<!-- The GM's own screen only — a Player's cover is always opaque, so
 		     this has nothing to control there. Persisted per browser rather

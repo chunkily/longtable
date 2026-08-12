@@ -4,6 +4,7 @@
 
 import { checkSession } from './api';
 import type { TemplateKind } from './aoe';
+import type { FogChunk } from './fog';
 import { MEASURE_SEND_INTERVAL_MS } from './measure';
 import { PING_COOLDOWN_MS, PING_LIFETIME_MS } from './ping';
 import { randomId } from './random-id';
@@ -109,6 +110,11 @@ export interface Scene {
 	height: number;
 }
 
+/**
+ * A single grid square, which is what the fog tools paint in and so
+ * what the fog *commands* carry. Everything coming back speaks
+ * FogChunk — see $lib/fog, which owns that format.
+ */
 export interface FogCell {
 	x: number;
 	y: number;
@@ -250,7 +256,7 @@ interface StateSyncPayload {
 	scenes?: Scene[];
 	scene?: Scene | null;
 	tokens?: Token[];
-	fogCells?: FogCell[];
+	fogChunks?: FogChunk[];
 	drawings?: Drawing[];
 	participants?: Participant[];
 	connectedParticipantIds?: string[];
@@ -262,19 +268,20 @@ interface TokenMovedPayload {
 	y: number;
 }
 
-interface FogCellsPayload {
+// Both fog.revealed and fog.hidden carry the chunks whose mask changed,
+// at their new value — the direction is in the event name, not the
+// payload shape. There is no fog.reset event: covering a whole scene is
+// fog.hidden over every chunk, and uncovering it is fog.revealed with
+// every chunk zeroed.
+interface FogChunksPayload {
 	sceneId: string;
-	cells: FogCell[];
-}
-
-interface FogResetPayload {
-	sceneId: string;
+	chunks: FogChunk[];
 }
 
 interface SceneActivatedPayload {
 	scene: Scene;
 	tokens?: Token[];
-	fogCells?: FogCell[];
+	fogChunks?: FogChunk[];
 	drawings?: Drawing[];
 }
 
@@ -399,7 +406,7 @@ export class RoomClient {
 	scenes = $state<Scene[]>([]);
 	scene = $state<Scene | null>(null);
 	tokens = $state<Token[]>([]);
-	fogCells = $state<FogCell[]>([]);
+	fogChunks = $state<FogChunk[]>([]);
 	drawings = $state<Drawing[]>([]);
 	pings = $state<Ping[]>([]);
 	measurements = $state<Measurement[]>([]);
@@ -1232,7 +1239,7 @@ export class RoomClient {
 				this.scenes = payload.scenes ?? [];
 				this.scene = payload.scene ?? null;
 				this.tokens = payload.tokens ?? [];
-				this.fogCells = payload.fogCells ?? [];
+				this.fogChunks = payload.fogChunks ?? [];
 				this.drawings = payload.drawings ?? [];
 				this.participants = payload.participants ?? [];
 				this.connectedParticipantIds = payload.connectedParticipantIds ?? [];
@@ -1368,26 +1375,17 @@ export class RoomClient {
 				break;
 			}
 
-			case 'fog.revealed': {
-				const payload = env.payload as FogCellsPayload;
-				if (this.scene?.id === payload.sceneId) {
-					this.fogCells = mergeFogCells(this.fogCells, payload.cells);
-				}
-				break;
-			}
-
+			// One merge rule for both directions, and for the whole-scene
+			// buttons that reuse them: take the mask the server sent as the
+			// new truth for that chunk. Revealing is a chunk arriving with
+			// fewer bits set (0 when it holds no fog at all), hiding is one
+			// arriving with more — neither needs its own arithmetic here,
+			// because the server already did it against what it had stored.
+			case 'fog.revealed':
 			case 'fog.hidden': {
-				const payload = env.payload as FogCellsPayload;
+				const payload = env.payload as FogChunksPayload;
 				if (this.scene?.id === payload.sceneId) {
-					this.fogCells = removeFogCells(this.fogCells, payload.cells);
-				}
-				break;
-			}
-
-			case 'fog.reset': {
-				const payload = env.payload as FogResetPayload;
-				if (this.scene?.id === payload.sceneId) {
-					this.fogCells = [];
+					this.fogChunks = mergeFogChunks(this.fogChunks, payload.chunks);
 				}
 				break;
 			}
@@ -1397,7 +1395,7 @@ export class RoomClient {
 				this.scene = payload.scene;
 				this.scenes = upsertScene(this.scenes, payload.scene);
 				this.tokens = payload.tokens ?? [];
-				this.fogCells = payload.fogCells ?? [];
+				this.fogChunks = payload.fogChunks ?? [];
 				this.drawings = payload.drawings ?? [];
 				this.resetAfterSync();
 				break;
@@ -1529,20 +1527,26 @@ function upsertMeasurement(existing: Measurement[], measurement: Measurement): M
 	return existing.map((m) => (m.participantId === measurement.participantId ? measurement : m));
 }
 
-function mergeFogCells(existing: FogCell[], added: FogCell[]): FogCell[] {
-	// Local, throwaway dedup set — never touches component state, so a
-	// plain Set (not SvelteSet) is correct here.
+/**
+ * Folds incoming chunks into the ones already held, replacing any that
+ * share a (y, chunkX) key and appending the rest.
+ *
+ * A chunk whose new mask is 0 is dropped rather than kept, so "not in
+ * the list" stays the only spelling of "these 32 cells are revealed" —
+ * the same rule the server keeps in its table, and what lets rendering
+ * treat an empty list as an empty fog layer without checking masks.
+ */
+function mergeFogChunks(existing: FogChunk[], incoming: FogChunk[]): FogChunk[] {
+	// Local, throwaway lookup — never touches component state, so a plain
+	// Map (not SvelteMap) is correct here.
 	// eslint-disable-next-line svelte/prefer-svelte-reactivity
-	const seen = new Set(existing.map((c) => `${c.x},${c.y}`));
-	const merged = [...existing];
-	for (const c of added) {
-		const key = `${c.x},${c.y}`;
-		if (!seen.has(key)) {
-			seen.add(key);
-			merged.push(c);
-		}
+	const byKey = new Map(existing.map((c) => [`${c.y},${c.chunkX}`, c]));
+	for (const c of incoming) {
+		const key = `${c.y},${c.chunkX}`;
+		if (c.mask === 0) byKey.delete(key);
+		else byKey.set(key, c);
 	}
-	return merged;
+	return [...byKey.values()];
 }
 
 // Replaces a scene in the list, or appends it if it's new. Both cases
@@ -1552,12 +1556,4 @@ function mergeFogCells(existing: FogCell[], added: FogCell[]): FogCell[] {
 function upsertScene(existing: Scene[], scene: Scene): Scene[] {
 	if (!existing.some((s) => s.id === scene.id)) return [...existing, scene];
 	return existing.map((s) => (s.id === scene.id ? scene : s));
-}
-
-function removeFogCells(existing: FogCell[], removed: FogCell[]): FogCell[] {
-	// Same throwaway-Set reasoning as mergeFogCells above — no disable
-	// comment needed here, though: the lint rule only fires on a Set that
-	// is written to after construction.
-	const drop = new Set(removed.map((c) => `${c.x},${c.y}`));
-	return existing.filter((c) => !drop.has(`${c.x},${c.y}`));
 }

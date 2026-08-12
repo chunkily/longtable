@@ -18,6 +18,7 @@
 	import type { Tool } from '$lib/tool-family';
 	import { pinchStep, touchCentre, touchDistance, type Point } from '$lib/pinch';
 	import { PING_PULSES, PING_PULSE_INTERVAL_MS, PING_PULSE_SECONDS } from '$lib/ping';
+	import { fogRuns } from '$lib/fog';
 	import { DEFAULT_FOG_OPACITY } from '$lib/fog-opacity';
 	import { setTrackers, trackerText } from '$lib/room.svelte';
 	import type {
@@ -497,7 +498,7 @@
 	}
 
 	// Deliberately not tracking room.drawings, room.tokens or
-	// room.fogCells: any of the three would rebuild the map image, every
+	// room.fogChunks: any of the three would rebuild the map image, every
 	// grid line and every fog cell for a change that only touched a
 	// single stroke, a single token's position, or one painted cell —
 	// and drawing, erasing, dragging tokens and painting fog are the most
@@ -535,10 +536,10 @@
 	// dragging their opacity slider, and pairing that with the full
 	// rebuild would redraw the map, grid and every token for no reason.
 	$effect(() => {
-		track(room.fogCells, room.scene, room.you, fogOpacity);
+		track(room.fogChunks, room.scene, room.you, fogOpacity);
 		const scene = room.scene;
 		if (stage && scene) {
-			renderFog(scene.gridSize, scene.width || 0, scene.height || 0, fogOpacity);
+			renderFog(scene.gridSize, fogOpacity);
 		}
 	});
 
@@ -1200,7 +1201,7 @@
 
 		await renderMap(scene.mapAssetId, width, height);
 		renderGrid();
-		renderFog(scene.gridSize, width, height, fogOpacity);
+		renderFog(scene.gridSize, fogOpacity);
 		renderDrawings();
 		renderTokens(scene.gridSize);
 	}
@@ -1272,48 +1273,50 @@
 		gridLayer.batchDraw();
 	}
 
-	function renderFog(gridSize: number, width: number, height: number, opacity: number) {
+	// Fog is drawn directly: the hidden cells are filled in, rather than
+	// the whole scene being covered and the revealed cells punched back
+	// out of it with destination-out. That inversion follows the storage
+	// one — what's stored is now what's hidden, so what's drawn is what's
+	// hidden — and it takes two problems with it. A scene with no fog
+	// draws nothing at all instead of a full-size rect plus a punch-out
+	// per cell, and the GM's opacity is applied once to real geometry
+	// rather than being multiplied by a second translucent rect (which is
+	// what used to leave revealed cells at ~0.23 instead of 0).
+	//
+	// The scene's width and height don't come into it any more: fog is
+	// wherever its chunks say it is, including outside the map's bounds.
+	function renderFog(gridSize: number, opacity: number) {
 		fogLayer.destroyChildren();
-		if (width <= 0 || height <= 0) {
+
+		const runs = fogRuns(room.fogChunks);
+		if (runs.length === 0) {
 			fogLayer.batchDraw();
 			return;
 		}
 
-		const isGM = room.you?.role === 'gm';
-		const cover = new Konva.Rect({
-			width,
-			height,
-			fill: 'black',
-			// GM still needs to see the map under the fog, so the cover is
-			// translucent rather than opaque like the player's, at whatever
-			// strength they've set (default 0.5). It used to be a fixed 0.35,
-			// with revealed cells punched out at the same 0.35 opacity — but
-			// destination-out multiplies alpha rather than clearing it, so
-			// revealed cells stayed at ~0.23 instead of 0 and the two states
-			// were nearly indistinguishable on some map art. Revealed cells
-			// are now punched fully clear (below), so the cover alone carries
-			// the hidden/revealed contrast and needs to read clearly on its own.
-			opacity: isGM ? opacity : 1,
-			listening: false
-		});
-		fogLayer.add(cover);
-
-		// Revealed cells are punched out of the cover entirely for both roles —
-		// players never see through fog at all, and the GM needs the true map
-		// under a revealed cell, not a lighter shade of the same tint.
-		for (const cell of room.fogCells) {
-			fogLayer.add(
-				new Konva.Rect({
-					x: cell.x * gridSize,
-					y: cell.y * gridSize,
-					width: gridSize,
-					height: gridSize,
-					fill: 'black',
-					globalCompositeOperation: 'destination-out',
-					listening: false
-				})
-			);
-		}
+		// Every run goes into one shape as one compound path, filled once,
+		// rather than a Konva.Rect each. Abutting translucent rectangles
+		// blend twice along the edge they share and leave a hairline grid
+		// over the fog at any opacity below 1; a single path has no
+		// interior edges to blend. It is also one node instead of hundreds.
+		fogLayer.add(
+			new Konva.Shape({
+				sceneFunc: (context, shape) => {
+					context.beginPath();
+					for (const run of runs) {
+						context.rect(run.x * gridSize, run.y * gridSize, run.length * gridSize, gridSize);
+					}
+					context.fillStrokeShape(shape);
+				},
+				fill: 'black',
+				// A Player's fog is opaque and always has been. The GM sees
+				// through their own at whatever strength they've set, which is
+				// a per-browser preference rather than room state — see
+				// $lib/fog-opacity.
+				opacity: room.you?.role === 'gm' ? opacity : 1,
+				listening: false
+			})
+		);
 
 		fogLayer.batchDraw();
 	}

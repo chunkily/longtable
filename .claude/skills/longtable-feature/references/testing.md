@@ -127,7 +127,7 @@ twenty files.
   Neither family nor variant buttons toggle, so this leaves the requested tool selected whatever
   was selected before.
 - `selectToolFamily(page, family)` — for the controls that sit on a family's strip but aren't
-  tools, like fog's `Reveal all` and `Reset fog`.
+  tools, like fog's `Reveal all` and `Hide all`.
 - `mapGestureOrigin(page)` — the canvas corner plus `TOOLBAR_CLEARANCE_Y`. The toolbar floats over
   the map's top-left corner now, so a gesture starting at the true origin lands on a button
   instead of the map. **A spec that also probes pixels has to add `TOOLBAR_CLEARANCE_Y` back on**,

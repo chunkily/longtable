@@ -10,21 +10,21 @@ import {
 
 // Fog beyond revealing: re-hiding a square, wiping a scene back to fully
 // covered, and uncovering it all at once. Every assertion here is made
-// against a *Player's* canvas rather than the GM's, because the GM's cover
-// is deliberately translucent (0.5 opacity, so the GM can still see the map
-// underneath) while a Player's is opaque — testing the Player side means
-// "covered" and "revealed" are a clean 0-vs-full alpha delta rather than a
-// fraction of one, regardless of what opacity the GM's cover happens to be.
+// against a *Player's* canvas rather than the GM's, because a GM's fog is
+// deliberately translucent (0.5 by default, so they can still see the map
+// under it) while a Player's is opaque — testing the Player side means
+// "covered" and "revealed" are a clean full-vs-0 alpha delta rather than a
+// fraction of one, regardless of what opacity the GM has chosen.
 
 // Layer order, by index into document.querySelectorAll('canvas'):
 // 0 map, 1 grid, 2 fog, 3 drawings, 4 tokens, 5 pings, 6 measurements,
 // 7 preview, 8 selection. Inserting a layer renumbers these.
 const FOG_LAYER = 2;
 
-// Total alpha across the fog layer. A count of non-transparent pixels
-// can't see a GM's fog at all (see the note above), and even for a
-// Player the sum is the more useful number: it says how *much* is
-// covered, so a partial reveal is distinguishable from a total one.
+// Total alpha across the fog layer. The sum rather than a count of
+// non-transparent pixels, because it says how *much* is covered — which
+// is what tells a partial reveal apart from a total one, and what lets a
+// GM's translucent fog register at all.
 async function fogAlpha(page: Page): Promise<number> {
 	return page.evaluate((index) => {
 		const canvas = document.querySelectorAll('canvas')[index] as HTMLCanvasElement;
@@ -68,16 +68,16 @@ async function createRoomWithScene(browser: Browser, name: string) {
 	await page.getByRole('button', { name: 'Create scene' }).click();
 	await expect(page.locator('canvas').first()).toBeVisible();
 
-	// A scene starts fully revealed now, not fully covered — see
-	// planning/backlog/fog-gm-view-contrast.md. These tests are about the
-	// hide/reset/reveal-all mechanics, not the default, so they establish
-	// their own fully-covered baseline rather than assuming one. Given
-	// time to land rather than returned straight after the click: the
-	// reset is a command round trip plus a Konva redraw, and a caller
-	// reading before either settles would catch a still-transitioning
-	// layer instead of the fully covered one.
+	// A scene starts fully revealed — fog stores what's hidden, and a new
+	// scene has none. These tests are about the hide/reset/reveal-all
+	// mechanics rather than that default, so they cover the scene
+	// themselves first instead of assuming a baseline. Given time to land
+	// rather than returned straight after the click: the reset is a
+	// command round trip plus a Konva redraw, and a caller reading before
+	// either settles would catch a still-transitioning layer instead of
+	// the fully covered one.
 	await selectToolFamily(page, 'Fog');
-	await page.getByRole('button', { name: 'Reset fog', exact: true }).click();
+	await page.getByRole('button', { name: 'Hide all', exact: true }).click();
 	await page.waitForTimeout(300);
 
 	return { context, page, slug };
@@ -114,9 +114,9 @@ test('hiding fog puts revealed squares back under cover for players', async ({ b
 	await selectHideTool(gm.page);
 	await dragFogRect(gm.page, origin);
 
-	// Back to exactly the starting cover: with no cells revealed the fog
-	// layer is the bare cover rect again, pixel for pixel. Anything short
-	// of equality would mean a square stayed punched out.
+	// Back to exactly the starting cover, pixel for pixel: the same
+	// rectangle hidden again sets exactly the bits the reveal cleared.
+	// Anything short of equality would mean a square stayed uncovered.
 	await expect.poll(() => fogAlpha(player.page)).toBe(covered);
 
 	await gm.context.close();
@@ -136,7 +136,7 @@ test('resetting fog re-hides the whole scene, and it stays reset after a reload'
 	await dragFogRect(gm.page, origin);
 	await expect.poll(() => fogAlpha(player.page)).toBeLessThan(covered);
 
-	await gm.page.getByRole('button', { name: 'Reset fog', exact: true }).click();
+	await gm.page.getByRole('button', { name: 'Hide all', exact: true }).click();
 	await expect.poll(() => fogAlpha(player.page)).toBe(covered);
 
 	// A reload re-reads the scene from the server, so this is what proves
@@ -161,9 +161,8 @@ test('revealing all uncovers the entire scene for players', async ({ browser }) 
 	await selectToolFamily(gm.page, 'Fog');
 	await gm.page.getByRole('button', { name: 'Reveal all', exact: true }).click();
 
-	// Every cell inside the scene's bounds is revealed, and a player's
-	// punch-out is total, so nothing of the cover survives anywhere on
-	// the layer — not merely less of it.
+	// Reveal-all drops every chunk the scene had, so the fog layer draws
+	// nothing at all — not merely less of it.
 	await expect.poll(() => fogAlpha(player.page)).toBe(0);
 
 	await gm.context.close();

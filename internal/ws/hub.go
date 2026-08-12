@@ -1115,39 +1115,13 @@ type fogSceneRequest struct {
 	SceneID string `json:"sceneId"`
 }
 
-// The cap on req.Cells below reuses maxRevealAllCells: a hand-swept
-// drag was self-limiting (bounded by how many pointer-move events a
-// human drag produces), but the rectangle fog tool sends every cell in
-// its bounding box in one command, so a corner-to-corner drag across a
-// large map can now reach the same scale reveal-all is capped against.
+// The cap on req.Cells reuses maxPaintedCells: a hand-swept drag was
+// self-limiting (bounded by how many pointer-move events a human drag
+// produces), but the rectangle fog tool sends every cell in its
+// bounding box in one command, so a corner-to-corner drag across a
+// large map arrives as one very long list.
 func (h *Hub) handleFogReveal(ctx context.Context, c *client, raw json.RawMessage) {
-	if !h.requireGM(ctx, c) {
-		return
-	}
-
-	var req fogCellsRequest
-	if err := decodePayload(raw, &req); err != nil || req.SceneID == "" || len(req.Cells) == 0 {
-		h.sendError(ctx, c, "invalid fog.reveal payload")
-		return
-	}
-	if len(req.Cells) > maxRevealAllCells {
-		h.sendError(ctx, c, fmt.Sprintf("that's %d cells, too many to reveal at once", len(req.Cells)))
-		return
-	}
-	if !h.requireSceneInRoom(ctx, c, req.SceneID) {
-		return
-	}
-
-	if err := h.store.RevealCells(req.SceneID, req.Cells); err != nil {
-		slog.Error("ws: reveal fog failed", "error", err)
-		h.sendError(ctx, c, "failed to reveal fog")
-		return
-	}
-
-	h.broadcast(ctx, c.roomID, "fog.revealed", map[string]any{
-		"sceneId": req.SceneID,
-		"cells":   req.Cells,
-	})
+	h.handlePaintFog(ctx, c, raw, "fog.reveal", "fog.revealed", h.store.RevealCells)
 }
 
 // handleFogHide puts revealed cells back under the cover, so a reveal
@@ -1155,46 +1129,64 @@ func (h *Hub) handleFogReveal(ctx context.Context, c *client, raw json.RawMessag
 // the scene. GM-only for the same reason revealing is: fog is the GM's
 // control over what the room is allowed to see.
 func (h *Hub) handleFogHide(ctx context.Context, c *client, raw json.RawMessage) {
+	h.handlePaintFog(ctx, c, raw, "fog.hide", "fog.hidden", h.store.HideCells)
+}
+
+// handlePaintFog is the whole of both painting commands: they take the
+// same payload, differ only in which store call they make, and both
+// broadcast the chunks that call reports as changed. Neither has to
+// care which direction it's painting in beyond that.
+func (h *Hub) handlePaintFog(
+	ctx context.Context,
+	c *client,
+	raw json.RawMessage,
+	command, event string,
+	paint func(string, []store.FogCell) ([]store.FogChunk, error),
+) {
 	if !h.requireGM(ctx, c) {
 		return
 	}
 
 	var req fogCellsRequest
 	if err := decodePayload(raw, &req); err != nil || req.SceneID == "" || len(req.Cells) == 0 {
-		h.sendError(ctx, c, "invalid fog.hide payload")
+		h.sendError(ctx, c, "invalid "+command+" payload")
 		return
 	}
-	if len(req.Cells) > maxRevealAllCells {
-		h.sendError(ctx, c, fmt.Sprintf("that's %d cells, too many to hide at once", len(req.Cells)))
+	if len(req.Cells) > maxPaintedCells {
+		h.sendError(ctx, c, fmt.Sprintf("that's %d cells, too many to paint at once", len(req.Cells)))
 		return
 	}
 	if !h.requireSceneInRoom(ctx, c, req.SceneID) {
 		return
 	}
 
-	if err := h.store.HideCells(req.SceneID, req.Cells); err != nil {
-		slog.Error("ws: hide fog failed", "error", err)
-		h.sendError(ctx, c, "failed to hide fog")
+	changed, err := paint(req.SceneID, req.Cells)
+	if err != nil {
+		slog.Error("ws: paint fog failed", "command", command, "error", err)
+		h.sendError(ctx, c, "failed to change fog")
+		return
+	}
+	// A drag over cells already in the target state changes no chunk and
+	// so says nothing — both commands are idempotent, and an event
+	// carrying no chunks would be one every client does nothing with.
+	if len(changed) == 0 {
 		return
 	}
 
-	h.broadcast(ctx, c.roomID, "fog.hidden", map[string]any{
+	h.broadcast(ctx, c.roomID, event, map[string]any{
 		"sceneId": req.SceneID,
-		"cells":   req.Cells,
+		"chunks":  changed,
 	})
 }
 
 // handleFogRevealAll uncovers the whole scene at once — for a map that
 // doesn't want fog, or the moment an encounter ends.
 //
-// It materialises every cell rather than setting a scene-level
-// "everything revealed" flag. Fog's only representation is the set of
-// revealed cells, and a flag would need reconciling with that set the
-// first time the GM hid a single cell afterwards. Materialising also
-// lets this broadcast the existing fog.revealed rather than an event of
-// its own, which keeps the server the one place that decides what cells
-// a scene has: a client computing them from the scene's dimensions
-// would have to agree with this exactly or drift on the next reload.
+// It needs neither the scene's bounds nor a cap, because it only has to
+// describe the chunks that currently hold fog rather than every cell a
+// map could have. That is the direct payoff of storing what's hidden:
+// this used to be the one operation big enough to need limiting, and
+// the limit has moved to handleFogReset below.
 func (h *Hub) handleFogRevealAll(ctx context.Context, c *client, raw json.RawMessage) {
 	if !h.requireGM(ctx, c) {
 		return
@@ -1209,35 +1201,32 @@ func (h *Hub) handleFogRevealAll(ctx context.Context, c *client, raw json.RawMes
 		return
 	}
 
-	scene, err := h.store.GetScene(req.SceneID)
+	cleared, err := h.store.RevealAllCells(req.SceneID)
 	if err != nil {
-		slog.Error("ws: load scene for reveal-all failed", "error", err)
-		h.sendError(ctx, c, "failed to reveal fog")
-		return
-	}
-
-	cells, err := sceneFogCells(scene)
-	if err != nil {
-		// Bounds the GM can see and fix, not an internal failure, so the
-		// reason goes to them verbatim.
-		h.sendError(ctx, c, err.Error())
-		return
-	}
-
-	if err := h.store.RevealCells(req.SceneID, cells); err != nil {
 		slog.Error("ws: reveal all fog failed", "error", err)
 		h.sendError(ctx, c, "failed to reveal fog")
 		return
 	}
+	if len(cleared) == 0 {
+		return // already had no fog on it
+	}
 
+	// Deliberately the same event a painted reveal broadcasts, so clients
+	// need no separate case for it: chunks zeroed here merge exactly like
+	// chunks zeroed by a drag.
 	h.broadcast(ctx, c.roomID, "fog.revealed", map[string]any{
 		"sceneId": req.SceneID,
-		"cells":   cells,
+		"chunks":  cleared,
 	})
 }
 
-// handleFogReset returns a scene to fully covered, the state it starts
-// in. There's no undo for this — see the note on the toolbar button.
+// handleFogReset covers a whole scene — the classic dungeon-crawl
+// starting point, and the opposite of the state a scene is created in.
+// There's no undo for this; see the note on the toolbar button.
+//
+// This is the operation that has to enumerate a scene's bounds, and so
+// the one carrying the cap. Reveal-all used to be that operation; the
+// two swapped places when fog started storing what's hidden.
 func (h *Hub) handleFogReset(ctx context.Context, c *client, raw json.RawMessage) {
 	if !h.requireGM(ctx, c) {
 		return
@@ -1252,51 +1241,87 @@ func (h *Hub) handleFogReset(ctx context.Context, c *client, raw json.RawMessage
 		return
 	}
 
-	if err := h.store.ClearFog(req.SceneID); err != nil {
+	scene, err := h.store.GetScene(req.SceneID)
+	if err != nil {
+		slog.Error("ws: load scene for fog reset failed", "error", err)
+		h.sendError(ctx, c, "failed to reset fog")
+		return
+	}
+
+	chunks, err := sceneFogChunks(scene)
+	if err != nil {
+		// Bounds the GM can see and fix, not an internal failure, so the
+		// reason goes to them verbatim.
+		h.sendError(ctx, c, err.Error())
+		return
+	}
+
+	delta, err := h.store.HideAllCells(req.SceneID, chunks)
+	if err != nil {
 		slog.Error("ws: reset fog failed", "error", err)
 		h.sendError(ctx, c, "failed to reset fog")
 		return
 	}
 
-	h.broadcast(ctx, c.roomID, "fog.reset", map[string]any{
+	// fog.hidden rather than an event of its own — covering everything is
+	// covering every chunk, which is what a painted hide already says.
+	// The delta includes any chunk outside these bounds zeroed, so a
+	// client can't be left drawing fog this just deleted.
+	h.broadcast(ctx, c.roomID, "fog.hidden", map[string]any{
 		"sceneId": req.SceneID,
+		"chunks":  delta,
 	})
 }
 
-// maxRevealAllCells caps what one fog.revealAll, fog.reveal or fog.hide
-// may materialise (the latter two via the rectangle fog tool, which can
-// name every cell in a large bounding box in a single command). The
-// count grows with the product of the map's dimensions in grid squares,
-// and every cell is both a row inserted and an entry in the payload
-// every client receives. 40,000 is a 200x200 grid — far past any map
-// anyone actually plays on, and still small enough to insert and
-// broadcast without stalling the room.
-const maxRevealAllCells = 40_000
+// maxPaintedCells caps how many cells one fog.reveal or fog.hide may
+// name. The rectangle tool sends every cell in its bounding box, so a
+// corner-to-corner drag on a large map is a long list — but it is a
+// list of cells the *client* chose, so unlike the chunk cap below this
+// bounds a payload rather than a map. 40,000 is a 200x200 grid.
+const maxPaintedCells = 40_000
 
-// sceneFogCells enumerates every cell inside a scene's bounds, indexed
-// the way the client indexes a painted one — floor(pixel / gridSize)
-// from the origin — so a revealed-everything scene and a hand-painted
-// one agree on what a cell is.
-func sceneFogCells(scene store.Scene) ([]store.FogCell, error) {
+// maxFogChunks caps what one fog.reset may materialise. Every chunk is
+// both a row inserted and an entry in the payload every client
+// receives, and the count grows with the product of the map's
+// dimensions in grid squares. 2,000 chunks is a little over a 200x200
+// grid (200 rows of 7 chunks each) — far past any map anyone actually
+// plays on, and 32x more cells than the same number of rows used to buy
+// when fog was stored a cell at a time.
+const maxFogChunks = 2_000
+
+// sceneFogChunks enumerates every chunk inside a scene's bounds, fully
+// hidden, indexed the way the client indexes a painted one —
+// floor(pixel / gridSize) from the origin — so a covered-everything
+// scene and a hand-painted one agree on what a cell is.
+func sceneFogChunks(scene store.Scene) ([]store.FogChunk, error) {
 	if scene.GridSize <= 0 || scene.Width <= 0 || scene.Height <= 0 {
-		return nil, errors.New("this scene has no map bounds to reveal")
+		return nil, errors.New("this scene has no map bounds to cover")
 	}
 
-	// Rounded up, so a map whose last row of squares is clipped still
-	// gets that row revealed rather than leaving a covered strip.
+	// Rounded up, so a map whose last row or column of squares is
+	// clipped still gets covered rather than leaving a revealed strip.
 	cols := (scene.Width + scene.GridSize - 1) / scene.GridSize
 	rows := (scene.Height + scene.GridSize - 1) / scene.GridSize
-	if cols*rows > maxRevealAllCells {
-		return nil, fmt.Errorf("this scene covers %d cells, too many to reveal at once", cols*rows)
+	chunksPerRow := (cols + store.FogChunkWidth - 1) / store.FogChunkWidth
+	if rows*chunksPerRow > maxFogChunks {
+		return nil, fmt.Errorf("this scene covers %d cells, too many to cover at once", cols*rows)
 	}
 
-	cells := make([]store.FogCell, 0, cols*rows)
+	chunks := make([]store.FogChunk, 0, rows*chunksPerRow)
 	for y := range rows {
-		for x := range cols {
-			cells = append(cells, store.FogCell{X: x, Y: y})
+		for cx := range chunksPerRow {
+			// The last chunk of a row is partial unless the map happens to
+			// be a multiple of 32 cells wide. Setting only the bits that
+			// are really there keeps fog inside the map rather than
+			// hanging up to 31 covered cells off its right edge.
+			mask := ^uint32(0)
+			if remaining := cols - cx*store.FogChunkWidth; remaining < store.FogChunkWidth {
+				mask = 1<<uint(remaining) - 1
+			}
+			chunks = append(chunks, store.FogChunk{Y: y, ChunkX: cx, Mask: mask})
 		}
 	}
-	return cells, nil
+	return chunks, nil
 }
 
 // drawingKinds maps the wire-format kind string to its typed
@@ -1622,19 +1647,11 @@ func (h *Hub) handleSceneCreate(ctx context.Context, c *client, raw json.RawMess
 		return
 	}
 
-	// A new scene starts fully revealed, not fully covered: a Player
-	// looking at a scene nobody has painted fog on yet should see the
-	// map, not an unexplained black rectangle that reads as broken
-	// rather than "nothing revealed". Best-effort and silent on
-	// failure — the same cap handleFogRevealAll enforces applies here
-	// (sceneFogCells refuses a scene too large to materialise), and a
-	// scene that size just starts covered like it always has. Scene
-	// creation itself must not fail over this cosmetic default.
-	if cells, err := sceneFogCells(scene); err == nil {
-		if err := h.store.RevealCells(scene.ID, cells); err != nil {
-			slog.Error("ws: reveal fog for new scene failed", "error", err)
-		}
-	}
+	// Nothing to do about fog here. A new scene is fully revealed because
+	// fog stores what's *hidden* and a new scene has none — it isn't a
+	// default anyone has to apply. This used to materialise a revealed
+	// cell for every square in bounds, capped, and silently give up on
+	// maps too large for that cap.
 
 	h.broadcast(ctx, c.roomID, "scene.created", map[string]any{"scene": scenePayload(scene)})
 

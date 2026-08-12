@@ -138,7 +138,10 @@ describe('RoomClient', () => {
 		expect(client.tokens[0].y).toBe(5);
 	});
 
-	it('merges fog.revealed cells only when they belong to the active scene', () => {
+	// Both fog events carry the mask a chunk now *has*, not a delta to
+	// apply — the server works the change out against what it had stored,
+	// so the client's whole job is to take the new value.
+	it('takes the mask a fog chunk arrives with, but only for the active scene', () => {
 		const { client, socket } = connectedClient();
 		socket.emit({
 			type: 'state.sync',
@@ -146,58 +149,41 @@ describe('RoomClient', () => {
 				room: { slug: 'abc123', name: 'Room' },
 				you: { participantId: 'p1', displayName: 'A', role: 'gm' },
 				scene: { id: 'scene1', name: 'Scene' },
-				fogCells: [{ x: 0, y: 0 }]
+				fogChunks: [{ y: 0, chunkX: 0, mask: 0b0011 }]
 			}
 		});
 
-		socket.emit({ type: 'fog.revealed', payload: { sceneId: 'scene1', cells: [{ x: 1, y: 1 }] } });
-		expect(client.fogCells).toEqual([
-			{ x: 0, y: 0 },
-			{ x: 1, y: 1 }
-		]);
-
-		// a reveal for a scene the client isn't currently viewing must be ignored
-		socket.emit({
-			type: 'fog.revealed',
-			payload: { sceneId: 'other-scene', cells: [{ x: 9, y: 9 }] }
-		});
-		expect(client.fogCells).toEqual([
-			{ x: 0, y: 0 },
-			{ x: 1, y: 1 }
-		]);
-	});
-
-	it('drops fog.hidden cells only when they belong to the active scene', () => {
-		const { client, socket } = connectedClient();
-		socket.emit({
-			type: 'state.sync',
-			payload: {
-				room: { slug: 'abc123', name: 'Room' },
-				you: { participantId: 'p1', displayName: 'A', role: 'gm' },
-				scene: { id: 'scene1', name: 'Scene' },
-				fogCells: [
-					{ x: 0, y: 0 },
-					{ x: 1, y: 1 }
-				]
-			}
-		});
-
-		socket.emit({ type: 'fog.hidden', payload: { sceneId: 'scene1', cells: [{ x: 0, y: 0 }] } });
-		expect(client.fogCells).toEqual([{ x: 1, y: 1 }]);
-
-		// Hiding a cell that isn't revealed is a no-op rather than an error —
-		// the hide tool sweeps across cells it never revealed.
-		socket.emit({ type: 'fog.hidden', payload: { sceneId: 'scene1', cells: [{ x: 7, y: 7 }] } });
-		expect(client.fogCells).toEqual([{ x: 1, y: 1 }]);
-
+		// A chunk already held is replaced rather than OR-ed together: a
+		// bitwise merge here would make revealing impossible to express.
 		socket.emit({
 			type: 'fog.hidden',
-			payload: { sceneId: 'other-scene', cells: [{ x: 1, y: 1 }] }
+			payload: { sceneId: 'scene1', chunks: [{ y: 0, chunkX: 0, mask: 0b1001 }] }
 		});
-		expect(client.fogCells).toEqual([{ x: 1, y: 1 }]);
+		expect(client.fogChunks).toEqual([{ y: 0, chunkX: 0, mask: 0b1001 }]);
+
+		// A chunk for a row not held yet is appended.
+		socket.emit({
+			type: 'fog.hidden',
+			payload: { sceneId: 'scene1', chunks: [{ y: 4, chunkX: 1, mask: 0b1 }] }
+		});
+		expect(client.fogChunks).toEqual([
+			{ y: 0, chunkX: 0, mask: 0b1001 },
+			{ y: 4, chunkX: 1, mask: 0b1 }
+		]);
+
+		// A scene the client isn't currently viewing must be ignored.
+		socket.emit({
+			type: 'fog.hidden',
+			payload: { sceneId: 'other-scene', chunks: [{ y: 9, chunkX: 9, mask: 0b1 }] }
+		});
+		expect(client.fogChunks).toHaveLength(2);
 	});
 
-	it('clears every cell on fog.reset, but only for the active scene', () => {
+	// A chunk with nothing left hidden is dropped rather than kept at
+	// zero, so "absent" stays the only spelling of "revealed" — the same
+	// rule the server keeps in its table. Rendering leans on it: an empty
+	// list means an empty fog layer, with no masks left to check.
+	it('drops a fog chunk that reaches mask 0 rather than keeping it', () => {
 		const { client, socket } = connectedClient();
 		socket.emit({
 			type: 'state.sync',
@@ -205,24 +191,25 @@ describe('RoomClient', () => {
 				room: { slug: 'abc123', name: 'Room' },
 				you: { participantId: 'p1', displayName: 'A', role: 'gm' },
 				scene: { id: 'scene1', name: 'Scene' },
-				fogCells: [
-					{ x: 0, y: 0 },
-					{ x: 1, y: 1 }
+				fogChunks: [
+					{ y: 0, chunkX: 0, mask: 0b0011 },
+					{ y: 1, chunkX: 0, mask: 0b0100 }
 				]
 			}
 		});
 
-		socket.emit({ type: 'fog.reset', payload: { sceneId: 'other-scene' } });
-		expect(client.fogCells).toHaveLength(2);
-
-		socket.emit({ type: 'fog.reset', payload: { sceneId: 'scene1' } });
-		expect(client.fogCells).toEqual([]);
+		socket.emit({
+			type: 'fog.revealed',
+			payload: { sceneId: 'scene1', chunks: [{ y: 0, chunkX: 0, mask: 0 }] }
+		});
+		expect(client.fogChunks).toEqual([{ y: 1, chunkX: 0, mask: 0b0100 }]);
 	});
 
-	// Reveal-all deliberately reuses fog.revealed rather than an event of
-	// its own, so there is nothing extra for the client to handle — this
-	// pins that, since a future server change growing a fog.revealedAll
-	// event would silently do nothing here.
+	// Both whole-scene buttons deliberately reuse the painting events
+	// rather than having their own, so there is nothing extra for the
+	// client to handle. This pins that: a server change growing a
+	// fog.revealedAll or reinstating fog.reset would silently do nothing
+	// here.
 	it('takes a whole-scene reveal through the same fog.revealed case', () => {
 		const { client, socket } = connectedClient();
 		socket.emit({
@@ -231,7 +218,10 @@ describe('RoomClient', () => {
 				room: { slug: 'abc123', name: 'Room' },
 				you: { participantId: 'p1', displayName: 'A', role: 'gm' },
 				scene: { id: 'scene1', name: 'Scene' },
-				fogCells: [{ x: 0, y: 0 }]
+				fogChunks: [
+					{ y: 0, chunkX: 0, mask: 0b0011 },
+					{ y: 1, chunkX: 0, mask: 0b0100 }
+				]
 			}
 		});
 
@@ -241,21 +231,19 @@ describe('RoomClient', () => {
 			payload: { sceneId: 'scene1' }
 		});
 
+		// Reveal-all arrives as every held chunk zeroed, which the drop
+		// rule above turns into an empty layer.
 		socket.emit({
 			type: 'fog.revealed',
 			payload: {
 				sceneId: 'scene1',
-				cells: [
-					{ x: 0, y: 0 },
-					{ x: 1, y: 0 }
+				chunks: [
+					{ y: 0, chunkX: 0, mask: 0 },
+					{ y: 1, chunkX: 0, mask: 0 }
 				]
 			}
 		});
-		// (0,0) was already revealed and must not double up.
-		expect(client.fogCells).toEqual([
-			{ x: 0, y: 0 },
-			{ x: 1, y: 0 }
-		]);
+		expect(client.fogChunks).toEqual([]);
 	});
 
 	it('keeps the scene list in step with created, updated and deleted', () => {
@@ -293,7 +281,7 @@ describe('RoomClient', () => {
 				scenes: [{ id: 's1', name: 'Tavern', mapAssetId: 'old' }],
 				scene: { id: 's1', name: 'Tavern', mapAssetId: 'old' },
 				tokens: [{ id: 't1', x: 1, y: 1, name: 'Goblin' }],
-				fogCells: [{ x: 0, y: 0 }],
+				fogChunks: [{ y: 0, chunkX: 0, mask: 0b1 }],
 				drawings: [{ id: 'd1', sceneId: 's1', kind: 'line', points: [], color: '#000' }]
 			}
 		});
@@ -306,7 +294,7 @@ describe('RoomClient', () => {
 		expect(client.scene?.mapAssetId).toBe('new');
 		expect(client.scenes[0].mapAssetId).toBe('new');
 		expect(client.tokens).toHaveLength(1);
-		expect(client.fogCells).toEqual([{ x: 0, y: 0 }]);
+		expect(client.fogChunks).toEqual([{ y: 0, chunkX: 0, mask: 0b1 }]);
 		expect(client.drawings).toHaveLength(1);
 	});
 
@@ -344,7 +332,7 @@ describe('RoomClient', () => {
 
 		expect(client.scene?.id).toBe('s2');
 		expect(client.tokens.map((t) => t.id)).toEqual(['t9']);
-		expect(client.fogCells).toEqual([]);
+		expect(client.fogChunks).toEqual([]);
 	});
 
 	it('surfaces error envelopes on the error field', () => {
@@ -1243,7 +1231,7 @@ describe('RoomClient', () => {
 
 			socket.emit({
 				type: 'scene.activated',
-				payload: { scene: { id: 's2', gridSize: 70 }, tokens: [], fogCells: [], drawings: [] }
+				payload: { scene: { id: 's2', gridSize: 70 }, tokens: [], fogChunks: [], drawings: [] }
 			});
 
 			expect(client.initiative.entries).toHaveLength(1);

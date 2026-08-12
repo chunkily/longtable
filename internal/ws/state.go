@@ -82,7 +82,7 @@ func (h *Hub) sendStateSync(ctx context.Context, c *client, room store.Room) {
 	h.send(ctx, c, "state.sync", payload)
 }
 
-// sceneStatePayload builds the {scene, tokens, fogCells} triple used
+// sceneStatePayload builds the {scene, tokens, fogChunks} triple used
 // both to hydrate a freshly connected client (as part of state.sync)
 // and to tell already-connected clients about a newly activated scene
 // (scene.activated) — both cases need the same full picture, not just
@@ -102,7 +102,7 @@ func (h *Hub) sceneStatePayload(sceneID string, role store.Role) (map[string]any
 		tokens = visibleTokensOnly(tokens)
 	}
 
-	fogCells, err := h.store.ListFogCells(sceneID)
+	fogChunks, err := h.store.ListFogChunks(sceneID)
 	if err != nil {
 		return nil, err
 	}
@@ -113,10 +113,10 @@ func (h *Hub) sceneStatePayload(sceneID string, role store.Role) (map[string]any
 	}
 
 	return map[string]any{
-		"scene":    scenePayload(scene),
-		"tokens":   tokenPayloads(tokens),
-		"fogCells": fogCells,
-		"drawings": drawingPayloads(drawings),
+		"scene":     scenePayload(scene),
+		"tokens":    tokenPayloads(tokens),
+		"fogChunks": fogChunks,
+		"drawings":  drawingPayloads(drawings),
 	}, nil
 }
 

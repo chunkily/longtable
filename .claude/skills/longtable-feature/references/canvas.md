@@ -11,7 +11,7 @@ Added in this order, so this is also the `document.querySelectorAll('canvas')` i
 | --- | --- | --- | --- |
 | 0 | map | yes | the map image, or a flat rect when there's no image |
 | 1 | grid | no | grid lines, recomputed for the visible region on every pan/zoom/resize |
-| 2 | fog | yes | the cover, with revealed cells punched out (`destination-out`) |
+| 2 | fog | yes | one compound-path shape covering the hidden cells (see below) |
 | 3 | drawings | no | committed strokes |
 | 4 | tokens | yes | one `Group` per token, draggable in `'none'` mode and only if `room.canMoveToken` |
 | 5 | pings | no | pulse rings |
@@ -61,11 +61,13 @@ Neither family nor variant buttons toggle any more: the Hand is how you stop, so
 the active family would be a surprising second way to do the same thing. `toolForFamily` remembers
 what each family was last left on, so returning to Draw puts back the shape you were using.
 
-The two fog tools share one branch in `attachToolHandlers`: same sweep over the same cells,
-differing only in which command the gesture ends with and the colour it previews in. Only
+The two fog tools share one branch in `attachToolHandlers`: same rectangle rubber-banded over the
+same cells, differing only in which command the gesture ends with and the colour it previews in.
+A drag with no movement collapses to the single cell under the pointer, so a touch-up still
+works. Only
 templates snap or quantise — the distance line already reports whole squares from the cells its
 ends fall in, and is a ruler rather than a spell. The
-whole-scene fog actions (`Reveal all`, `Reset fog`) are plain buttons rather than tools —
+whole-scene fog actions (`Reveal all`, `Hide all`) are plain buttons rather than tools —
 neither has a gesture to make, and making them modes would arm something that fires on the next
 click anywhere on the map.
 
@@ -131,7 +133,7 @@ pointer handlers are bound. It:
 
 1. Removes every `.tool`-namespaced handler (`mousedown.tool touchstart.tool …`).
 2. Calls `retractInFlightGesture()` — resets transient gesture state and *retracts* anything in
-   flight. A measurement or fog sweep abandoned by a tool switch has to be ended there, or it
+   flight. A measurement or fog rectangle abandoned by a tool switch has to be ended there, or it
    strands on other clients with no end event coming. It's a named function rather than an inline
    block because a pinch needs identical cleanup (below), and two copies is how a retraction gets
    added to one and missed in the other.
@@ -198,15 +200,34 @@ cell and find a cell's centre. Tokens are stored in cell units and multiplied by
 render time; drawings are stored in world units. Note `scene.gridOffsetX/Y` are **dead** — stored
 and sent but never applied; grid alignment is being handled at asset upload time instead.
 
+## Fog
+
+The fog layer draws the **hidden** cells directly rather than covering the scene and punching the
+revealed ones back out — matching the storage, which is the hidden set (see `ws-protocol.md`). A
+scene with no fog therefore draws nothing at all.
+
+Every hidden run goes into **one** `Konva.Shape` as one compound path, filled once, rather than a
+rect per run. Abutting translucent rectangles blend twice along the edge they share and leave a
+hairline grid over the fog at any opacity below 1; a single path has no interior edges to blend.
+`fogRuns` in `web/src/lib/fog.ts` unpacks chunks into those runs and deliberately stops them at
+chunk boundaries — abutting rects in one path union cleanly, so merging across would buy nothing.
+
+A Player's fog is opaque. A GM's uses their own `fogOpacity`, a per-browser preference in
+`$lib/fog-opacity` (not room state, so it never goes on the wire) surfaced as a slider on the fog
+family's strip.
+
 ## Effects and re-render cost
 
 `render()` is `async` and awaits the map image, so Svelte's dependency tracking — which only sees
-reads before the first `await` — would miss `fogCells` and `you` entirely. The `track(...)` helper
+reads before the first `await` — would miss `scene` and `you` entirely. The `track(...)` helper
 forces those reads into the synchronous window. Any new async render path needs the same.
 
 The effects are split by cost on purpose:
 
-- `render()` tracks scene/fogCells/you — the expensive full rebuild.
+- `render()` tracks scene/you — the expensive full rebuild.
+- `renderFog()` has its own effect, tracking `fogChunks` and the GM's `fogOpacity`. The opacity
+  fires on every tick of a slider drag, and rebuilding the map, grid and every token for that
+  would be the same performance bug the two below record.
 - `renderDrawings()` has its own effect, because drawing and erasing are the most frequent things
   that happen and rebuilding the map, grid, fog and every token for one stroke was a real
   performance bug (`planning/backlog/erasing-causes-canvas-lag.md`).

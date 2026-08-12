@@ -15,7 +15,7 @@ architecture and current state live here instead**, and keeping them true is par
 | `cmd/longtable/` | entrypoint: `serve` (default) plus a `room list` / `room reset-password` admin CLI |
 | `internal/api/` | HTTP routes: create/join room, GM login, asset upload + serving + per-room library listing, health check, the Host's banner (`GET /api/notice`), `GET /ws` upgrade, SPA fallback for the embedded frontend |
 | `internal/ws/` | the real-time hub and the authority on room state — command/event protocol, permission checks, broadcast |
-| `internal/store/` | SQLite schema and every typed query (rooms, participants, scenes, tokens, fog, drawings, chat). `store.go` holds the `CREATE TABLE`s and migrations |
+| `internal/store/` | SQLite schema and every typed query (rooms, participants, scenes, tokens, fog, drawings, chat). `store.go` holds the `CREATE TABLE`s and migrations. `fog.go` stores the *hidden* cells packed 32 to an integer — read its doc comment before touching fog anywhere |
 | `internal/imageproc/` | decodes and re-encodes every upload to WebP. Read its doc comment before touching it — the studio-swing trap in there is easy to reintroduce |
 | `internal/blobstore/` | re-encoded images on disk, addressed by content hash so identical uploads share a file |
 | `internal/auth/` | session tokens and bcrypt password hashing. No accounts — identity in a room is a *seat* (a `participant` row), and a device proves it holds one with a `session` token in `localStorage`. See [ADR-0008](planning/decisions/0008-seats-and-sessions.md) |
@@ -102,8 +102,12 @@ conditions on one they own),
 fog the GM reveals and hides by dragging a rectangle (a plain click covers just the one cell under
 it), starting fully revealed on a new scene rather than fully covered — a Player looking at a
 scene nobody has painted fog on yet sees the map, not an unexplained black rectangle — plus
-reveal-all and reset for the whole scene. The GM's own cover opacity is a slider on the fog
-family's strip, persisted per browser like the theme control rather than sent anywhere,
+reveal-all and reset for the whole scene. **Fog is stored and sent as the set of *hidden* cells,
+packed 32 to an integer** (`internal/store/fog.go` and `web/src/lib/fog.ts` are the two halves of
+that format), which is why a new scene comes up revealed without anything having to materialise
+it, and why a fully covered map costs 1,400 rows rather than 40,000. The GM's own cover opacity is
+a slider on the fog family's strip, persisted per browser like the theme control rather than sent
+anywhere,
 drawings (freehand/line/rect/ellipse) with an eraser, and per-session undo/redo covering
 drawing, erasing, token creation, token deletion, token edits and token moves (an undo passes over
 a token someone else has changed since, rather than dragging it back out from under them),

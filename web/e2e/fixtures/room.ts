@@ -150,7 +150,7 @@ export async function selectTool(page: Page, name: string) {
 /**
  * Picks a tool family without picking a variant, for the controls that
  * live on a family's strip but aren't tools — the fog family's
- * `Reveal all` and `Reset fog`, which are one-shot buttons rather than
+ * `Reveal all` and `Hide all`, which are one-shot buttons rather than
  * modes.
  */
 export async function selectToolFamily(page: Page, family: string) {

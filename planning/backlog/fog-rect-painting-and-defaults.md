@@ -37,7 +37,8 @@ One thing this made newly possible: a corner-to-corner drag across a large map c
 more cells in one command than a hand-swept drag ever could (a mouse sweep was self-limiting;
 a rectangle isn't). `fog.reveal` and `fog.hide` now cap `len(cells)` at `maxRevealAllCells`
 (40,000 — the same cap `fog.revealAll` already enforced) rather than trusting the client to stay
-reasonable.
+reasonable. (That constant is now `maxPaintedCells`, and `fog.revealAll` no longer has a cap of
+its own — see the superseding item below.)
 
 **Scenes start revealed** — `handleSceneCreate` now calls the same `sceneFogCells` enumeration
 `fog.revealAll` uses and reveals every cell immediately after creating the scene, before the first
@@ -45,6 +46,12 @@ reasonable.
 just starts covered like every scene used to — scene creation itself must never fail over this.
 `ClearFog`'s doc comment, which called fully-covered "the state a scene starts in", no longer
 claims that.
+
+> **Superseded**, 2026-08-12, by
+> [fog-hidden-set-packed-chunks](fog-hidden-set-packed-chunks.md): fog now stores what's *hidden*,
+> so a new scene comes up revealed by holding no rows at all and there is nothing to materialise,
+> nothing to cap, and no map too large to get the default. The materialisation described above is
+> gone; the behaviour it was reaching for is what the storage does on its own.
 
 **Fog opacity slider** — new `$lib/fog-opacity.ts` (persisted to `localStorage` per browser, same
 pattern as the theme control — it's how fog looks on *this* screen, not room state, so nothing

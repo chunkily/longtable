@@ -138,31 +138,29 @@ func TestSceneCreate_FirstSceneActivatesButLaterOnesDoNot(t *testing.T) {
 	}
 }
 
-// A scene starts fully revealed rather than fully covered — see the
-// comment in handleSceneCreate for why: a black rectangle with nothing
-// painted on it yet reads as broken, not as "nothing revealed".
-func TestSceneCreate_StartsFullyRevealed(t *testing.T) {
+// A scene starts fully revealed rather than fully covered: a Player
+// looking at a map nobody has painted fog on yet should see it, not an
+// unexplained black rectangle that reads as broken.
+//
+// There is nothing for scene creation to *do* about that — fog stores
+// what's hidden, and a new scene has none. It used to materialise a
+// revealed cell for every square in bounds, which meant a cap, and a
+// map too large for the cap silently came up fully covered instead.
+// However large this scene is, it holds no fog.
+func TestSceneCreate_StartsWithNoFogHoweverLargeItIs(t *testing.T) {
 	s := newSceneTestRoom(t)
 	id := s.createScene(t, "Tavern")
 
-	// 210x140 at gridSize 70 is 3 columns by 2 rows, same bounds fog_test.go
-	// uses for sceneFogCells.
-	cells, err := s.ts.store.ListFogCells(id)
+	chunks, err := s.ts.store.ListFogChunks(id)
 	if err != nil {
-		t.Fatalf("ListFogCells: %v", err)
+		t.Fatalf("ListFogChunks: %v", err)
 	}
-	if len(cells) != 6 {
-		t.Fatalf("len(cells) = %d, want all 6 cells revealed", len(cells))
+	if len(chunks) != 0 {
+		t.Fatalf("chunks = %+v, want none — a new scene has no fog on it", chunks)
 	}
-}
 
-// A scene too large for sceneFogCells's cap (see handleFogRevealAll)
-// can't be materialised at creation time either — but that must not
-// fail scene creation itself, just leave it starting covered like every
-// scene used to.
-func TestSceneCreate_TooLargeToMaterialiseStillSucceeds(t *testing.T) {
-	s := newSceneTestRoom(t)
-
+	// A million cells, far past anything the old auto-reveal could
+	// materialise, and still nothing stored.
 	s.gm.send(t, "scene.create", map[string]any{
 		"name": "Vast", "gridSize": 1, "width": 1000, "height": 1000,
 	})
@@ -170,17 +168,15 @@ func TestSceneCreate_TooLargeToMaterialiseStillSucceeds(t *testing.T) {
 	if env.Type != "scene.created" {
 		t.Fatalf("type = %q, want scene.created", env.Type)
 	}
-	id := sceneIDFromPayload(t, env)
-	s.player.readEnvelope(t)
-	s.gm.readEnvelope(t)     // scene.activated: the room's first scene
+	vast := sceneIDFromPayload(t, env)
 	s.player.readEnvelope(t)
 
-	cells, err := s.ts.store.ListFogCells(id)
+	chunks, err = s.ts.store.ListFogChunks(vast)
 	if err != nil {
-		t.Fatalf("ListFogCells: %v", err)
+		t.Fatalf("ListFogChunks: %v", err)
 	}
-	if len(cells) != 0 {
-		t.Fatalf("len(cells) = %d, want none — too large to auto-reveal", len(cells))
+	if len(chunks) != 0 {
+		t.Fatalf("chunks = %+v, want none on a huge scene too", chunks)
 	}
 }
 
@@ -303,20 +299,14 @@ func TestSceneSetMap_SwapsTheArtWithoutDisturbingTheScene(t *testing.T) {
 	sceneID := s.createScene(t, "Tavern")
 
 	// A token and some fog stand in for a session's worth of progress,
-	// which a map swap must not touch. Cleared first: scene.create now
-	// starts a scene fully revealed, and this test wants to assert on
-	// exactly one hand-painted cell surviving, not however many the
-	// scene's bounds auto-revealed.
+	// which a map swap must not touch.
 	if _, err := s.ts.store.CreateToken(store.Token{
 		SceneID: sceneID, Name: "Goblin", X: 2, Y: 3, Width: 1, Height: 1,
 	}); err != nil {
 		t.Fatalf("CreateToken: %v", err)
 	}
-	if err := s.ts.store.ClearFog(sceneID); err != nil {
-		t.Fatalf("ClearFog: %v", err)
-	}
-	if err := s.ts.store.RevealCells(sceneID, []store.FogCell{{X: 1, Y: 1}}); err != nil {
-		t.Fatalf("RevealCells: %v", err)
+	if _, err := s.ts.store.HideCells(sceneID, []store.FogCell{{X: 1, Y: 1}}); err != nil {
+		t.Fatalf("HideCells: %v", err)
 	}
 
 	asset, err := s.ts.store.CreateAsset("hash", "new-map.webp", "image/webp", 10)
@@ -352,8 +342,8 @@ func TestSceneSetMap_SwapsTheArtWithoutDisturbingTheScene(t *testing.T) {
 	if tokens, err := s.ts.store.ListTokensForScene(sceneID); err != nil || len(tokens) != 1 {
 		t.Fatalf("tokens = %+v (err %v), want the token kept", tokens, err)
 	}
-	if cells, err := s.ts.store.ListFogCells(sceneID); err != nil || len(cells) != 1 {
-		t.Fatalf("fog = %+v (err %v), want the revealed cell kept", cells, err)
+	if chunks, err := s.ts.store.ListFogChunks(sceneID); err != nil || len(chunks) != 1 {
+		t.Fatalf("fog = %+v (err %v), want the hidden cell kept", chunks, err)
 	}
 }
 

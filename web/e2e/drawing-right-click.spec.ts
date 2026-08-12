@@ -158,14 +158,14 @@ test('right-dragging the fog tool reveals nothing', async ({ page }) => {
 	const origin = await mapGestureOrigin(page);
 
 	await selectFogTool(page);
-	// A scene starts fully revealed now (see
-	// planning/backlog/fog-gm-view-contrast.md), so this test resets fog
-	// first to get the covered baseline it actually wants to probe. Given
-	// time to land rather than read straight after the click: the reset is
-	// a command round trip plus a Konva redraw, and >0 is satisfied by a
-	// layer still mid-transition just as easily as by the settled one —
-	// this bit a first attempt at a poll on exactly that.
-	await page.getByRole('button', { name: 'Reset fog', exact: true }).click();
+	// A scene starts fully revealed — fog stores what's hidden, and a new
+	// scene has none — so this covers the scene first to get the baseline
+	// it actually wants to probe. Given time to land rather than read
+	// straight after the click: the reset is a command round trip plus a
+	// Konva redraw, and >0 is satisfied by a layer still mid-transition
+	// just as easily as by the settled one — this bit a first attempt at
+	// a poll on exactly that.
+	await page.getByRole('button', { name: 'Hide all', exact: true }).click();
 	await page.waitForTimeout(300);
 	const covered = await layerAlpha(page, FOG_LAYER);
 	expect(covered).toBeGreaterThan(0);
