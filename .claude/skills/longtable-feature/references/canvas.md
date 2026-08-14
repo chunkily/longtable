@@ -399,9 +399,9 @@ of the server needs the same two-way handling.
 
 ## Filled shapes
 
-A rect or an ellipse can be shaded inside as well as outlined, toggled by `Fill` on the draw
-family's strip — which appears only for those two tools, the way the measure strip only offers a
-line template's width once that template is picked.
+A rect or an ellipse can be shaded inside as well as outlined, toggled by the paint-bucket button
+on the draw family's strip (`Fill shape`) — which appears only for those two tools, the way the
+measure strip only offers a line template's width once that template is picked.
 
 - **The fill is a translucent colour, not Konva's `opacity`.** `fillFor` in
   `web/src/lib/drawing-fill.ts` turns the stroke colour into `rgba(…, FILL_ALPHA)`, so the outline

@@ -110,6 +110,17 @@ what the visible label leaves to context, because a screen reader user has no su
 read from. `aria-label="Take Bob's seat"` on a button reading `Bob` is right, and so is
 `aria-label="Copy room code"` on an icon.
 
+**An icon's name can be longer than the text it replaced**, and one case says so:
+
+| Written                       | Rewritten                                | What it teaches                                                          |
+| ----------------------------- | ---------------------------------------- | ------------------------------------------------------------------------ |
+| A button reading `Fill`       | A paint-bucket icon, `Fill shape`        | The word had a strip of shape tools beside it supplying the noun; the icon has nothing, so the name says what is being filled |
+
+Rule 3 says a button that acts is a verb or two and the surrounding card supplies the rest — and
+that holds for *text*, where the neighbours are visible. Strip the text and the context goes with
+it: an unlabelled glyph is announced on its own, so the accessible name has to carry the noun the
+visible label was leaning on. Not a licence for a sentence; `Fill shape` is still two words.
+
 ## README.md and docs/
 
 Same instinct, more room. A Host reading `docs/hosting.md` is mid-task — the server won't start, or

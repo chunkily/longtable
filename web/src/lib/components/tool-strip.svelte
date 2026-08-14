@@ -19,6 +19,7 @@
 	import RectangleHorizontal from '@lucide/svelte/icons/rectangle-horizontal';
 	import Circle from '@lucide/svelte/icons/circle';
 	import Eraser from '@lucide/svelte/icons/eraser';
+	import PaintBucket from '@lucide/svelte/icons/paint-bucket';
 	import Ruler from '@lucide/svelte/icons/ruler';
 	import CircleDot from '@lucide/svelte/icons/circle-dot';
 	import Cone from '@lucide/svelte/icons/cone';
@@ -151,13 +152,20 @@
 		     template is picked. -->
 		{#if activeTool === 'rect' || activeTool === 'ellipse'}
 			<div class="flex items-center gap-1 border-l pl-2">
+				<!-- The paint bucket rather than a filled square: it is the
+				     flood-fill glyph every drawing app uses, and Lucide ships
+				     no filled variant of anything to make the literal version
+				     out of. Which state it is in is the button's own pressed
+				     styling, as it is for every other toggle on this strip. -->
 				<Button
 					variant={shapeFilled ? 'default' : 'outline'}
 					size="sm"
+					aria-label="Fill shape"
 					aria-pressed={shapeFilled}
+					title="Fill shape"
 					onclick={() => (shapeFilled = !shapeFilled)}
 				>
-					Fill
+					<PaintBucket class="h-4 w-4" />
 				</Button>
 			</div>
 		{/if}

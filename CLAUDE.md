@@ -115,7 +115,7 @@ it, and why a fully covered map costs 1,400 rows rather than 40,000. The GM's ow
 a slider on the fog family's strip, persisted per browser like the theme control rather than sent
 anywhere,
 drawings (freehand/line/rect/ellipse) with an eraser — a rect or an ellipse can be **shaded inside**
-as well as outlined, from a `Fill` toggle that appears on the draw strip only for those two, and the
+as well as outlined, from a paint-bucket toggle (`Fill shape`) that appears on the draw strip only for those two, and the
 shading is translucent so the map still reads through it while the outline stays solid; every
 drawing also carries its own stroke width, stored and rendered, though nothing offers a choice of
 one yet — and per-session undo/redo covering

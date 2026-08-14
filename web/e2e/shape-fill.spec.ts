@@ -34,7 +34,7 @@ function interiorInk(page: Page) {
 
 test('the fill toggle only appears for the shapes that enclose an area', async ({ table }) => {
 	const page = table.gm.page;
-	const fill = page.getByRole('button', { name: 'Fill', exact: true });
+	const fill = page.getByRole('button', { name: 'Fill shape', exact: true });
 
 	await selectTool(page, 'Rectangle');
 	await expect(fill).toBeVisible();
@@ -64,7 +64,7 @@ test('a rectangle is hollow by default and shaded once Fill is on', async ({ tab
 	// Toggled without reselecting the tool, which is the case a prop read
 	// in the wrong place would break: the handlers are bound in an effect,
 	// and a value captured when they were bound would still be false here.
-	await page.getByRole('button', { name: 'Fill', exact: true }).click();
+	await page.getByRole('button', { name: 'Fill shape', exact: true }).click();
 	await dragShape(page, origin);
 	await expect.poll(() => interiorInk(page)).toBeGreaterThan(0);
 });
@@ -75,7 +75,7 @@ test('a filled ellipse arrives filled for everyone else too', async ({ table }) 
 	const origin = await mapGestureOrigin(gm.page);
 
 	await selectTool(gm.page, 'Ellipse');
-	await gm.page.getByRole('button', { name: 'Fill', exact: true }).click();
+	await gm.page.getByRole('button', { name: 'Fill shape', exact: true }).click();
 	await dragShape(gm.page, origin);
 
 	// The GM's own copy is optimistic; the player's is the one that came
@@ -91,7 +91,7 @@ test('a filled shape is still filled after a reload', async ({ table }) => {
 	const origin = await mapGestureOrigin(page);
 
 	await selectTool(page, 'Rectangle');
-	await page.getByRole('button', { name: 'Fill', exact: true }).click();
+	await page.getByRole('button', { name: 'Fill shape', exact: true }).click();
 	await dragShape(page, origin);
 	await expect.poll(() => interiorInk(page)).toBeGreaterThan(0);
 

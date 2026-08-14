@@ -22,9 +22,17 @@ mobile sheet, from the one component with bound props, so a control added once t
 
 ## What shipped
 
-A `Fill` toggle on the draw strip, shown only for Rectangle and Ellipse, off by default. The
-`filled` flag is stored, broadcast and re-rendered on reload, so a shaded shape looks the same to
-everyone and survives a refresh.
+A paint-bucket toggle on the draw strip (`Fill shape`), shown only for Rectangle and Ellipse, off
+by default. The `filled` flag is stored, broadcast and re-rendered on reload, so a shaded shape
+looks the same to everyone and survives a refresh.
+
+It shipped as a text button reading `Fill` and became an icon the same day, by the GM's decision.
+The alternative considered was the literal thing — a hollow square and a solid one — which Lucide
+can't supply off the shelf: it ships no filled variant of anything, so the solid half would have
+had to be the same icon with `fill="currentColor"` overriding `defaultAttributes`. The paint bucket
+is the flood-fill glyph every drawing app already uses, and it keeps the control one button wide on
+a strip that is the first to scroll on a phone. Which state it's in is the button's own pressed
+styling, the same as every other toggle on that strip.
 
 Decisions worth not rediscovering:
 

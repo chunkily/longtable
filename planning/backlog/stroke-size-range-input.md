@@ -15,7 +15,7 @@ and at 375px it docks into the mobile sheet rather than floating.
 
 **The strip now exists** ([full-bleed-map-layout](full-bleed-map-layout.md) shipped 2026-08-07):
 `web/src/lib/components/tool-strip.svelte`, `family === 'draw'` branch, currently holding the four
-shapes, the eraser, a `Fill` toggle and four colour swatches. The sizing question it left open is
+shapes, the eraser, a paint-bucket fill toggle and four colour swatches. The sizing question it left open is
 answered: the mobile copy of the strip lives in a horizontally scrollable bar in the sheet, so a
 range input doesn't have to fit in 375px — but it is still the widest thing anyone has proposed
 adding, and draw's strip is the one that would have to scroll first.
