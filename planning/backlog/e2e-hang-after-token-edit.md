@@ -1,7 +1,7 @@
 ---
 title: Two e2e failures survive the vite fix, together about one run in three
 created: 2026-08-07
-status: open
+status: dropped
 tags: [testing]
 ---
 
@@ -80,3 +80,17 @@ The next person to hit this should run with `--trace=retain-on-failure`, then op
 check the network/console panes for the failing page: whether the `token.update` frame was ever
 sent, and whether an `error` event came back, separates the two threads above immediately. Capture
 the artifact before the next run — Playwright wipes `test-results/` on start.
+
+## Why this was dropped
+
+Hasn't recurred since the fixture rewrite (`16ae963`, "Give the e2e specs a fixture, and a folder
+to find it in") — no report of either symptom across the runs since. That commit didn't touch
+anything this item's "Where to look next" pointed at (`RoomClient.send()`, `updateToken`, the
+single SQLite connection), so this is an absence of evidence, not a diagnosis: nobody found the
+cause, it just stopped showing up. Closing this as *fixed* would claim more than is known.
+
+**If either symptom reappears — the hang on `token-trackers.spec.ts` or the missed-slide failure
+on `token-slide.spec.ts:142` — reopen this item** (flip the status back to `open`) rather than
+filing a new one. Everything above, including the ruled-out list and the two threads under "Where
+to look next", is still exactly as far as the investigation got and is the right place to resume
+it.
