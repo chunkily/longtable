@@ -14,7 +14,8 @@
 		type SnapMode,
 		type TemplateKind
 	} from '$lib/aoe';
-	import { cellAt, cellCentre, measureLabel } from '$lib/measure';
+	import { cellAt, cellCentre, measureLabel, type Cell } from '$lib/measure';
+	import { snapTokenCell, tokenDragPreview } from '$lib/token-drag';
 	import type { Tool } from '$lib/tool-family';
 	import { isPanButton, panStep } from '$lib/pan';
 	import { pinchStep, touchCentre, touchDistance, type Point } from '$lib/pinch';
@@ -167,6 +168,12 @@
 	// which a fifth of a second does at any distance. Short enough that
 	// nobody is waiting on it, long enough to be followed.
 	const TOKEN_MOVE_SECONDS = 0.22;
+	// How solid the ghost left behind at a token's starting square is
+	// while it's being dragged. Faint enough to read as a memory of where
+	// the token was rather than as a second token, but not so faint that
+	// it disappears into a busy map — which is the whole thing it's there
+	// to be measured against.
+	const TOKEN_GHOST_OPACITY = 0.35;
 	// The hover card that shows a token's trackers and conditions. Screen
 	// pixels like everything else that has to read the same at any zoom.
 	const HOVER_FONT_SIZE = 13;
@@ -583,6 +590,13 @@
 		renderSelection();
 		renderHoverCard();
 		refreshCursorOverlay();
+		// The ghost is a token and lives in world units, so it looks after
+		// itself — but the line's width and dash and the label's type are
+		// all screen pixels, and the wheel still zooms while a token is
+		// being held. A right-button pan deliberately isn't on this path
+		// (it calls renderGrid alone) and doesn't need to be: it changes
+		// the translation only, so nothing here has changed size.
+		updateTokenDragPreview();
 	}
 
 	// Resets the camera to its identity transform (pan at the origin,
@@ -946,6 +960,12 @@
 		stopMeasuring();
 		clearPreview();
 		clearCursorOverlay();
+		// A token drag isn't a tool gesture — it only happens with no tool
+		// active — so a tool change can't be mid-drag. A pinch can: the
+		// second finger arrives while the first is still holding a token,
+		// and Konva's own drag is stopped without ever firing the dragend
+		// that would otherwise clear this.
+		clearTokenDragPreview();
 	}
 
 	function attachToolHandlers() {
@@ -1708,6 +1728,14 @@
 	}
 
 	function addMeasureLabel(text: string, at: DrawingPoint) {
+		measureLayer.add(buildMeasureLabel(text, at));
+	}
+
+	// The label itself, unattached. Split from addMeasureLabel because the
+	// token drag preview shows the same badge on a different layer, and
+	// two hand-built copies of it is how the ruler and the drag preview
+	// start disagreeing about what a distance looks like.
+	function buildMeasureLabel(text: string, at: DrawingPoint): Konva.Label {
 		const group = new Konva.Label({
 			x: at.x,
 			y: at.y - screenToWorld(MEASURE_LABEL_OFFSET),
@@ -1732,7 +1760,7 @@
 				fill: 'white'
 			})
 		);
-		measureLayer.add(group);
+		return group;
 	}
 
 	// --- the hover card: a token's trackers and conditions, shown while
@@ -1971,6 +1999,104 @@
 		return !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 	}
 
+	// --- the drag preview: a ghost of the token at the square it was
+	// picked up from, a line to the square it would land on, and how far
+	// that is. Local to this browser like the selection ring and never
+	// broadcast — "can I reach it before I let go" is the dragger's own
+	// question, and one line per person mid-drag would be a busy map.
+	//
+	// It lives on previewLayer with the rubber-band shapes and the
+	// eraser's halo, which is what that layer is for: transient overlays
+	// belonging to a gesture in progress. That also keeps it above the
+	// token layer, so the line isn't drawn under the token it's measuring.
+	// ---
+
+	// The drag in progress, or null. Holds the group so a zoom or a pan
+	// mid-drag can redraw the preview at the new scale without waiting for
+	// the pointer to move again, and the origin cell so the distance stays
+	// measured from where the token actually started rather than from
+	// wherever it has been dragged to since.
+	let tokenDrag: { group: Konva.Group; token: Token; origin: Cell } | null = null;
+	let dragGhost: Konva.Group | null = null;
+	let dragLine: Konva.Line | null = null;
+	let dragLabel: Konva.Label | null = null;
+
+	function startTokenDragPreview(group: Konva.Group, token: Token, gridSize: number) {
+		clearTokenDragPreview();
+		tokenDrag = { group, token, origin: { x: token.x, y: token.y } };
+
+		// A clone rather than a second copy built from the token: its art
+		// is an image, or a placeholder circle with initials, or a
+		// placeholder that an image is still loading behind — and
+		// duplicating that branch here is how the ghost starts disagreeing
+		// with the token it's a ghost of.
+		//
+		// Cloning brings the drag and hover handlers with it, hence
+		// `listening: false` as well as `draggable: false`: previewLayer
+		// doesn't listen either, but a ghost that could be picked up is a
+		// bad enough bug to refuse twice. The name goes because `.token` is
+		// how a click finds a real one.
+		dragGhost = group.clone({
+			opacity: TOKEN_GHOST_OPACITY,
+			draggable: false,
+			listening: false,
+			name: '',
+			// Placed from the token's stored cell rather than from the
+			// group's current position: by the time anything asks, the group
+			// has moved.
+			x: token.x * gridSize,
+			y: token.y * gridSize
+		});
+		previewLayer.add(dragGhost);
+
+		dragLine = new Konva.Line({ stroke: MEASURE_COLOR, listening: false });
+		previewLayer.add(dragLine);
+
+		updateTokenDragPreview();
+	}
+
+	function updateTokenDragPreview() {
+		if (!tokenDrag) return;
+		const gridSize = room.scene?.gridSize;
+		if (!gridSize) return;
+
+		const { group, token, origin } = tokenDrag;
+		const preview = tokenDragPreview(origin, token, { x: group.x(), y: group.y() }, gridSize);
+
+		// No line until it has left the square it started on: from a point
+		// to itself it's a dot sitting under the token, and the label
+		// already says 0 ft. Width and dash are re-set every update rather
+		// than at creation because they're authored in screen pixels, and
+		// the map can be zoomed or panned mid-drag.
+		dragLine?.points(
+			preview.moved ? [preview.from.x, preview.from.y, preview.to.x, preview.to.y] : []
+		);
+		dragLine?.strokeWidth(screenToWorld(MEASURE_LINE_WIDTH));
+		dragLine?.dash([screenToWorld(8), screenToWorld(6)]);
+
+		// Rebuilt rather than edited in place, the same way renderMeasurements
+		// rebuilds its labels: the text, the position and three screen-pixel
+		// sizes all change together, and reaching into a Konva.Label to set
+		// them one at a time is more code for the same picture.
+		dragLabel?.destroy();
+		dragLabel = buildMeasureLabel(preview.label, preview.labelAt);
+		previewLayer.add(dragLabel);
+
+		previewLayer.batchDraw();
+	}
+
+	function clearTokenDragPreview() {
+		if (!tokenDrag) return;
+		tokenDrag = null;
+		dragGhost?.destroy();
+		dragGhost = null;
+		dragLine?.destroy();
+		dragLine = null;
+		dragLabel?.destroy();
+		dragLabel = null;
+		previewLayer?.batchDraw();
+	}
+
 	function renderTokens(gridSize: number) {
 		// Where each group has actually got to, for any slide still in
 		// flight. A re-render mid-slide — someone else moving a different
@@ -2062,7 +2188,10 @@
 			// A card floating over a token being dragged tracks a stale
 			// position — the group moves under the pointer but the token's
 			// stored square doesn't change until the drop.
-			group.on('dragstart', () => (hoveredTokenId = null));
+			group.on('dragstart', () => {
+				hoveredTokenId = null;
+				startTokenDragPreview(group, token, gridSize);
+			});
 
 			// A locked token swallows the press rather than merely ignoring
 			// it. Konva starts the *stage* drag from whatever pointerdown
@@ -2085,11 +2214,18 @@
 				});
 			}
 
-			group.on('dragmove', () => moveSelectionRing(token.id, group.x(), group.y(), w, h));
+			group.on('dragmove', () => {
+				moveSelectionRing(token.id, group.x(), group.y(), w, h);
+				updateTokenDragPreview();
+			});
 
 			group.on('dragend', () => {
-				const cellX = Math.round(group.x() / gridSize);
-				const cellY = Math.round(group.y() / gridSize);
+				// Cleared before the snap rather than after, so nothing is left
+				// pointing at the pre-snap position for a frame.
+				clearTokenDragPreview();
+				// The same rounding the preview promised — one function, so the
+				// square the line ended on is the square that gets sent.
+				const { x: cellX, y: cellY } = snapTokenCell({ x: group.x(), y: group.y() }, gridSize);
 				group.x(cellX * gridSize);
 				group.y(cellY * gridSize);
 				// Recorded now rather than waiting for the echo. Whoever did

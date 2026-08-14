@@ -26,6 +26,7 @@ architecture and current state live here instead**, and keeping them true is par
 | `web/src/lib/api.ts`, `session.ts` | REST client; per-room session in `localStorage` |
 | `web/src/lib/room-code.ts` | validates six typed characters as a room code. Codes only — a pasted link is refused, and its doc comment says why |
 | `web/src/lib/room.svelte.ts` | `RoomClient`: the WS protocol wrapped in Svelte 5 runes state |
+| `web/src/lib/token-drag.ts` | where a dragged token lands and how far that is — the one answer behind both the preview shown mid-drag and the square `dragend` actually sends |
 | `web/src/lib/token-fields.ts` | what a `token.update` carries and whether two of them are the same — the one answer behind the dialog's "anything typed?", `updateToken`'s no-op guard and undo's "still how I left it?" |
 | `web/src/lib/components/game-canvas.svelte` | the whole Konva map: layers, tools, rendering |
 | `web/src/lib/tool-family.ts` | the `Tool` union, and the rules grouping it into the toolbar's five families |
@@ -85,7 +86,12 @@ visibility; a Player's is the same minus the last two, because a token they make
 hiding one is a GM power. A GM edits and deletes anything, an owner edits and deletes their own,
 anyone drags — unless the GM has set `Manage room`'s **Moving tokens** to `Only the owner`, which
 holds every Player to their own tokens and leaves the GM able to move anything; a token someone
-else moves slides to its new square rather than jumping;
+else moves slides to its new square rather than jumping; **dragging one shows how far it's going**
+— a translucent ghost stays on the square it was picked up from, a dashed line runs to the square
+it would land on, and the distance in feet floats above it, counted in whole squares by the same
+diagonal rule as the ruler and reading off the square it will actually snap to rather than the
+cursor. That overlay is local to the dragger's own browser and never broadcast, like the selection
+ring;
 anyone can click one to select it, which rings it on the map and shows its
 details above chat, whose token it is included, with a pen and a bin beside them for a GM or for
 whoever owns it — the

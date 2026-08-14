@@ -172,6 +172,16 @@ test('right-dragging the fog tool reveals nothing', async ({ page }) => {
 
 	await dragWith(page, 'right', origin);
 	await page.waitForTimeout(500);
+
+	// Put the camera back before comparing. A right-drag *also* pans the
+	// map now — that being the whole point of the right button having been
+	// left free — and a panned camera slides the fog rectangle across the
+	// viewport, so the alpha on screen changes without a single cell
+	// having been revealed. Comparing the two totals straight measured the
+	// pan and failed the test for it, which is what this assertion did
+	// between the pan shipping and this line being added.
+	await page.getByRole('button', { name: 'Reset view' }).click();
+	await page.waitForTimeout(300);
 	expect(await layerAlpha(page, FOG_LAYER)).toBe(covered);
 
 	await dragWith(page, 'left', origin);

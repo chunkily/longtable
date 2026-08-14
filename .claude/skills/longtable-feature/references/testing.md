@@ -130,7 +130,12 @@ modules, the first two newer than most of the specs:
   `openEditor`, `saveEditor`, `detailsPanel`, `trackerBox`. The waits in here are the ones that
   were right; the flaky specs were the copies that guessed. `createToken` returns the point the
   token landed on and waits for ink *there* rather than anywhere on the layer, and `selectToken`
-  clicks until the panel names the token rather than once.
+  clicks until the panel names the token rather than once. `watchInkAt` samples one spot per
+  animation frame, for anything transient enough that an `expect.poll` can miss its window
+  entirely — and **several watches on one page are safe**: each takes its own slot, which they
+  didn't before, so the second used to reset the first's result and the first `stop()` switched
+  both loops off. That failed in the dangerous direction, since a spec asserting "this never
+  appeared" passes when its watcher was turned off early.
 - **`e2e/fixtures/room.ts`** — getting into a room and driving its chrome: `createRoom`,
   `selectTool`, the menu, the join flow.
 

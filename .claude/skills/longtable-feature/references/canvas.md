@@ -16,7 +16,7 @@ Added in this order, so this is also the `document.querySelectorAll('canvas')` i
 | 4 | tokens | yes | one `Group` per token, draggable in `'none'` mode and only if `room.canMoveToken` |
 | 5 | pings | no | pulse rings |
 | 6 | measurements | no | in-progress measurements from anyone in the room |
-| 7 | preview | no | the current rubber-band shape, cursor ring, eraser halo |
+| 7 | preview | no | the current rubber-band shape, cursor ring, eraser halo, the token drag preview |
 | 8 | selection | no | the rotating ring around the selected token, if any |
 | 9 | hover | no | the card of trackers and conditions for the token under the pointer |
 
@@ -218,7 +218,7 @@ eraser's reach, measurement dashes and label text all do this.
 
 The consequence: **a zoom changes what those values mean, so it has to re-render them.** That
 whole set lives in **`applyViewChange()`** — `renderGrid`, `renderMeasurements`,
-`renderSelection`, `renderHoverCard`, `refreshCursorOverlay` — and every path that alters the
+`renderSelection`, `renderHoverCard`, `refreshCursorOverlay`, `updateTokenDragPreview` — and every path that alters the
 stage's scale or position calls it: `handleWheel`, the pinch handler, `resetView`, **and the
 `ResizeObserver`**. The observer is on that list since the full-bleed layout: the stage now fills
 the window, so it resizes for reasons that aren't a window drag — the mobile sheet opening, the
@@ -233,6 +233,15 @@ collecting dependencies in. Untracked, the map effect gains a dependency on the 
 clicking a token rebuilds the map, which re-enters `resetView`, and selection stops working
 across most of the suite. Anything else called from inside `render()`'s synchronous window that
 reads state belonging to another effect needs the same treatment.
+
+Token cell arithmetic is its own module, `web/src/lib/token-drag.ts`: `snapTokenCell` rounds a
+dragged group's world position to the square it will land on, `tokenCentre` finds the middle of a
+token of any size, and `tokenDragPreview` bundles those with the distance for the overlay below.
+**`snapTokenCell` is what `dragend` sends, as well as what the preview promises** — the point of the
+split is that the two can't drift, since a preview computing the destination a second time is how a
+preview starts lying. Note it *rounds* where `cellAt` floors: a token's stored position is the cell
+its top-left corner occupies, so the question is which grid line the corner is nearest, not which
+cell it happens to be inside.
 
 Cell arithmetic: `cellAt`/`cellCentre` in `web/src/lib/measure.ts` floor a world point onto its
 cell and find a cell's centre. Tokens are stored in cell units and multiplied by `gridSize` at
@@ -254,6 +263,32 @@ chunk boundaries — abutting rects in one path union cleanly, so merging across
 A Player's fog is opaque. A GM's uses their own `fogOpacity`, a per-browser preference in
 `$lib/fog-opacity` (not room state, so it never goes on the wire) surfaced as a slider on the fog
 family's strip.
+
+## The token drag preview
+
+While a token is being dragged, the preview layer carries a translucent **ghost** of it on the
+square it was picked up from, a dashed line to the square it would land on, and the distance in
+feet. `startTokenDragPreview` / `updateTokenDragPreview` / `clearTokenDragPreview`, driven from the
+token groups' own `dragstart`/`dragmove`/`dragend`.
+
+- **None of it goes on the wire**, like the selection ring and for the same reason: "can I reach it
+  before I let go" is the dragger's own question, and one line and label per person mid-drag would
+  be a busy map. There is no command and no event.
+- **The ghost is `group.clone()`**, not a second copy built from the token. A token's art is an
+  image, or a placeholder circle with initials, or a placeholder with an image still loading behind
+  it, and duplicating that branch is how a ghost starts disagreeing with the token it's a ghost of.
+  The clone brings the drag and hover handlers with it, hence `listening: false` and
+  `draggable: false` on top of the layer already not listening.
+- **The label shares the ruler's badge** — `buildMeasureLabel`, split out of `addMeasureLabel` for
+  it — and hangs off the **top edge** of the destination square rather than its centre, which on a
+  3×3 would put it in the middle of the creature it describes.
+- **`dragend` clears it before snapping**, and clearing can't be left to a re-render: dropping a
+  token back on its own square is a no-op in `RoomClient`, so no state change arrives, and the
+  ghost would strand for the rest of the session. `retractInFlightGesture` clears it too, for the
+  pinch case — Konva's drag is stopped there without a `dragend` ever firing.
+- The distance rule is `tokenDragPreview`'s, unit-tested in `src/lib/token-drag.test.ts`; text
+  painted into a canvas can't be read back, so `e2e/token-drag-preview.spec.ts` covers where the
+  overlay is and when it goes away, not what the number says.
 
 ## Effects and re-render cost
 

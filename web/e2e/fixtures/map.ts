@@ -149,18 +149,26 @@ export async function settleAt(page: Page, point: Point) {
  * frames of it.
  */
 export async function watchInkAt(page: Page, point: Point, layer = LAYER.tokens, radius = 20) {
+	// Each watch gets its own slot on the page. They used to share one
+	// pair of globals, which is fine for one watch and quietly wrong for
+	// two: the second reset the first's result, and the first `stop()`
+	// switched off both sample loops. The failure mode is the dangerous
+	// direction — a spec asserting "this never appeared" passes when its
+	// watcher was turned off early.
+	const key = `__inkWatch${watchers++}`;
+
 	await page.evaluate(
-		({ layer, x, y, radius }) => {
-			const w = window as unknown as { __seen: boolean; __watching: boolean };
-			w.__seen = false;
-			w.__watching = true;
+		({ key, layer, x, y, radius }) => {
+			const slots = window as unknown as Record<string, { seen: boolean; watching: boolean }>;
+			const slot = { seen: false, watching: true };
+			slots[key] = slot;
 
 			const canvas = document.querySelectorAll('canvas')[layer] as HTMLCanvasElement;
 			const context = canvas.getContext('2d')!;
 			const dpr = window.devicePixelRatio || 1;
 
 			const sample = () => {
-				if (!w.__watching) return;
+				if (!slot.watching) return;
 				const data = context.getImageData(
 					(x - radius) * dpr,
 					(y - radius) * dpr,
@@ -169,7 +177,7 @@ export async function watchInkAt(page: Page, point: Point, layer = LAYER.tokens,
 				).data;
 				for (let i = 3; i < data.length; i += 4) {
 					if (data[i] > 0) {
-						w.__seen = true;
+						slot.seen = true;
 						break;
 					}
 				}
@@ -177,18 +185,21 @@ export async function watchInkAt(page: Page, point: Point, layer = LAYER.tokens,
 			};
 			requestAnimationFrame(sample);
 		},
-		{ layer, x: point.x, y: point.y, radius }
+		{ key, layer, x: point.x, y: point.y, radius }
 	);
 
 	return {
 		stop: () =>
-			page.evaluate(() => {
-				const w = window as unknown as { __seen: boolean; __watching: boolean };
-				w.__watching = false;
-				return w.__seen;
-			})
+			page.evaluate((key) => {
+				const slots = window as unknown as Record<string, { seen: boolean; watching: boolean }>;
+				slots[key].watching = false;
+				return slots[key].seen;
+			}, key)
 	};
 }
+
+// Only has to be unique within a run; pages are fresh per test anyway.
+let watchers = 0;
 
 /** The selected-token panel. Rendered twice; only the rail is visible here. */
 export function detailsPanel(page: Page) {
