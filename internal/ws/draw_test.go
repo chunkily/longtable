@@ -795,3 +795,143 @@ func TestPing_RejectsSceneFromAnotherRoom(t *testing.T) {
 		t.Fatalf("type = %q, want error", env.Type)
 	}
 }
+
+// drawRoom is a room, a scene and one connected player, for the cases
+// below that only care what comes back from draw.create.
+func drawRoom(t *testing.T) (*testServer, *testClient, store.Scene) {
+	t.Helper()
+	ts := newTestServer(t)
+	room, _, err := ts.store.CreateRoom("Room", "GM", "password")
+	if err != nil {
+		t.Fatalf("CreateRoom: %v", err)
+	}
+	player, err := ts.store.JoinRoom(room.ID, "Bob")
+	if err != nil {
+		t.Fatalf("JoinRoom: %v", err)
+	}
+	scene, err := ts.store.CreateScene(room.ID, "Scene", nil, 70, 10, 10)
+	if err != nil {
+		t.Fatalf("CreateScene: %v", err)
+	}
+	client := ts.connect(t, room.Slug, player.SessionToken)
+	client.readEnvelope(t) // state.sync
+	return ts, client, scene
+}
+
+// createdDrawing sends one draw.create and returns the fill and width the
+// room is told about.
+func createdDrawing(t *testing.T, client *testClient, payload map[string]any) (bool, float64) {
+	t.Helper()
+	client.send(t, "draw.create", payload)
+
+	env := client.readEnvelope(t)
+	if env.Type != "drawing.created" {
+		t.Fatalf("type = %q, want drawing.created", env.Type)
+	}
+	var got struct {
+		Filled      bool    `json:"filled"`
+		StrokeWidth float64 `json:"strokeWidth"`
+	}
+	if err := json.Unmarshal(env.Payload, &got); err != nil {
+		t.Fatalf("unmarshal drawing.created payload: %v", err)
+	}
+	return got.Filled, got.StrokeWidth
+}
+
+func twoPoints() []map[string]float64 {
+	return []map[string]float64{{"x": 1, "y": 2}, {"x": 3, "y": 4}}
+}
+
+func TestDrawCreate_KeepsAFillOnTheKindsThatEncloseAnArea(t *testing.T) {
+	for _, kind := range []string{"rect", "ellipse"} {
+		t.Run(kind, func(t *testing.T) {
+			_, client, scene := drawRoom(t)
+			filled, _ := createdDrawing(t, client, map[string]any{
+				"sceneId": scene.ID,
+				"kind":    kind,
+				"points":  twoPoints(),
+				"filled":  true,
+			})
+			if !filled {
+				t.Errorf("a filled %s came back unfilled", kind)
+			}
+		})
+	}
+}
+
+// A fill on a line or a freehand stroke describes nothing — Konva would
+// close the path and shade whatever the stroke happened to loop around —
+// so it is dropped rather than refused: the client asked for a drawing,
+// and the drawing it meant is the useful answer.
+func TestDrawCreate_DropsAFillOnTheKindsThatEncloseNothing(t *testing.T) {
+	for _, kind := range []string{"line", "freehand"} {
+		t.Run(kind, func(t *testing.T) {
+			_, client, scene := drawRoom(t)
+			filled, _ := createdDrawing(t, client, map[string]any{
+				"sceneId": scene.ID,
+				"kind":    kind,
+				"points":  twoPoints(),
+				"filled":  true,
+			})
+			if filled {
+				t.Errorf("a filled %s should have been normalised to unfilled", kind)
+			}
+		})
+	}
+}
+
+func TestDrawCreate_StrokeWidthRoundTripsAndPersists(t *testing.T) {
+	ts, client, scene := drawRoom(t)
+
+	_, width := createdDrawing(t, client, map[string]any{
+		"sceneId":     scene.ID,
+		"kind":        "line",
+		"points":      twoPoints(),
+		"strokeWidth": 8,
+	})
+	if width != 8 {
+		t.Errorf("strokeWidth = %v, want 8", width)
+	}
+
+	drawings, err := ts.store.ListDrawingsForScene(scene.ID)
+	if err != nil {
+		t.Fatalf("ListDrawingsForScene: %v", err)
+	}
+	if len(drawings) != 1 || drawings[0].StrokeWidth != 8 {
+		t.Fatalf("stored stroke width = %v, want 8", drawings)
+	}
+}
+
+// A width is world pixels on a map everyone shares, so an absurd one
+// isn't only the sender's problem — and a Player can't erase the GM's
+// drawings, or anyone else's.
+func TestDrawCreate_ClampsAnAbsurdStrokeWidth(t *testing.T) {
+	cases := []struct {
+		name string
+		sent any
+		want float64
+	}{
+		{"omitted takes the default", nil, defaultDrawingStrokeWidth},
+		{"zero takes the default", 0, defaultDrawingStrokeWidth},
+		{"negative takes the default", -5, defaultDrawingStrokeWidth},
+		{"below the floor comes up", 0.1, minDrawingStrokeWidth},
+		{"above the ceiling comes down", 10000, maxDrawingStrokeWidth},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, client, scene := drawRoom(t)
+			payload := map[string]any{
+				"sceneId": scene.ID,
+				"kind":    "line",
+				"points":  twoPoints(),
+			}
+			if tc.sent != nil {
+				payload["strokeWidth"] = tc.sent
+			}
+			_, width := createdDrawing(t, client, payload)
+			if width != tc.want {
+				t.Errorf("strokeWidth = %v, want %v", width, tc.want)
+			}
+		})
+	}
+}

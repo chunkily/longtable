@@ -17,7 +17,78 @@ func New(db *sql.DB) (*Store, error) {
 	if err := s.createTables(); err != nil {
 		return nil, fmt.Errorf("create schema: %w", err)
 	}
+	if err := s.addMissingColumns(); err != nil {
+		return nil, fmt.Errorf("add columns: %w", err)
+	}
 	return s, nil
+}
+
+// Columns added to a table that some database out there already has.
+//
+// `CREATE TABLE IF NOT EXISTS` is the whole of createTables, and it is
+// enough for a new *table* and does nothing whatever for a new *column*:
+// an existing database keeps the shape it was first created with, and
+// every query naming the new column then fails with "no such column".
+// That is a worse failure than the data loss this repo has knowingly
+// accepted elsewhere (see the fog_cell DROP in createTables) — it isn't
+// one feature starting empty, it's every query touching that table
+// erroring, including ones with nothing to do with the new column.
+//
+// A list rather than a numbered migration chain because that is all it
+// has needed to be. Each entry has to be something SQLite can add in
+// place: ALTER TABLE ADD COLUMN takes no UNIQUE or PRIMARY KEY
+// constraint, and a NOT NULL column needs a default for the rows that
+// are already there. Anything beyond that — a changed CHECK, a dropped
+// column — is a table rebuild and wants a real migration story rather
+// than another row here.
+var addedColumns = []struct{ table, column, definition string }{
+	{"drawing", "filled", "INTEGER NOT NULL DEFAULT 0"},
+	{"drawing", "stroke_width", "REAL NOT NULL DEFAULT 3"},
+}
+
+func (s *Store) addMissingColumns() error {
+	for _, c := range addedColumns {
+		has, err := s.hasColumn(c.table, c.column)
+		if err != nil {
+			return err
+		}
+		if has {
+			continue
+		}
+		// Interpolated rather than bound, because SQLite takes no
+		// parameter where an identifier belongs. Safe here and only here:
+		// every value comes from the list above, which is a compile-time
+		// constant. Nothing from a request may ever reach this.
+		_, err = s.db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", c.table, c.column, c.definition))
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Store) hasColumn(table, column string) (bool, error) {
+	rows, err := s.db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		// table_info yields (cid, name, type, notnull, dflt_value, pk) and
+		// every column has to be scanned even though only the name is
+		// wanted. dflt_value is the one that's null for most columns.
+		var cid, notNull, pk int
+		var name, colType string
+		var defaultValue sql.NullString
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &defaultValue, &pk); err != nil {
+			return false, err
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
 }
 
 func (s *Store) createTables() error {
@@ -134,6 +205,15 @@ func (s *Store) createTables() error {
 			kind                      TEXT NOT NULL CHECK (kind IN ('freehand', 'line', 'rect', 'ellipse')),
 			points                    TEXT NOT NULL,
 			color                     TEXT NOT NULL,
+			-- Shaded inside as well as outlined, for the two kinds that
+			-- enclose an area. Meaningless for a line or a freehand stroke,
+			-- and the hub forces it to 0 for those rather than trusting the
+			-- client — see handleDrawCreate.
+			filled                    INTEGER NOT NULL DEFAULT 0,
+			-- World pixels, matching DRAWING_STROKE_WIDTH on the client. The
+			-- default is what every drawing made before the column existed
+			-- was rendered at, so old strokes keep the width they had.
+			stroke_width              REAL NOT NULL DEFAULT 3,
 			created_by_participant_id TEXT REFERENCES participant(id) ON DELETE SET NULL,
 			created_at                TEXT NOT NULL
 		);

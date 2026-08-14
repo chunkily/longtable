@@ -100,6 +100,10 @@
 	// gives length and direction, never width.
 	let lineWidthFeet = $state(DEFAULT_LINE_WIDTH_FEET);
 	let strokeColor = $state('#000000');
+	// Off by default: an outline is the smaller claim, and a filled shape
+	// dropped on someone's map by surprise is the more annoying of the two
+	// to have to erase.
+	let shapeFilled = $state(false);
 	// The GM's own preference, same reasoning as the theme control: it's
 	// how fog looks on this screen, not room state, so it's read from
 	// localStorage up front and written back on every change rather than
@@ -721,6 +725,7 @@
 					room={client}
 					{activeTool}
 					{strokeColor}
+					{shapeFilled}
 					{snapMode}
 					{lineWidthFeet}
 					{fogOpacity}
@@ -803,6 +808,7 @@
 							{sceneId}
 							bind:activeTool
 							bind:strokeColor
+							bind:shapeFilled
 							bind:snapMode
 							bind:lineWidthFeet
 							bind:fogOpacity
@@ -907,6 +913,7 @@
 					{sceneId}
 					bind:activeTool
 					bind:strokeColor
+					bind:shapeFilled
 					bind:snapMode
 					bind:lineWidthFeet
 					bind:fogOpacity

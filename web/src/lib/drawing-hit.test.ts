@@ -4,17 +4,53 @@ import {
 	ELLIPSE_TOLERANCE,
 	distanceToDrawing,
 	ellipseOutlineDistance,
+	isFilled,
 	isInsideEllipse,
 	isInsideRect,
 	pickDrawing,
 	pointSegmentDistance,
-	rectOutlineDistance
+	rectOutlineDistance,
+	strokeWidthOf
 } from './drawing-hit';
 import type { Drawing, DrawingKind, DrawingPoint } from './room.svelte';
 
-function drawing(kind: DrawingKind, points: DrawingPoint[], id: string = kind): Drawing {
-	return { id, sceneId: 's1', kind, points, color: '#000000', createdByParticipantId: 'p1' };
+function drawing(
+	kind: DrawingKind,
+	points: DrawingPoint[],
+	id: string = kind,
+	extra: Partial<Drawing> = {}
+): Drawing {
+	return {
+		id,
+		sceneId: 's1',
+		kind,
+		points,
+		color: '#000000',
+		filled: false,
+		strokeWidth: DRAWING_STROKE_WIDTH,
+		createdByParticipantId: 'p1',
+		...extra
+	};
 }
+
+describe('strokeWidthOf', () => {
+	it('reads the width the drawing was made with', () => {
+		expect(strokeWidthOf(drawing('line', [], 'l', { strokeWidth: 12 }))).toBe(12);
+	});
+
+	// A drawing made before the width was stored per-stroke arrives as 0,
+	// and a zero-width stroke is both invisible and impossible to hit.
+	it('falls back to the default rather than trusting a zero', () => {
+		expect(strokeWidthOf(drawing('line', [], 'l', { strokeWidth: 0 }))).toBe(DRAWING_STROKE_WIDTH);
+	});
+});
+
+describe('isFilled', () => {
+	it('reads the flag off the drawing', () => {
+		expect(isFilled(drawing('rect', [], 'r', { filled: true }))).toBe(true);
+		expect(isFilled(drawing('rect', [], 'r'))).toBe(false);
+	});
+});
 
 // Ellipse distance is a polyline approximation of the true curve, so
 // these assert the tolerance the module promises rather than an exact

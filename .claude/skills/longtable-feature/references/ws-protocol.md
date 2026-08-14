@@ -92,6 +92,32 @@ from them, and would leave `messageVisibleTo` with no content to redact selectiv
 place. A message with no recorded author (like an unattributed drawing) is nobody's to delete but
 a GM's, at either stage — and once deleted, the GM who did it is the only one still privileged.
 
+### Drawings
+
+`draw.create` takes `{drawingId, sceneId, kind, points, color, filled, strokeWidth}`, and the last
+two are **normalised rather than validated** — a client gets back the drawing it meant instead of
+an error naming a field it may not know it sent:
+
+- `filled` is forced false for `line` and `freehand`, the two kinds that enclose no area. Konva
+  would happily close the path and shade whatever a stroke looped around, which is a drawing
+  nobody asked for. `canFill` in `hub.go` is the one place that decides this, and
+  `RoomClient.createDrawing` applies the same rule locally so the optimistic copy matches the echo.
+- `strokeWidth` is world pixels, clamped to `[minDrawingStrokeWidth, maxDrawingStrokeWidth]`, with
+  0 or absent taking `defaultDrawingStrokeWidth` (3, matching `DRAWING_STROKE_WIDTH` on the
+  client). The clamp isn't about the control's range — it's that a width is drawn on a map
+  everyone shares, and a Player can't erase anyone else's work, so an absurd one is not only the
+  sender's problem.
+
+Both are on `drawing.created` and in `state.sync`. `strokeWidthOf` and `isFilled` in
+`web/src/lib/drawing-hit.ts` are the only readers — hit-testing accounts for stroke width, so a
+thick line is easier to hit than a thin one, and that has to stay one answer.
+
+These were the schema's first **added columns**, and `store.addMissingColumns` exists because of
+them: `CREATE TABLE IF NOT EXISTS` is a no-op on a table that already exists, so a column added to
+the definition alone would be missing from every database already out there and every query naming
+it would fail. Anything past a plain `ALTER TABLE ADD COLUMN` — a changed CHECK, a dropped column
+— is a table rebuild and wants a real migration story rather than another row in that list.
+
 ### Fog
 
 Fog is the set of **hidden** cells, packed 32 to an integer. Its unit everywhere except the two

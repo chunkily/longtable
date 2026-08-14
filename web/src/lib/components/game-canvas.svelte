@@ -3,7 +3,8 @@
 	import { mode } from 'mode-watcher';
 	import Konva from 'konva';
 	import { assetUrl } from '$lib/api';
-	import { DRAWING_STROKE_WIDTH, pickDrawing, strokeWidthOf } from '$lib/drawing-hit';
+	import { DRAWING_STROKE_WIDTH, isFilled, pickDrawing, strokeWidthOf } from '$lib/drawing-hit';
+	import { fillFor } from '$lib/drawing-fill';
 	import {
 		DEFAULT_LINE_WIDTH_FEET,
 		circleRadius,
@@ -52,6 +53,7 @@
 		room,
 		activeTool = 'none',
 		strokeColor = '#000000',
+		shapeFilled = false,
 		snapMode = 'intersections',
 		lineWidthFeet = DEFAULT_LINE_WIDTH_FEET,
 		fogOpacity = DEFAULT_FOG_OPACITY,
@@ -60,6 +62,12 @@
 		room: RoomClient;
 		activeTool?: Tool;
 		strokeColor?: string;
+		/**
+		 * Whether a new rect or ellipse is shaded inside. Only those two
+		 * kinds can be, so the toolbar only offers it for those two and the
+		 * server refuses it for the rest.
+		 */
+		shapeFilled?: boolean;
 		/** Where template points may land. Purely a local input aid. */
 		snapMode?: SnapMode;
 		lineWidthFeet?: number;
@@ -1245,7 +1253,9 @@
 			if (drawStart) {
 				const pos = stage!.getRelativePointerPosition() ?? drawStart;
 				if (pos.x !== drawStart.x || pos.y !== drawStart.y) {
-					room.createDrawing(sceneId, kind, [drawStart, pos], strokeColor);
+					room.createDrawing(sceneId, kind, [drawStart, pos], strokeColor, {
+						filled: shapeFilled
+					});
 				}
 			}
 			clearPreview();
@@ -1258,13 +1268,17 @@
 		b: DrawingPoint
 	): Konva.Shape {
 		const strokeProps = { stroke: strokeColor, strokeWidth: 2, dash: [6, 4], listening: false };
+		// The preview carries the fill as well, so what is being dragged
+		// out looks like what will land. The dashed outline is what still
+		// says "not committed yet".
+		const fillProps = shapeFilled && kind !== 'line' ? { fill: fillFor(strokeColor) } : {};
 		switch (kind) {
 			case 'line':
 				return new Konva.Line({ ...lineGeometry(a, b), ...strokeProps });
 			case 'rect':
-				return new Konva.Rect({ ...rectGeometry(a, b), ...strokeProps });
+				return new Konva.Rect({ ...rectGeometry(a, b), ...strokeProps, ...fillProps });
 			case 'ellipse':
-				return new Konva.Ellipse({ ...ellipseGeometry(a, b), ...strokeProps });
+				return new Konva.Ellipse({ ...ellipseGeometry(a, b), ...strokeProps, ...fillProps });
 		}
 	}
 
@@ -1535,6 +1549,10 @@
 			strokeWidth: strokeWidthOf(d),
 			listening: false
 		};
+		// The fill is translucent while the stroke stays solid, so the
+		// shape keeps a crisp edge — hence a colour rather than Konva's
+		// `opacity`, which would fade the outline with it.
+		const fillProps = isFilled(d) ? { fill: fillFor(d.color) } : {};
 		switch (d.kind) {
 			case 'freehand':
 				return new Konva.Line({
@@ -1546,9 +1564,17 @@
 			case 'line':
 				return new Konva.Line({ ...lineGeometry(d.points[0], d.points[1]), ...strokeProps });
 			case 'rect':
-				return new Konva.Rect({ ...rectGeometry(d.points[0], d.points[1]), ...strokeProps });
+				return new Konva.Rect({
+					...rectGeometry(d.points[0], d.points[1]),
+					...strokeProps,
+					...fillProps
+				});
 			case 'ellipse':
-				return new Konva.Ellipse({ ...ellipseGeometry(d.points[0], d.points[1]), ...strokeProps });
+				return new Konva.Ellipse({
+					...ellipseGeometry(d.points[0], d.points[1]),
+					...strokeProps,
+					...fillProps
+				});
 		}
 	}
 

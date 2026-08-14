@@ -4,6 +4,7 @@
 
 import { checkSession } from './api';
 import type { TemplateKind } from './aoe';
+import { DRAWING_STROKE_WIDTH } from './drawing-hit';
 import type { FogChunk } from './fog';
 import { MEASURE_SEND_INTERVAL_MS } from './measure';
 import { PING_COOLDOWN_MS, PING_LIFETIME_MS } from './ping';
@@ -136,6 +137,14 @@ export interface Drawing {
 	// rect or ellipse is drawn in.
 	points: DrawingPoint[];
 	color: string;
+	// Shaded inside as well as outlined. Only rect and ellipse enclose an
+	// area, and the server forces this false for the other two kinds.
+	filled: boolean;
+	// World pixels, so a stroke keeps its thickness against the map at
+	// every zoom. Read it through `strokeWidthOf` in $lib/drawing-hit
+	// rather than directly — that's what falls back for a drawing made
+	// before the width was stored.
+	strokeWidth: number;
 	// Who drew it — null for drawings made before authorship was
 	// tracked, or whose author has left the room. Compare against
 	// `you.participantId` to tell your own drawings from other people's.
@@ -742,7 +751,9 @@ export class RoomClient {
 				sceneId: drawing.sceneId,
 				kind: drawing.kind,
 				points: drawing.points,
-				color: drawing.color
+				color: drawing.color,
+				filled: drawing.filled,
+				strokeWidth: drawing.strokeWidth
 			})
 		) {
 			return false;
@@ -770,13 +781,25 @@ export class RoomClient {
 		return drawing;
 	}
 
-	createDrawing(sceneId: string, kind: DrawingKind, points: DrawingPoint[], color: string) {
+	createDrawing(
+		sceneId: string,
+		kind: DrawingKind,
+		points: DrawingPoint[],
+		color: string,
+		options: { filled?: boolean; strokeWidth?: number } = {}
+	) {
 		const drawing: Drawing = {
 			id: randomId(),
 			sceneId,
 			kind,
 			points,
 			color,
+			// Mirrors the server's own normalisation, so the stroke drawn
+			// optimistically matches the one the echo brings back — a rect
+			// switched to a line with Fill still on would otherwise render
+			// filled here and unfilled everywhere else.
+			filled: (options.filled ?? false) && (kind === 'rect' || kind === 'ellipse'),
+			strokeWidth: options.strokeWidth ?? DRAWING_STROKE_WIDTH,
 			// Claimed locally so the eraser treats it as yours right
 			// away; the server sets the real author on the echo, from
 			// the connection rather than from anything sent here.

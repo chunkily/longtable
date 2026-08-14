@@ -32,6 +32,7 @@
 		sceneId,
 		activeTool = $bindable('none'),
 		strokeColor = $bindable('#000000'),
+		shapeFilled = $bindable(false),
 		snapMode = $bindable('intersections'),
 		lineWidthFeet = $bindable(),
 		fogOpacity = $bindable(0.5),
@@ -41,6 +42,7 @@
 		sceneId: string;
 		activeTool?: Tool;
 		strokeColor?: string;
+		shapeFilled?: boolean;
 		snapMode?: SnapMode;
 		lineWidthFeet?: number;
 		fogOpacity?: number;
@@ -143,6 +145,22 @@
 		>
 			<Eraser class="h-4 w-4" />
 		</Button>
+		<!-- Only the two kinds that enclose an area, so it appears when one
+		     is chosen rather than sitting inert beside the pen — the same
+		     way the measure strip only offers a line's width once the line
+		     template is picked. -->
+		{#if activeTool === 'rect' || activeTool === 'ellipse'}
+			<div class="flex items-center gap-1 border-l pl-2">
+				<Button
+					variant={shapeFilled ? 'default' : 'outline'}
+					size="sm"
+					aria-pressed={shapeFilled}
+					onclick={() => (shapeFilled = !shapeFilled)}
+				>
+					Fill
+				</Button>
+			</div>
+		{/if}
 		<!-- The selected swatch is ringed rather than bordered: an outline
 		     is drawn outside the element, so it never covers the colour it
 		     is marking and can't sit between the swatch and the pointer.

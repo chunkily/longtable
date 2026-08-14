@@ -1337,6 +1337,21 @@ var drawingKinds = map[string]store.DrawingKind{
 // game-canvas.svelte) — used only if a client omits color entirely.
 const defaultDrawingColor = "#cc0000"
 
+// Stroke width in world pixels. The default matches DRAWING_STROKE_WIDTH
+// in web/src/lib/drawing-hit.ts and is what every drawing was rendered at
+// before the width was per-stroke.
+//
+// The bounds are a sanity clamp rather than the control's range: a width
+// is world pixels on a shared map, so an absurd one isn't just the
+// sender's problem — a 10,000px stroke is an opaque sheet over everyone
+// else's scene, and there is no undo for someone else's drawing unless
+// you are the GM.
+const (
+	defaultDrawingStrokeWidth = 3
+	minDrawingStrokeWidth     = 1
+	maxDrawingStrokeWidth     = 32
+)
+
 type drawCreateRequest struct {
 	// DrawingID is chosen by the client, which has already drawn the
 	// stroke under it rather than waiting for this round trip. Optional:
@@ -1346,6 +1361,29 @@ type drawCreateRequest struct {
 	Kind      string        `json:"kind"`
 	Points    []store.Point `json:"points"`
 	Color     string        `json:"color"`
+	Filled    bool          `json:"filled"`
+	// Zero means "not specified", which is what an older client sends by
+	// omitting the field — so it takes the default rather than a hairline.
+	StrokeWidth float64 `json:"strokeWidth"`
+}
+
+// canFill reports whether a kind encloses an area worth shading. A line
+// and a freehand stroke don't, and a filled one of either is not a
+// drawing anybody can render — Konva would close the path and shade
+// whatever the stroke happened to loop around.
+func canFill(kind store.DrawingKind) bool {
+	return kind == store.DrawingKindRect || kind == store.DrawingKindEllipse
+}
+
+// strokeWidthOrDefault clamps rather than rejects, for the same reason
+// the fill flag is normalised: the client asked for a drawing, and the
+// useful answer is the drawing it meant. A width outside the bounds is
+// the one case that would otherwise reach every other person's map.
+func strokeWidthOrDefault(width float64) float64 {
+	if width <= 0 {
+		return defaultDrawingStrokeWidth
+	}
+	return min(max(width, minDrawingStrokeWidth), maxDrawingStrokeWidth)
 }
 
 // handleDrawCreate persists a map annotation. Unlike token/scene
@@ -1394,11 +1432,17 @@ func (h *Hub) handleDrawCreate(ctx context.Context, c *client, raw json.RawMessa
 	// someone else.
 	participantID := c.participant.ID
 	drawing, err := h.store.CreateDrawing(store.Drawing{
-		ID:                     req.DrawingID,
-		SceneID:                req.SceneID,
-		Kind:                   kind,
-		Points:                 req.Points,
-		Color:                  color,
+		ID:      req.DrawingID,
+		SceneID: req.SceneID,
+		Kind:    kind,
+		Points:  req.Points,
+		Color:   color,
+		// Normalised rather than refused. A fill on a line is a client
+		// sending a flag that means nothing for the kind it picked, not an
+		// attempt at anything — the useful answer is the drawing they meant,
+		// not an error naming a field they may not know they sent.
+		Filled:                 req.Filled && canFill(kind),
+		StrokeWidth:            strokeWidthOrDefault(req.StrokeWidth),
 		CreatedByParticipantID: &participantID,
 	})
 	if err != nil {

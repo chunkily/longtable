@@ -14,20 +14,28 @@
 
 import type { Drawing, DrawingPoint } from './room.svelte';
 
-/** Rendered width of a drawing's stroke, in world pixels. */
+/**
+ * Default width of a drawing's stroke, in world pixels — what a new one
+ * is drawn at, and what every drawing made before the width was stored
+ * per-stroke reads as. Mirrored by `defaultDrawingStrokeWidth` in
+ * internal/ws/hub.go, which is what a client omitting the field gets.
+ */
 export const DRAWING_STROKE_WIDTH = 3;
 
-// Drawings are all the same width and unfilled for now. When per-stroke
-// widths and filled shapes land, these two read the values off the
-// Drawing and nothing else in this module changes.
+// Both read off the Drawing now, which is what the stubs these replaced
+// said they would do. Kept as functions rather than inlined field reads:
+// hit-testing takes the stroke's width into account (a thick line is
+// wider to hit than a thin one), and it should keep asking one place
+// what a drawing's width is.
 export function strokeWidthOf(drawing: Drawing): number {
-	void drawing;
-	return DRAWING_STROKE_WIDTH;
+	// A drawing that predates the column, or one from a client that never
+	// sent the field, arrives without a usable width rather than with a
+	// zero — and a zero-width stroke is invisible and unhittable.
+	return drawing.strokeWidth > 0 ? drawing.strokeWidth : DRAWING_STROKE_WIDTH;
 }
 
 export function isFilled(drawing: Drawing): boolean {
-	void drawing;
-	return false;
+	return drawing.filled;
 }
 
 /** Distance from p to the segment ab (to a, if the segment is a point). */

@@ -221,6 +221,8 @@ func drawingPayload(d store.Drawing) map[string]any {
 		"kind":                   string(d.Kind),
 		"points":                 d.Points,
 		"color":                  d.Color,
+		"filled":                 d.Filled,
+		"strokeWidth":            d.StrokeWidth,
 		"createdByParticipantId": d.CreatedByParticipantID,
 	}
 }

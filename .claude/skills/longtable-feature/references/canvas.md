@@ -397,6 +397,24 @@ Refusals come back as an `error` naming the `drawingId`, and `RoomClient` either
 erased stroke *at the index it held* or removes the one it drew. Anything new that renders ahead
 of the server needs the same two-way handling.
 
+## Filled shapes
+
+A rect or an ellipse can be shaded inside as well as outlined, toggled by `Fill` on the draw
+family's strip — which appears only for those two tools, the way the measure strip only offers a
+line template's width once that template is picked.
+
+- **The fill is a translucent colour, not Konva's `opacity`.** `fillFor` in
+  `web/src/lib/drawing-fill.ts` turns the stroke colour into `rgba(…, FILL_ALPHA)`, so the outline
+  stays fully solid while the interior doesn't. Setting `opacity` on the shape would fade both and
+  make the whole thing look like a preview of itself.
+- **The preview carries the fill too**, so what is dragged out looks like what lands; the dashed
+  outline is what still says "not committed".
+- `shapeFilled` is read straight from the prop inside `buildPreviewShape` and the mouseup handler,
+  the same way `strokeColor` is. That's safe, and it is *not* the `snapMode` case above — `snapMode`
+  needs a local because `placeOrigin` closes over a plain const, whereas these two are read through
+  the prop getter at event time and are always current. There's an e2e case that toggles Fill
+  without reselecting the tool, which is what would break if this were ever changed to a snapshot.
+
 ## Hit-testing
 
 The eraser doesn't ask Konva what was clicked — the drawings layer is inert (`listening: false`)

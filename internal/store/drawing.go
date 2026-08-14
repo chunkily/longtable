@@ -38,12 +38,20 @@ type Point struct {
 // tracked, and for those whose author has since been removed from the
 // room (the column is ON DELETE SET NULL) — treat nil as "author
 // unknown", not as "everyone's".
+// Filled shades a rect's or an ellipse's interior as well as outlining
+// it. Only those two kinds enclose an area, and the hub forces it false
+// for the other two rather than storing a flag nothing can render.
+//
+// StrokeWidth is in world pixels, the same units Points are in, so a
+// stroke keeps its thickness relative to the map at every zoom level.
 type Drawing struct {
 	ID                     string
 	SceneID                string
 	Kind                   DrawingKind
 	Points                 []Point
 	Color                  string
+	Filled                 bool
+	StrokeWidth            float64
 	CreatedByParticipantID *string
 	CreatedAt              string
 }
@@ -66,9 +74,9 @@ func (s *Store) CreateDrawing(d Drawing) (Drawing, error) {
 	d.CreatedAt = time.Now().UTC().Format(time.RFC3339Nano)
 
 	_, err = s.db.Exec(
-		`INSERT INTO drawing (id, scene_id, kind, points, color, created_by_participant_id, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		d.ID, d.SceneID, string(d.Kind), string(pointsJSON), d.Color, d.CreatedByParticipantID, d.CreatedAt,
+		`INSERT INTO drawing (id, scene_id, kind, points, color, filled, stroke_width, created_by_participant_id, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		d.ID, d.SceneID, string(d.Kind), string(pointsJSON), d.Color, d.Filled, d.StrokeWidth, d.CreatedByParticipantID, d.CreatedAt,
 	)
 	if err != nil {
 		return Drawing{}, err
@@ -83,9 +91,9 @@ func (s *Store) GetDrawing(id string) (Drawing, error) {
 	var d Drawing
 	var kind, pointsJSON string
 	err := s.db.QueryRow(
-		`SELECT id, scene_id, kind, points, color, created_by_participant_id, created_at
+		`SELECT id, scene_id, kind, points, color, filled, stroke_width, created_by_participant_id, created_at
 		 FROM drawing WHERE id = ?`, id,
-	).Scan(&d.ID, &d.SceneID, &kind, &pointsJSON, &d.Color, &d.CreatedByParticipantID, &d.CreatedAt)
+	).Scan(&d.ID, &d.SceneID, &kind, &pointsJSON, &d.Color, &d.Filled, &d.StrokeWidth, &d.CreatedByParticipantID, &d.CreatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Drawing{}, ErrNotFound
@@ -111,7 +119,7 @@ func (s *Store) DeleteDrawing(id string) error {
 // later strokes render on top of earlier ones.
 func (s *Store) ListDrawingsForScene(sceneID string) ([]Drawing, error) {
 	rows, err := s.db.Query(
-		`SELECT id, scene_id, kind, points, color, created_by_participant_id, created_at
+		`SELECT id, scene_id, kind, points, color, filled, stroke_width, created_by_participant_id, created_at
 		 FROM drawing WHERE scene_id = ? ORDER BY created_at ASC`,
 		sceneID,
 	)
@@ -124,7 +132,7 @@ func (s *Store) ListDrawingsForScene(sceneID string) ([]Drawing, error) {
 	for rows.Next() {
 		var d Drawing
 		var kind, pointsJSON string
-		if err := rows.Scan(&d.ID, &d.SceneID, &kind, &pointsJSON, &d.Color, &d.CreatedByParticipantID, &d.CreatedAt); err != nil {
+		if err := rows.Scan(&d.ID, &d.SceneID, &kind, &pointsJSON, &d.Color, &d.Filled, &d.StrokeWidth, &d.CreatedByParticipantID, &d.CreatedAt); err != nil {
 			return nil, err
 		}
 		d.Kind = DrawingKind(kind)

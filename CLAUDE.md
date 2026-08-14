@@ -15,7 +15,7 @@ architecture and current state live here instead**, and keeping them true is par
 | `cmd/longtable/` | entrypoint: `serve` (default) plus a `room list` / `room reset-password` admin CLI |
 | `internal/api/` | HTTP routes: create/join room, GM login, asset upload + serving + per-room library listing, health check, the Host's banner (`GET /api/notice`), `GET /ws` upgrade, SPA fallback for the embedded frontend |
 | `internal/ws/` | the real-time hub and the authority on room state — command/event protocol, permission checks, broadcast |
-| `internal/store/` | SQLite schema and every typed query (rooms, participants, scenes, tokens, fog, drawings, chat). `store.go` holds the `CREATE TABLE`s and migrations. `fog.go` stores the *hidden* cells packed 32 to an integer — read its doc comment before touching fog anywhere |
+| `internal/store/` | SQLite schema and every typed query (rooms, participants, scenes, tokens, fog, drawings, chat). `store.go` holds the `CREATE TABLE`s, plus `addMissingColumns` — the only way a column reaches a database that already exists, since `CREATE TABLE IF NOT EXISTS` won't. `fog.go` stores the *hidden* cells packed 32 to an integer — read its doc comment before touching fog anywhere |
 | `internal/imageproc/` | decodes and re-encodes every upload to WebP. Read its doc comment before touching it — the studio-swing trap in there is easy to reintroduce |
 | `internal/blobstore/` | re-encoded images on disk, addressed by content hash so identical uploads share a file |
 | `internal/auth/` | session tokens and bcrypt password hashing. No accounts — identity in a room is a *seat* (a `participant` row), and a device proves it holds one with a `session` token in `localStorage`. See [ADR-0008](planning/decisions/0008-seats-and-sessions.md) |
@@ -114,7 +114,11 @@ that format), which is why a new scene comes up revealed without anything having
 it, and why a fully covered map costs 1,400 rows rather than 40,000. The GM's own cover opacity is
 a slider on the fog family's strip, persisted per browser like the theme control rather than sent
 anywhere,
-drawings (freehand/line/rect/ellipse) with an eraser, and per-session undo/redo covering
+drawings (freehand/line/rect/ellipse) with an eraser — a rect or an ellipse can be **shaded inside**
+as well as outlined, from a `Fill` toggle that appears on the draw strip only for those two, and the
+shading is translucent so the map still reads through it while the outline stays solid; every
+drawing also carries its own stroke width, stored and rendered, though nothing offers a choice of
+one yet — and per-session undo/redo covering
 drawing, erasing, token creation, token deletion, token edits and token moves (an undo passes over
 a token someone else has changed since, rather than dragging it back out from under them),
 pings, distance measuring, area-of-effect templates (circle/cone/line/cube, origin on a snap
@@ -204,8 +208,9 @@ the number and `/roll 1d20+2` in chat is where it comes from; `Manage room` hold
 movement lock, and is still waiting on room privacy, deleting a room, and a switch to turn Player
 token creation off. Nothing caps how many tokens one Player may have standing. Fog has no automatic vision from tokens, no prebuilt releases, no way for a Host
 to remove a moderated asset server-wide or cap upload sizes per room (a room removing something
-from its own library is a different, smaller thing, and does exist). The drawing tools still have
-no stroke-width or fill control; both are open items and both now have a strip to land on. The
+from its own library is a different, smaller thing, and does exist). The drawing tools have a fill
+now but **no stroke-width control** — the width is stored, sent and rendered per drawing, so what
+is left of that item is the control itself and a decision about what widths to offer. The
 theme control isn't on the pre-join screen or the assets page — both are passed through rather
 than sat in, and both are one step from somewhere that has it.
 
