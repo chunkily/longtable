@@ -213,6 +213,15 @@ The map can now be pinched to zoom on a touch device (`handlePinchMove` in `game
 arithmetic in `web/src/lib/pinch.ts`). Until then the only thing that scaled the stage was a mouse
 wheel, so a Player on an iPad saw about nine squares of a battle map and had no way to pull back.
 
+**The map also pans on a right- or middle-button drag, in every tool** (`handlePanStart` and its
+neighbours in `game-canvas.svelte`, arithmetic in `web/src/lib/pan.ts`). Panning was a left-drag
+and so existed only in the Hand tool, since a tool and a pan both open on a left press; moving the
+map mid-measurement meant a trip back to the toolbar and another one back. The right button was
+free by the decision in `planning/backlog/no-draw-on-right-click.md`, and this is the "other
+purpose" that story left room for — so the browser's context menu is now suppressed across the
+whole stage, and `Konva.dragButtons` is narrowed to `[0]` so Konva's own drag stops answering to
+the middle button.
+
 Ids used to be minted with `crypto.randomUUID`, which browsers expose only in a
 secure context, so drawing and pings threw for every client on a LAN address. They now go through
 `randomId()` in `web/src/lib/random-id.ts`, which falls back to `crypto.getRandomValues` — read its

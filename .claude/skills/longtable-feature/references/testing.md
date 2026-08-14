@@ -106,7 +106,25 @@ modules, the first two newer than most of the specs:
   rather than building contexts by hand**: its teardown runs after a failure, and the
   `await gm.context.close()` on a test's last line does not — a failing test used to leak its
   contexts, each keeping a live socket and a connected participant for the rest of the run.
-  `test.use({ scene: false })` for a room with no scene.
+  `test.use({ scene: false })` for a room with no scene. **It leaves the Scenes dialog open over
+  the map**, which is a trap worth knowing before it costs you an afternoon: creating a scene is a
+  mode of that dialog, so it returns to the scene list rather than closing, and
+  `expect(canvas).toBeVisible()` says nothing about what is on top of the canvas. Specs get away
+  with it because their first raw-coordinate gesture lands outside the dialog and dismisses it on
+  the way through; a right-click in the *middle* of the map lands on a scene list item instead, and
+  looked for two rounds like a bug in the app. A spec that needs the middle of the map should
+  dismiss the dialog itself, with **Escape** — `map-pan.spec.ts` has the helper.
+
+  **Closing it in this fixture was tried and reverted.** It is the right shape of fix and it broke
+  30 tests: `getByRole('button', { name: 'Close' })` resolves against several buttons sharing that
+  name, picked one belonging to an already-closed dialog, and then spun on
+  `element was detached from the DOM, retrying` until every test using the fixture timed out. Doing
+  it properly needs a locator scoped to the Scenes dialog and a settled state to click in — worth
+  doing, but as its own change with the whole suite run behind it, not as a rider on a feature.
+
+  **When a raw-coordinate gesture behaves as though it never reached the canvas, read the page
+  snapshot in `test-results/<test>/error-context.md` before theorising.** It renders what was
+  actually on screen, and would have answered that one in one round instead of three.
 - **`e2e/fixtures/map.ts`** — everything about the canvas: `LAYER`, `layerInk`, `inkAt`/`tokenInkAt`,
   `canvasBox`, `spawnCentre`, `dragToken`, `settleAt`, `watchInkAt`, `createToken`, `selectToken`,
   `openEditor`, `saveEditor`, `detailsPanel`, `trackerBox`. The waits in here are the ones that

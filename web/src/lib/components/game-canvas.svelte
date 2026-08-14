@@ -16,6 +16,7 @@
 	} from '$lib/aoe';
 	import { cellAt, cellCentre, measureLabel } from '$lib/measure';
 	import type { Tool } from '$lib/tool-family';
+	import { isPanButton, panStep } from '$lib/pan';
 	import { pinchStep, touchCentre, touchDistance, type Point } from '$lib/pinch';
 	import { PING_PULSES, PING_PULSE_INTERVAL_MS, PING_PULSE_SECONDS } from '$lib/ping';
 	import { fogRuns } from '$lib/fog';
@@ -238,6 +239,21 @@
 	}
 
 	onMount(() => {
+		// Konva ships with `dragButtons: [0, 1]`, so out of the box the
+		// *middle* button drags anything draggable — the stage, and any
+		// token under the pointer — alongside the left one. That was never
+		// asked for, and it collides head-on with the middle-button pan
+		// below: both would run on the same press and the map would travel
+		// at twice the speed of the hand. Narrowing it to the left button
+		// leaves Konva's own drag doing exactly what the rest of this file
+		// assumes it does, and leaves right and middle to the pan handlers,
+		// which work whatever tool is active.
+		//
+		// Global rather than per-node — Konva reads it off the singleton at
+		// drag time — which is why it is set here, once, before any node
+		// exists to have captured the old value.
+		Konva.dragButtons = [0];
+
 		stage = new Konva.Stage({
 			container,
 			width: container.clientWidth,
@@ -285,6 +301,44 @@
 		// including nothing.
 		stage.on('touchmove.pinch', handlePinchMove);
 		stage.on('touchend.pinch touchcancel.pinch', handlePinchEnd);
+		// Right- and middle-button panning, `.pan`-namespaced and bound once
+		// here for the same reason the pinch handlers are: attachToolHandlers
+		// tears down every `.tool` handler on each tool change, and dragging
+		// the map with the right button has to work whatever is selected —
+		// that is the entire point of it. Binding it there would give it back
+		// only in the modes that need it least.
+		//
+		// Bound here also means bound *first*, and that ordering carries
+		// weight: a pan can run underneath a left-button tool gesture, and
+		// the tool's own mousemove reads getRelativePointerPosition() —
+		// which has to see the translation this frame's pan has already
+		// applied. Konva fires listeners in registration order, and
+		// attachToolHandlers only ever appends after these.
+		stage.on('mousedown.pan', handlePanStart);
+		stage.on('mousemove.pan', handlePanMove);
+		stage.on('mouseup.pan', handlePanEnd);
+		// No mouseup arrives once the button is released outside the canvas,
+		// the same gap mouseleave.tool covers for a held tool gesture — and
+		// a pan left running would then follow the pointer back in on a
+		// button nobody is holding any more.
+		stage.on('mouseleave.pan', () => handlePanEnd());
+		// The browser's own menu would otherwise land at the end of every
+		// right-drag, on top of the map that had just finished moving. It is
+		// suppressed over the whole map rather than only after a drag that
+		// actually travelled: "sometimes there's a menu" is harder to
+		// explain than "there isn't one", and a right-click here means pan
+		// now. If a right-click menu on a token ever arrives it replaces
+		// this, rather than sharing the button with it.
+		//
+		// A plain DOM listener on our own container rather than
+		// `stage.on('contextmenu')`. Konva routes that event through
+		// `getIntersection` before firing it, so a Konva handler only runs
+		// once hit-testing across the listening layers has agreed on a
+		// target — a dependency this has no use for. Suppressing a browser
+		// default is a property of a region of the page, not of whatever
+		// shape happens to be under the pointer, so it belongs on the
+		// element. No removal needed: the listener goes with the node.
+		container.addEventListener('contextmenu', (e) => e.preventDefault());
 		stage.on('dragmove', () => renderGrid());
 		// A pointer that leaves the canvas entirely never gets a mouseleave
 		// from the token it was over — the same gap mouseleave.tool covers
@@ -356,6 +410,91 @@
 			y: pointer.y - mousePointTo.y * newScale
 		});
 		applyViewChange();
+	}
+
+	// Where a right- or middle-button pan began: the pointer and the
+	// stage's translation as they were at the press, both in screen
+	// pixels. Null when no pan is in flight, which is also the flag the
+	// move handler tests — one piece of state rather than a separate
+	// boolean that could disagree with it.
+	let panPointerStart: Point | null = null;
+	let panStageStart: Point | null = null;
+
+	// Dragging the map with the right or middle button, which works
+	// whatever tool is selected. The left button is spoken for — a tool
+	// owns it while one is active, and Konva's own stage drag has it when
+	// none is — so panning with a ruler or a pen in hand needs a button
+	// nothing else wants. This is also the only reason the right button
+	// exists on this map: nothing else uses it, by the decision in
+	// planning/backlog/no-draw-on-right-click.md.
+	//
+	// **It deliberately runs during a left-button gesture too**, which is
+	// what lets a ruler or a rectangle be dragged past the edge of the
+	// screen: hold the right button as well, shove the map along, let go,
+	// and carry on pulling. The gesture underneath survives untouched
+	// without anything here defending it, and the reason is worth keeping
+	// — a pan moves the stage by exactly the distance the pointer moved,
+	// so the *world* point under the cursor doesn't change while both
+	// buttons are down. The tool's own mousemove keeps firing and keeps
+	// arriving at the same answer: the far end stays anchored where it was
+	// and the map slides underneath it. Retracting the gesture (the way a
+	// second finger does for a pinch) would throw away work the pointer is
+	// still in the middle of; a pinch has no choice, a spare button does.
+	function handlePanStart(e: Konva.KonvaEventObject<MouseEvent>) {
+		if (!stage || !isPanButton(e.evt.button)) return;
+
+		const pointer = stage.getPointerPosition();
+		if (!pointer) return;
+
+		// Stops the middle button's autoscroll and the text selection a
+		// drag over the page would otherwise start. Harmless for the right
+		// button, whose own default — the context menu — is a separate
+		// event, suppressed where it is bound.
+		e.evt.preventDefault();
+
+		panPointerStart = pointer;
+		panStageStart = stage.position();
+		// The only cursor this component sets. A tool's cursor is drawn on
+		// the preview layer as a ring; this one has no reach to show and
+		// every reason to say the map itself is moving.
+		stage.container().style.cursor = 'grabbing';
+	}
+
+	function handlePanMove() {
+		if (!stage || !panPointerStart || !panStageStart) return;
+		// getPointerPosition, never getRelativePointerPosition: the
+		// relative one is the pointer put through the inverse of the stage
+		// transform, so feeding it back into that same transform makes each
+		// frame's delta depend on the translation the last frame set, and
+		// the map accelerates away under the hand. See $lib/pan.
+		const pointer = stage.getPointerPosition();
+		if (!pointer) return;
+
+		stage.position(panStep({ origin: panStageStart, from: panPointerStart, to: pointer }));
+		// Deliberately not applyViewChange(). A pan moves the viewport over
+		// the world without touching the scale, so everything authored in
+		// screen pixels — measurement labels, the selection ring, the
+		// eraser's halo — still means what it did and rides along on its
+		// own layer. Only the grid has to be rebuilt, because it is
+		// generated for the visible region rather than the whole world.
+		// This is the same trade Konva's own stage drag makes, above.
+		stage.batchDraw();
+		renderGrid();
+	}
+
+	// Ends only when a *panning* button comes up. A left release has to
+	// pass straight through: it belongs to the tool gesture that may be
+	// running underneath, and ending the pan on it would drop the map
+	// half-way through a shove that is still being made.
+	//
+	// Called unguarded from mouseleave as well, where there is no button
+	// to inspect and no mouseup coming.
+	function handlePanEnd(e?: Konva.KonvaEventObject<MouseEvent>) {
+		if (e && !isPanButton(e.evt.button)) return;
+		if (!panPointerStart) return;
+		panPointerStart = null;
+		panStageStart = null;
+		if (stage) stage.container().style.cursor = '';
 	}
 
 	// Where the pinch was last sampled, or null when fewer than two
@@ -1932,8 +2071,18 @@
 			// as the app misbehaving rather than as "this one isn't yours".
 			// `click` is a separate event and still bubbles, so a locked
 			// token can be selected and inspected as before.
+			//
+			// Guarded to the primary pointer, though: the stage drag it is
+			// defending against is a left-button gesture, while a right- or
+			// middle-button press on this token is someone panning the map
+			// and has to reach the stage like it would anywhere else.
+			// Swallowing everything here made locked tokens into holes in the
+			// map that a pan couldn't start from.
 			if (!movable) {
-				group.on('mousedown.lock touchstart.lock', (e) => (e.cancelBubble = true));
+				group.on('mousedown.lock touchstart.lock', (e) => {
+					if (!isPrimaryPointer(e)) return;
+					e.cancelBubble = true;
+				});
 			}
 
 			group.on('dragmove', () => moveSelectionRing(token.id, group.x(), group.y(), w, h));

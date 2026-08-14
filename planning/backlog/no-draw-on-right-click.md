@@ -42,3 +42,13 @@ until a left-button positive control was added alongside each right-button asser
   empty" is therefore false for freehand even when nothing is being drawn. The test walks the
   same path with no button held first and asserts the right-drag adds nothing beyond the ring.
 - **Counting non-transparent pixels cannot see a GM's fog reveal.** See `references/testing.md`.
+
+## What the free button became
+
+The right mouse button is no longer inert: as of 2026-08-14 it **drags the map**, in every tool
+— see [right-click-pan](right-click-pan.md), which is the "other purposes" the linked story left
+room for. `isPrimaryPointer` is unchanged and still guards every tool handler, which is what keeps
+the rule above true: the pan is bound separately, in its own `.pan` namespace, and a right press
+mid-stroke pans the map *without* the tool noticing — that is how a ruler gets dragged past the
+edge of the screen. One consequence worth knowing: the browser's context menu is now suppressed
+across the whole stage, so a right-click on the map has exactly one meaning.

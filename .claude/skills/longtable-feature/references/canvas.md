@@ -126,7 +126,9 @@ first version of the movement lock panned the whole scene every time a Player gr
 else's token, which reads as the app misbehaving rather than as "this one isn't yours". Setting
 `e.cancelBubble = true` in a `mousedown.lock`/`touchstart.lock` handler stops it. `click` is a
 separate event and still bubbles, so a locked token can be selected and inspected as before —
-which is also why selection had to be checked separately when this went in.
+which is also why selection had to be checked separately when this went in. The handler is guarded
+with `isPrimaryPointer`: the drag it defends against is a left-button gesture, and swallowing every
+button turned locked tokens into holes in the map that a right-button pan couldn't start from.
 
 `attachToolHandlers()` runs in an `$effect` on `activeTool`/`scene`/`you` and is the single place
 pointer handlers are bound. It:
@@ -139,6 +141,43 @@ pointer handlers are bound. It:
    added to one and missed in the other.
 3. Sets `stage.draggable(!isActive)`, since panning and tools both start on a left-drag.
 4. Binds the handlers for the active tool and returns early per tool.
+
+**Panning with the right or middle button is `.pan`-namespaced and bound once in `onMount`, not
+here**, for the reason step 3 exists: the left button is spoken for in every mode — by a tool while
+one is active, by Konva's own stage drag when none is — so a pan that works whatever is selected
+has to live on a button no tool wants. `handlePanStart` samples the pointer and the stage's
+translation at the press and `handlePanMove` derives the new translation from those two
+(`$lib/pan`, unit-tested), rather than accumulating deltas or reading
+`getRelativePointerPosition()` — the relative helper is the pointer put through the inverse of the
+stage transform, so feeding it back into that transform makes the map accelerate away under the
+hand. It ends with `renderGrid()` alone rather than `applyViewChange()`, which is correct rather
+than an oversight: a pan changes only the translation, so nothing authored in screen pixels has
+changed size and only the grid — generated for the visible region — has to be rebuilt. That is the
+same trade the stage's own `dragmove` makes.
+
+Three things fall out of it, each of which broke something first:
+
+- **`Konva.dragButtons` is set to `[0]`** in `onMount`, before the stage exists. It ships as
+  `[0, 1]`, so the middle button drags any draggable node: a middle press on bare map ran Konva's
+  stage drag *and* the pan handler and moved the map at twice the speed of the pointer, while a
+  middle press on a token picked the token up. It is a global on the Konva singleton, not a node
+  property.
+- **The pan runs happily underneath a left-button tool gesture**, which is what lets a ruler or a
+  rectangle be dragged past the edge of the screen — hold the right button too, shove the map, let
+  go, carry on pulling. Nothing here defends the gesture and nothing needs to: a pan moves the
+  stage by exactly the distance the pointer moved, so the world point under the cursor is
+  unchanged while both buttons are down, and the tool's mousemove keeps arriving at the same
+  answer. This is why the `.pan` handlers must be bound *before* the `.tool` ones (Konva fires in
+  registration order): the tool reads `getRelativePointerPosition()` and has to see the
+  translation this frame's pan already applied. `handlePanEnd` therefore ignores a left release —
+  it belongs to the gesture underneath — and only a `mouseup` of a panning button, or a
+  `mouseleave`, ends it.
+- **`contextmenu` is prevented with a plain DOM listener on the container**, or the browser's menu
+  lands on top of the map at the end of every right-drag. On the element rather than through
+  `stage.on('contextmenu')`: Konva routes that event through `getIntersection` before firing it, so
+  a Konva handler runs only once hit-testing across the listening layers has agreed on a target,
+  and suppressing a browser default is a property of a region of the page rather than of whatever
+  shape is under the pointer.
 
 **The pinch handlers are `.pinch`-namespaced and bound once in `onMount`, not here** — step 1
 would tear them off on every tool change, and a pinch has to work whatever tool is selected. When

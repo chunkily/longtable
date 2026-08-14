@@ -70,6 +70,14 @@ export const test = base.extend<TableOptions & { table: Table }>({
 			await gm.page.getByLabel('Name').fill('Map');
 			await gm.page.getByRole('button', { name: 'Create scene' }).click();
 			await expect(gm.page.locator('canvas').first()).toBeVisible();
+			// NOTE: this leaves the Scenes dialog open over the map — making a
+			// scene is a mode of that dialog, so creating one returns to the
+			// list rather than closing anything. Specs get away with it
+			// because their first raw-coordinate gesture lands outside the
+			// dialog and dismisses it on the way through; one that needs the
+			// *middle* of the map has to dismiss it itself. Closing it here
+			// was tried and reverted — see the note in
+			// references/testing.md.
 		}
 
 		await use({
