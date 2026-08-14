@@ -53,10 +53,14 @@ Right- and middle-dragging move the map in every tool, including none. `web/src/
 the arithmetic with unit tests; `handlePanStart`/`handlePanMove`/`handlePanEnd` in
 `game-canvas.svelte` are the thin part, and `web/e2e/map-pan.spec.ts` drives the gesture for real.
 
-**The handlers are `.pan`-namespaced and bound once in `onMount`, not in `attachToolHandlers`** —
-the same decision the pinch handlers record, and for the same reason. That function tears down
-every `.tool` handler on each tool change, so binding a pan there would hand it back only in the
-modes that need it least.
+**The handlers are bound once in `onMount`, not in `attachToolHandlers`** — the same decision the
+pinch handlers record, and for the same reason. That function tears down every `.tool` handler on
+each tool change, so binding a pan there would hand it back only in the modes that need it least.
+
+> **Corrected 2026-08-14.** They shipped as `.pan`-namespaced `stage.on(...)` handlers, and that
+> part was wrong — it left the pan dead for the whole of any token drag. They are capture-phase
+> DOM listeners on the container now; see
+> [pan-and-token-drag-collide](pan-and-token-drag-collide.md) for what that was hiding.
 
 **Konva ships `dragButtons: [0, 1]`, and it had to be narrowed to `[0]`.** Out of the box the
 *middle* button drags any draggable node, which was never asked for and made the middle-button pan
@@ -123,10 +127,12 @@ Two things came out of it:
   underneath it. Retracting the gesture the way a second finger does for a pinch was the
   alternative, and it throws away work the pointer is still in the middle of; a pinch has no
   choice, a spare button does.
-- **The `.pan` handlers have to be bound before the `.tool` ones**, which they are, since Konva
-  fires listeners in registration order and `onMount` runs before the effect that binds tools. The
+- **The pan handlers have to run before the `.tool` ones**, which they did, since Konva fires
+  listeners in registration order and `onMount` runs before the effect that binds tools. The
   tool's mousemove reads `getRelativePointerPosition()` and has to see the translation this
-  frame's pan already applied, or the far end lags the map by a frame.
+  frame's pan already applied, or the far end lags the map by a frame. (Still true, bought
+  differently now: the capture phase runs outer-to-inner and Konva binds on a child of the
+  container, so the pan lands ahead of all of it.)
 - **`handlePanEnd` ignores a left release.** That release belongs to the gesture underneath;
   ending the pan on it would drop the map half-way through a shove still being made.
 - **`button` and `buttons` number the same buttons differently** — in the bitmask 1 is *left*,

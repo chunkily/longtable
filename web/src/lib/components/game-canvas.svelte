@@ -308,27 +308,41 @@
 		// including nothing.
 		stage.on('touchmove.pinch', handlePinchMove);
 		stage.on('touchend.pinch touchcancel.pinch', handlePinchEnd);
-		// Right- and middle-button panning, `.pan`-namespaced and bound once
-		// here for the same reason the pinch handlers are: attachToolHandlers
-		// tears down every `.tool` handler on each tool change, and dragging
-		// the map with the right button has to work whatever is selected —
-		// that is the entire point of it. Binding it there would give it back
-		// only in the modes that need it least.
+		// Right- and middle-button panning. Bound once here rather than in
+		// attachToolHandlers for the same reason the pinch handlers are:
+		// that function tears down every `.tool` handler on each tool
+		// change, and dragging the map with the right button has to work
+		// whatever is selected — that is the entire point of it.
 		//
-		// Bound here also means bound *first*, and that ordering carries
-		// weight: a pan can run underneath a left-button tool gesture, and
-		// the tool's own mousemove reads getRelativePointerPosition() —
-		// which has to see the translation this frame's pan has already
-		// applied. Konva fires listeners in registration order, and
-		// attachToolHandlers only ever appends after these.
-		stage.on('mousedown.pan', handlePanStart);
-		stage.on('mousemove.pan', handlePanMove);
-		stage.on('mouseup.pan', handlePanEnd);
+		// **Plain DOM listeners rather than stage.on(...), and that is a
+		// fix rather than a preference.** Konva stops dispatching
+		// mousemove to stage listeners entirely while any node is being
+		// dragged — `Stage._pointermove` returns early on
+		// `Konva.isDragging()` unless `hitOnDragEnabled`, which is off by
+		// default and turning it on would put hit-testing back on every
+		// frame of every drag. Bound the Konva way, the pan therefore did
+		// nothing from the moment a token was picked up: the press
+		// registered and not one move followed. That is precisely when
+		// reaching for the map is most useful — the square you want is off
+		// the screen, which is *why* you are still holding the token. The
+		// DOM knows nothing about Konva's drag state, so this route keeps
+		// working.
+		//
+		// Capture phase, because Konva binds its own listeners on
+		// `stage.content`, a child of this container. Capture runs
+		// outer-to-inner, so these land before all of it — which is the
+		// ordering a pan needs and used to get from being registered first:
+		// a tool's mousemove reads getRelativePointerPosition() and has to
+		// see the translation this frame's pan has already applied.
+		container.addEventListener('mousedown', handlePanStart, true);
+		container.addEventListener('mousemove', handlePanMove, true);
+		container.addEventListener('mouseup', handlePanEnd, true);
 		// No mouseup arrives once the button is released outside the canvas,
 		// the same gap mouseleave.tool covers for a held tool gesture — and
 		// a pan left running would then follow the pointer back in on a
-		// button nobody is holding any more.
-		stage.on('mouseleave.pan', () => handlePanEnd());
+		// button nobody is holding any more. On the container itself, so it
+		// needs no capture flag: this element is the event's target.
+		container.addEventListener('mouseleave', () => handlePanEnd());
 		// The browser's own menu would otherwise land at the end of every
 		// right-drag, on top of the map that had just finished moving. It is
 		// suppressed over the whole map rather than only after a drag that
@@ -447,17 +461,28 @@
 	// and the map slides underneath it. Retracting the gesture (the way a
 	// second finger does for a pinch) would throw away work the pointer is
 	// still in the middle of; a pinch has no choice, a spare button does.
-	function handlePanStart(e: Konva.KonvaEventObject<MouseEvent>) {
-		if (!stage || !isPanButton(e.evt.button)) return;
+	// These run before Konva's own dispatch (capture phase, see onMount),
+	// so `setPointersPositions` has not been called for this event yet and
+	// `getPointerPosition()` would answer with the previous one. Calling it
+	// here is the public way to sample the pointer early; Konva calls it
+	// again on the way past, with the same event and the same answer.
+	function panPointer(e: MouseEvent): Point | null {
+		if (!stage) return null;
+		stage.setPointersPositions(e);
+		return stage.getPointerPosition();
+	}
 
-		const pointer = stage.getPointerPosition();
+	function handlePanStart(e: MouseEvent) {
+		if (!stage || !isPanButton(e.button)) return;
+
+		const pointer = panPointer(e);
 		if (!pointer) return;
 
 		// Stops the middle button's autoscroll and the text selection a
 		// drag over the page would otherwise start. Harmless for the right
 		// button, whose own default — the context menu — is a separate
 		// event, suppressed where it is bound.
-		e.evt.preventDefault();
+		e.preventDefault();
 
 		panPointerStart = pointer;
 		panStageStart = stage.position();
@@ -467,14 +492,14 @@
 		stage.container().style.cursor = 'grabbing';
 	}
 
-	function handlePanMove() {
+	function handlePanMove(e: MouseEvent) {
 		if (!stage || !panPointerStart || !panStageStart) return;
 		// getPointerPosition, never getRelativePointerPosition: the
 		// relative one is the pointer put through the inverse of the stage
 		// transform, so feeding it back into that same transform makes each
 		// frame's delta depend on the translation the last frame set, and
 		// the map accelerates away under the hand. See $lib/pan.
-		const pointer = stage.getPointerPosition();
+		const pointer = panPointer(e);
 		if (!pointer) return;
 
 		stage.position(panStep({ origin: panStageStart, from: panPointerStart, to: pointer }));
@@ -496,8 +521,8 @@
 	//
 	// Called unguarded from mouseleave as well, where there is no button
 	// to inspect and no mouseup coming.
-	function handlePanEnd(e?: Konva.KonvaEventObject<MouseEvent>) {
-		if (e && !isPanButton(e.evt.button)) return;
+	function handlePanEnd(e?: MouseEvent) {
+		if (e && !isPanButton(e.button)) return;
 		if (!panPointerStart) return;
 		panPointerStart = null;
 		panStageStart = null;
@@ -2022,6 +2047,14 @@
 	let dragLabel: Konva.Label | null = null;
 
 	function startTokenDragPreview(group: Konva.Group, token: Token, gridSize: number) {
+		// A gesture that survived a stray second-button release comes back
+		// through here, because re-arming the drag fires a second dragstart
+		// (see the dragend handler). Rebuilding would blink the overlay for
+		// a frame in the middle of a drag that never actually stopped —
+		// and the ghost belongs to where the token was picked up, which
+		// this second dragstart is no longer a witness to.
+		if (tokenDrag?.token.id === token.id) return;
+
 		clearTokenDragPreview();
 		tokenDrag = { group, token, origin: { x: token.x, y: token.y } };
 
@@ -2219,7 +2252,32 @@
 				updateTokenDragPreview();
 			});
 
-			group.on('dragend', () => {
+			group.on('dragend', (e) => {
+				// Konva ends a drag on *any* mouseup anywhere on the page:
+				// DD._endDragBefore is bound on window and never looks at which
+				// button came up. So pressing and releasing the right button to
+				// shove the map mid-drag used to end the token's drag silently
+				// — the token stopped following the cursor and the eventual
+				// left release committed it wherever it had frozen, several
+				// squares short of where it was dropped. Nothing said so.
+				//
+				// The left button still being held says this release wasn't
+				// ours. `buttons` is the live mask of what is down *now*
+				// (bit 0 = left), which is exactly the question; `button`, the
+				// one that changed, would only say "right" and can't tell a
+				// right-release-mid-drag from a right-release-after-drop.
+				//
+				// Re-arming from in here works because of where Konva fires
+				// this: _endDragAfter fires 'dragend' and only *then* drops the
+				// drag element for anything no longer dragging. startDrag()
+				// finds that element still present, flips it back to 'dragging'
+				// before the check, and keeps its original offset — so the
+				// token doesn't jump, and the gesture carries on as though
+				// nothing happened.
+				if (e.evt instanceof MouseEvent && (e.evt.buttons & 1) !== 0) {
+					group.startDrag();
+					return;
+				}
 				// Cleared before the snap rather than after, so nothing is left
 				// pointing at the pre-snap position for a frame.
 				clearTokenDragPreview();

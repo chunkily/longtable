@@ -1,7 +1,16 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures/table';
-import { openRoomMenu, selectTool } from './fixtures/room';
-import { LAYER, canvasBox, createToken, layerInk, tokenInkAt, type Point } from './fixtures/map';
+import { openRoomMenu, selectTool, selectToolFamily } from './fixtures/room';
+import {
+	GRID,
+	LAYER,
+	canvasBox,
+	createToken,
+	inkAt,
+	layerInk,
+	tokenInkAt,
+	type Point
+} from './fixtures/map';
 
 // Dragging the map with the right or middle mouse button, which has to
 // work whatever tool is selected — that is the whole reason it isn't the
@@ -229,6 +238,93 @@ test('right-dragging mid-stroke pans the map and leaves the stroke to carry on',
 	});
 	await page.mouse.up();
 	await expect.poll(() => layerInk(page, LAYER.drawings)).toBeGreaterThan(0);
+});
+
+// The same shove, with a token in hand instead of a stroke — and this one
+// did not work. Konva stops dispatching mousemove to stage listeners
+// while any node is being dragged, so a pan bound through `stage.on` went
+// deaf the moment a token was picked up: the press registered and not one
+// move followed. Bound as a capture-phase DOM listener instead, which
+// Konva's drag state can't reach.
+//
+// The marker here is a committed stroke rather than the token, because
+// the token is the thing being dragged — it follows the pointer whether
+// the map moved or not, so it can say nothing about whether it did.
+test('right-dragging while holding a token still pans the map', async ({ table }) => {
+	const page = table.gm.page;
+	const spawn = await createToken(page, 'Ogre');
+
+	// A world-anchored mark to measure the camera against, put down well
+	// clear of the token so the two probes can't see each other.
+	await selectTool(page, 'Line');
+	// Kept clear of the right-hand rail: the canvas stops well short of the
+	// window's width, and a drag that ends past its edge draws nothing.
+	const markFrom: Point = { x: 700, y: 500 };
+	const markTo: Point = { x: 820, y: 600 };
+	await dragWith(page, 'left', markFrom, markTo);
+	await expect.poll(() => layerInk(page, LAYER.drawings)).toBeGreaterThan(0);
+	const markMiddle: Point = { x: (markFrom.x + markTo.x) / 2, y: (markFrom.y + markTo.y) / 2 };
+	expect(await inkAt(page, LAYER.drawings, markMiddle)).toBeGreaterThan(0);
+
+	// Back to the Hand, where tokens are draggable.
+	await selectToolFamily(page, 'Hand');
+
+	const box = await canvasBox(page);
+	await page.mouse.move(box.x + spawn.x, box.y + spawn.y);
+	await page.mouse.down();
+	await page.mouse.move(box.x + spawn.x + 2 * GRID, box.y + spawn.y, { steps: 6 });
+
+	// Still holding the token, shove the map with the right button.
+	await page.mouse.down({ button: 'right' });
+	await page.mouse.move(box.x + spawn.x + 2 * GRID + PAN.x, box.y + spawn.y + PAN.y, { steps: 8 });
+	await page.mouse.up({ button: 'right' });
+
+	// The stroke travelled with the camera, which is the whole claim.
+	await expect.poll(() => inkAt(page, LAYER.drawings, moved(markMiddle))).toBeGreaterThan(0);
+	expect(await inkAt(page, LAYER.drawings, markMiddle)).toBe(0);
+
+	await page.mouse.up();
+});
+
+// Konva ends a drag on any mouseup anywhere, whatever button came up
+// (DD._endDragBefore, bound on window, never looks). So reaching for the
+// right button mid-drag used to end the token's drag silently: it stopped
+// following the cursor, and the eventual left release committed it
+// wherever it had frozen rather than where it was dropped. Nothing said
+// so, which is the worst part — a GM would find the token short of the
+// square they meant and blame their own hand.
+test('a stray right-click mid-drag does not drop the token short', async ({ table }) => {
+	const page = table.gm.page;
+	const spawn = await createToken(page, 'Ogre');
+	const box = await canvasBox(page);
+
+	// Deliberately without any pan: the click is a stray, and the bug is
+	// about the release ending the drag rather than about panning at all.
+	const frozen: Point = { x: spawn.x + 2 * GRID, y: spawn.y };
+	const dropped: Point = { x: spawn.x + 5 * GRID, y: spawn.y };
+
+	await page.mouse.move(box.x + spawn.x, box.y + spawn.y);
+	await page.mouse.down();
+	await page.mouse.move(box.x + frozen.x, box.y + frozen.y, { steps: 6 });
+
+	await page.mouse.down({ button: 'right' });
+	await page.mouse.up({ button: 'right' });
+
+	// The token is still in hand: it goes on following the pointer past the
+	// square the stray release used to strand it on.
+	await page.mouse.move(box.x + dropped.x, box.y + dropped.y, { steps: 6 });
+	await expect.poll(() => tokenInkAt(page, dropped)).toBeGreaterThan(0);
+
+	await page.mouse.up();
+
+	// And it commits where it was dropped. Asserted after a reload so this
+	// is the server's opinion rather than a group left sitting under the
+	// pointer — the failure being fixed committed the *frozen* square, and
+	// that is a difference only the stored position can settle.
+	await page.reload();
+	await expect(page.locator('canvas').first()).toBeVisible();
+	await expect.poll(() => tokenInkAt(page, dropped)).toBeGreaterThan(0);
+	expect(await tokenInkAt(page, frozen)).toBe(0);
 });
 
 // A token the movement lock puts out of reach swallows mousedown

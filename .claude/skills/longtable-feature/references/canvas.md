@@ -142,8 +142,8 @@ pointer handlers are bound. It:
 3. Sets `stage.draggable(!isActive)`, since panning and tools both start on a left-drag.
 4. Binds the handlers for the active tool and returns early per tool.
 
-**Panning with the right or middle button is `.pan`-namespaced and bound once in `onMount`, not
-here**, for the reason step 3 exists: the left button is spoken for in every mode — by a tool while
+**Panning with the right or middle button is bound once in `onMount` as capture-phase DOM
+listeners on the container, not here and not through `stage.on`**, for the reason step 3 exists: the left button is spoken for in every mode — by a tool while
 one is active, by Konva's own stage drag when none is — so a pan that works whatever is selected
 has to live on a button no tool wants. `handlePanStart` samples the pointer and the stage's
 translation at the press and `handlePanMove` derives the new translation from those two
@@ -155,8 +155,18 @@ than an oversight: a pan changes only the translation, so nothing authored in sc
 changed size and only the grid — generated for the visible region — has to be rebuilt. That is the
 same trade the stage's own `dragmove` makes.
 
-Three things fall out of it, each of which broke something first:
+Four things fall out of it, each of which broke something first:
 
+- **The handlers are plain DOM listeners in the capture phase, not `stage.on(...)`.** Konva stops
+  dispatching `mousemove` to stage listeners entirely while any node is being dragged
+  (`Stage._pointermove` returns early on `Konva.isDragging()` unless `hitOnDragEnabled`, which is
+  off by default and would put hit-testing back on every frame of every drag). Bound the Konva way,
+  the pan went deaf the moment a token was picked up — the press registered and not one move
+  followed — which is exactly when reaching for the map matters most, since the square you want
+  being off screen is *why* you are still holding the token. Capture phase specifically, because
+  Konva binds on `stage.content`, a child of the container: capture runs outer-to-inner, so these
+  land before all of it and keep the ordering the next bullet depends on. They also have to call
+  `stage.setPointersPositions(e)` themselves, since they run before Konva does it for that event.
 - **`Konva.dragButtons` is set to `[0]`** in `onMount`, before the stage exists. It ships as
   `[0, 1]`, so the middle button drags any draggable node: a middle press on bare map ran Konva's
   stage drag *and* the pan handler and moved the map at twice the speed of the pointer, while a
@@ -167,11 +177,22 @@ Three things fall out of it, each of which broke something first:
   go, carry on pulling. Nothing here defends the gesture and nothing needs to: a pan moves the
   stage by exactly the distance the pointer moved, so the world point under the cursor is
   unchanged while both buttons are down, and the tool's mousemove keeps arriving at the same
-  answer. This is why the `.pan` handlers must be bound *before* the `.tool` ones (Konva fires in
-  registration order): the tool reads `getRelativePointerPosition()` and has to see the
+  answer. This is why the pan handlers must run *before* the `.tool` ones — the capture phase is
+  what buys that now: the tool reads `getRelativePointerPosition()` and has to see the
   translation this frame's pan already applied. `handlePanEnd` therefore ignores a left release —
   it belongs to the gesture underneath — and only a `mouseup` of a panning button, or a
   `mouseleave`, ends it.
+- **A token drag survives a stray press of another button, and only because `dragend` re-arms it.**
+  Konva ends a drag on *any* mouseup anywhere on the page: `DD._endDragBefore` is bound on `window`
+  and never looks at which button came up. So a right-click while holding a token used to end the
+  drag silently — the token stopped following the cursor and the eventual left release committed it
+  wherever it had frozen, several squares short of the drop. The token group's `dragend` handler
+  therefore checks `e.evt.buttons & 1` (the live mask of what is held *now*; `button`, the one that
+  changed, can't tell this case from a normal drop) and calls `group.startDrag()` to carry on.
+  That works because of where Konva fires the event: `DD._endDragAfter` fires `dragend` and only
+  *then* deletes the drag element for anything no longer dragging, so `startDrag()` finds it still
+  present, flips it back to `dragging` before that check, and keeps its original offset — no jump.
+  `startTokenDragPreview` guards against the second `dragstart` this produces.
 - **`contextmenu` is prevented with a plain DOM listener on the container**, or the browser's menu
   lands on top of the map at the end of every right-drag. On the element rather than through
   `stage.on('contextmenu')`: Konva routes that event through `getIntersection` before firing it, so
