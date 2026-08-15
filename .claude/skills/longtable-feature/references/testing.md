@@ -222,6 +222,26 @@ Two things that quietly make a pixel assertion measure nothing:
   re-hide, and an exact zero after a reveal-all.
 - **The freehand tool always has ink on the preview layer**, because it paints a cursor ring
   sized to the stroke width that tracks the pointer whether or not a stroke is in progress.
+- **A failing run leaves a trace behind**, which is the fastest way into anything that only fails
+  under a loaded suite. `trace: 'retain-on-failure'` in `playwright.config.ts` records every test
+  and keeps the recording only for the ones that fail:
+
+  ```bash
+  npx playwright show-trace web/test-results/<test-dir>/trace.zip
+  ```
+
+  It plays back per-action screenshots with the DOM, network and console at each step — which for
+  a canvas assertion is the only thing that answers "had it painted yet?". `retain-on-failure`
+  rather than `on-first-retry` because `retries` is 0 and should stay 0: a retried flake reads as
+  a pass. There is deliberately no `video`; see the comment in the config for why it would
+  silently record nothing here.
+- **A visible `<canvas>` is not a painted one.** `expect(canvas).toBeVisible()` resolves as soon as
+  the element has a box, which is at least a frame before Konva has drawn into it, and a re-render
+  (a scheme change, a scene switch) empties a layer again on the way through. `theme.spec.ts`
+  waits for a painted pixel rather than reading straight after visibility — and the reason that
+  matters is not only the loud failure ("no grid lines drawn") but the quiet one: an unpainted
+  pixel reads as transparent *black*, which satisfies every "this should be dark" assertion in
+  that file. A probe that samples too early can pass for the worst possible reason.
 - **Every connection writes a line into the chat log**, so presence is now noise in two places at
   once. `readEnvelope` skips both via `isPresenceNoise`; `saidByPeople` and `saidInSync` strip the
   room's own lines out of a stored log or a `state.sync` payload, which is what a test asserting

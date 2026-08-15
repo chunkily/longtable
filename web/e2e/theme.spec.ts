@@ -16,6 +16,60 @@ const isDark = (page: Page) =>
 	page.evaluate(() => document.documentElement.classList.contains('dark'));
 
 /**
+ * Both probes below wait for the layer to have been *painted*, rather
+ * than reading it the moment they are called.
+ *
+ * A `<canvas>` is visible to Playwright as soon as it is in the DOM with
+ * a box, which is a frame or more before Konva has drawn anything into
+ * it — and a scheme change repaints, so there is a second window where a
+ * layer is momentarily empty. Reading through that window is what made
+ * this file fail about one loaded run in three with "no grid lines
+ * drawn", while passing every time it was run on its own.
+ *
+ * Waiting is also what stops the other half of that bug, which is worse
+ * because it is silent: an unpainted pixel reads as transparent black,
+ * and `r` of 0 satisfies every "should be dark" assertion here. The
+ * dark-scheme checks would have passed against a canvas with nothing on
+ * it at all.
+ */
+async function paintedPixel(
+	page: Page,
+	layer: number,
+	pick: 'first-opaque' | 'centre'
+): Promise<{ r: number; g: number; b: number }> {
+	const handle = await page.waitForFunction(
+		({ layer, pick }) => {
+			const canvas = document.querySelectorAll('canvas')[layer] as HTMLCanvasElement | undefined;
+			const context = canvas?.getContext('2d');
+			if (!context) return null;
+
+			if (pick === 'centre') {
+				const d = context.getImageData(
+					Math.floor(canvas!.width / 2),
+					Math.floor(canvas!.height / 2),
+					1,
+					1
+				).data;
+				// Null keeps waitForFunction waiting, which is exactly what
+				// "nothing has been drawn here yet" should do.
+				return d[3] > 0 ? { r: d[0], g: d[1], b: d[2] } : null;
+			}
+
+			const data = context.getImageData(0, 0, canvas!.width, canvas!.height).data;
+			for (let i = 0; i < data.length; i += 4) {
+				if (data[i + 3] > 0) return { r: data[i], g: data[i + 1], b: data[i + 2] };
+			}
+			return null;
+		},
+		{ layer, pick },
+		// Shorter than the test timeout so a layer that never paints fails
+		// here, naming the layer, rather than as a timeout somewhere later.
+		{ timeout: 15_000 }
+	);
+	return handle.jsonValue();
+}
+
+/**
  * The colour of the grid lines, read off the grid layer's own canvas.
  *
  * Counting opaque pixels the way the other specs do would pass in both
@@ -24,30 +78,12 @@ const isDark = (page: Page) =>
  * only assertion worth making is about the colour itself.
  */
 async function gridLineColor(page: Page): Promise<{ r: number; g: number; b: number }> {
-	return page.evaluate((layer) => {
-		const canvas = document.querySelectorAll('canvas')[layer] as HTMLCanvasElement;
-		const context = canvas.getContext('2d')!;
-		const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
-		for (let i = 0; i < data.length; i += 4) {
-			if (data[i + 3] > 0) return { r: data[i], g: data[i + 1], b: data[i + 2] };
-		}
-		throw new Error('no grid lines drawn');
-	}, LAYER.grid);
+	return paintedPixel(page, LAYER.grid, 'first-opaque');
 }
 
 /** The middle of the map layer, which on a scene with no map is the placeholder slab. */
 async function mapCentreColor(page: Page): Promise<{ r: number; g: number; b: number }> {
-	return page.evaluate((layer) => {
-		const canvas = document.querySelectorAll('canvas')[layer] as HTMLCanvasElement;
-		const context = canvas.getContext('2d')!;
-		const d = context.getImageData(
-			Math.floor(canvas.width / 2),
-			Math.floor(canvas.height / 2),
-			1,
-			1
-		).data;
-		return { r: d[0], g: d[1], b: d[2] };
-	}, LAYER.map);
+	return paintedPixel(page, LAYER.map, 'centre');
 }
 
 async function roomWithAMap(browser: Browser, colorScheme: 'light' | 'dark', name: string) {

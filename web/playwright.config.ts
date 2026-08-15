@@ -19,7 +19,28 @@ export default defineConfig({
 		// vite's dependency optimizer reloads every connected client the
 		// first time it meets a new import, which cost one failure per
 		// worker on a cold cache and looked like flakiness for months.
-		baseURL: 'http://localhost:8080'
+		baseURL: 'http://localhost:8080',
+		// Kept only for the runs that fail, which is the whole point: the
+		// failures worth debugging here are the ones that happen under a
+		// loaded four-worker suite and refuse to happen again on their own.
+		// A stack trace says which assertion gave up; a trace says what the
+		// page looked like at the time, which for a canvas is the only
+		// thing that answers "was it painted yet?".
+		//
+		// `retain-on-failure` rather than `on-first-retry`, because retries
+		// stay at 0 above: a retried flake reads as a pass, and this suite
+		// would rather show its flakes than hide them. The cost is that
+		// every test records and most recordings are thrown away.
+		trace: 'retain-on-failure',
+		screenshot: 'only-on-failure'
+		// No `video`, and not by oversight: it is a context-level option
+		// applied when Playwright creates the context, and the `table`
+		// fixture calls `browser.newContext()` itself for every device at
+		// the table. Setting it here records nothing and says it will.
+		// Tracing survives that because it hooks the browser fixture, which
+		// is why the trace above is the one worth having anyway — it plays
+		// back per-action screenshots with the DOM, network and console
+		// beside them.
 	},
 	webServer: {
 		// See e2e/run-app.mjs for why this isn't an inline shell command:
