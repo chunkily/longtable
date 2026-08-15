@@ -40,7 +40,7 @@ func newTestServer(t *testing.T) (*httptest.Server, *store.Store) {
 		t.Fatalf("new blobstore: %v", err)
 	}
 
-	hub := ws.NewHub(s)
+	hub := ws.NewHub(s, ws.DefaultDepartureGrace)
 	frontend := os.DirFS(t.TempDir())
 	router := NewRouter(s, hub, blobs, frontend, "")
 

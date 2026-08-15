@@ -40,6 +40,20 @@ share: check it's actually on the network.
 This section will document the server's config file — its location, every
 available setting, and their defaults — once that feature is implemented.
 
+### Players dropping in and out
+
+When someone's connection drops, the room waits 30 seconds before showing them
+as gone. Coming back inside that window changes nothing on anyone's screen, and
+puts nothing in the chat log.
+
+On a bad network, give it longer:
+
+```sh
+longtable serve -departure-grace 2m
+```
+
+A player who closes their laptop still shows as connected until the wait is up.
+
 ## Getting a GM back into their room
 
 Longtable was designed to be hosted and administrated by people who aren't

@@ -18,6 +18,7 @@
 	import { loadFogOpacity, saveFogOpacity } from '$lib/fog-opacity';
 	import { RoomClient, type Token } from '$lib/room.svelte';
 	import { DRAWING_STROKE_WIDTH } from '$lib/drawing-hit';
+	import { fullTimestamp, timeOfDay } from '$lib/chat-time';
 	import { DEFAULT_LINE_WIDTH_FEET, type SnapMode } from '$lib/aoe';
 	import { familyHasStrip, familyOf, type Tool } from '$lib/tool-family';
 	import { Button } from '$lib/components/ui/button';
@@ -472,54 +473,89 @@
 		<div class="flex min-h-0 flex-1 flex-col gap-2">
 			<ul class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
 				{#each room.messages as msg (msg.id)}
-					{@const canDelete =
-						!!room.you && (room.you.role === 'gm' || msg.participantId === room.you.participantId)}
-					<!-- The server redacts per recipient, not this component: an
+					<!-- A line the room wrote about itself, rendered as the room
+					     rather than as a person: no name in bold, no delete
+					     button, and centred so a scan down the log reads the
+					     conversation and steps over the comings and goings.
+					     Whether it says "joined" or "left" is the only thing
+					     stored; the sentence is written here. -->
+					{#if msg.kind === 'system'}
+						<li class="flex items-center justify-center gap-2 px-2 py-0.5 text-center">
+							<span class="text-xs text-muted-foreground italic">
+								{msg.participantName}
+								{msg.body === 'left' ? 'left the room' : 'joined the room'}
+							</span>
+							<time
+								datetime={msg.createdAt}
+								title={fullTimestamp(msg.createdAt)}
+								class="shrink-0 text-[10px] text-muted-foreground tabular-nums"
+							>
+								{timeOfDay(msg.createdAt)}
+							</time>
+						</li>
+					{:else}
+						{@const canDelete =
+							!!room.you &&
+							(room.you.role === 'gm' || msg.participantId === room.you.participantId)}
+						<!-- The server redacts per recipient, not this component: an
 					     empty body on a deleted message means this client is a
 					     bystander, and anything else means it's the author or the
 					     one who deleted it, still allowed to see what they wrote
 					     or removed — struck through rather than hidden outright. -->
-					{@const isRedacted = msg.deleted && !msg.body && !msg.rollExpression}
-					<li
-						class={[
-							'flex items-start gap-1 rounded-md px-2 py-1 text-sm',
-							msg.kind === 'roll' && !isRedacted && 'bg-accent text-accent-foreground'
-						]}
-					>
-						<div class="min-w-0 flex-1">
-							{#if isRedacted}
-								<span class="text-muted-foreground italic">This message has been deleted.</span>
-							{:else}
-								<span class={msg.deleted ? 'line-through opacity-60' : undefined}>
-									<strong>{msg.participantName}:</strong>
-									{#if msg.kind === 'roll'}
-										{msg.body} → <strong>{msg.rollResult}</strong>
-										<span class="text-xs text-muted-foreground">({msg.rollBreakdown})</span>
-									{:else}
-										{msg.body}
-									{/if}
-								</span>
-							{/if}
-						</div>
-						<!-- chat.delete folds both stages into one command — the hub
+						{@const isRedacted = msg.deleted && !msg.body && !msg.rollExpression}
+						<li
+							class={[
+								'flex items-start gap-1 rounded-md px-2 py-1 text-sm',
+								msg.kind === 'roll' && !isRedacted && 'bg-accent text-accent-foreground'
+							]}
+						>
+							<div class="min-w-0 flex-1">
+								{#if isRedacted}
+									<span class="text-muted-foreground italic">This message has been deleted.</span>
+								{:else}
+									<span class={msg.deleted ? 'line-through opacity-60' : undefined}>
+										<strong>{msg.participantName}:</strong>
+										{#if msg.kind === 'roll'}
+											{msg.body} → <strong>{msg.rollResult}</strong>
+											<span class="text-xs text-muted-foreground">({msg.rollBreakdown})</span>
+										{:else}
+											{msg.body}
+										{/if}
+									</span>
+								{/if}
+							</div>
+							<!-- Beside the message rather than under it: the log is read
+						     down its left-hand edge, and a time on its own line
+						     would double the height of every entry to answer
+						     something most of them are never asked. Fixed-width
+						     digits so the column doesn't jitter as they tick. -->
+							<time
+								datetime={msg.createdAt}
+								title={fullTimestamp(msg.createdAt)}
+								class="shrink-0 pt-0.5 text-[10px] text-muted-foreground tabular-nums"
+							>
+								{timeOfDay(msg.createdAt)}
+							</time>
+							<!-- chat.delete folds both stages into one command — the hub
 						     decides from the message's current state whether this
 						     click leaves a placeholder or purges it, so the button
 						     never has to track which stage a message is on. -->
-						{#if canDelete}
-							<Button
-								variant="ghost"
-								size="sm"
-								class="h-5 w-5 shrink-0 p-0"
-								aria-label={msg.deleted ? 'Remove message permanently' : 'Delete message'}
-								title={msg.deleted
-									? 'Remove this message permanently'
-									: 'Delete this message (click again to remove it permanently)'}
-								onclick={() => room.deleteMessage(msg.id)}
-							>
-								<Trash2 class="h-3 w-3" />
-							</Button>
-						{/if}
-					</li>
+							{#if canDelete}
+								<Button
+									variant="ghost"
+									size="sm"
+									class="h-5 w-5 shrink-0 p-0"
+									aria-label={msg.deleted ? 'Remove message permanently' : 'Delete message'}
+									title={msg.deleted
+										? 'Remove this message permanently'
+										: 'Delete this message (click again to remove it permanently)'}
+									onclick={() => room.deleteMessage(msg.id)}
+								>
+									<Trash2 class="h-3 w-3" />
+								</Button>
+							{/if}
+						</li>
+					{/if}
 				{/each}
 			</ul>
 			<form class="flex gap-2" onsubmit={handleSendChat}>

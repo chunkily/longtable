@@ -16,6 +16,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"time"
 
 	assets "longtable"
 	"longtable/internal/api"
@@ -56,12 +57,19 @@ func runServe(args []string) error {
 	// people who dismissed the last one. A flag rather than a screen
 	// because a Host runs the server and needn't be at any table on it.
 	banner := fset.String("banner", "", "a message shown to everyone on this server until they dismiss it")
+	// How long a dropped connection has to come back before the room is
+	// told somebody left. A flag because the right answer is the table's
+	// wifi, not ours: a hall with one bad access point wants longer, and
+	// the e2e suite wants it in seconds so a test can watch someone
+	// leave. See ws.departureGrace for what it costs to get wrong.
+	departureGrace := fset.Duration("departure-grace", ws.DefaultDepartureGrace,
+		"how long someone may be disconnected before the room is told they left")
 	fset.Parse(args)
 
-	return serve(*addr, *dbPath, *assetsDir, *banner)
+	return serve(*addr, *dbPath, *assetsDir, *banner, *departureGrace)
 }
 
-func serve(addr, dbPath, assetsDir, banner string) error {
+func serve(addr, dbPath, assetsDir, banner string, departureGrace time.Duration) error {
 	s, closeDB, err := openStore(dbPath)
 	if err != nil {
 		return err
@@ -78,7 +86,7 @@ func serve(addr, dbPath, assetsDir, banner string) error {
 		return fmt.Errorf("load embedded frontend: %w", err)
 	}
 
-	hub := ws.NewHub(s)
+	hub := ws.NewHub(s, departureGrace)
 	router := api.NewRouter(s, hub, blobs, frontend, banner)
 
 	slog.Info("longtable: listening", "addr", addr, "db", dbPath, "assets", assetsDir)

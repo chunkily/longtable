@@ -2,6 +2,7 @@ package ws
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -138,6 +139,8 @@ func TestStateSync_RosterNeverCarriesSessionTokens(t *testing.T) {
 
 func TestPresence_ArrivalAndDepartureReachTheRoom(t *testing.T) {
 	r := newTokenTestRoom(t)
+	// A departure is announced by a timer now, not by the disconnect.
+	r.ts.hurryDepartures(50 * time.Millisecond)
 
 	gmClient := r.ts.connect(t, r.room.Slug, r.gm.SessionToken)
 	gmClient.readEnvelope(t) // state.sync
@@ -186,6 +189,10 @@ func TestPresence_ArrivalIsInTheNewcomersSyncRatherThanEchoedBack(t *testing.T) 
 // departure while the first tab is still looking at the map.
 func TestPresence_ASecondTabIsNotASecondPerson(t *testing.T) {
 	r := newTokenTestRoom(t)
+	// The last tab closing still only announces once the grace period is
+	// up, so shorten it rather than waiting half a minute for the end of
+	// this test.
+	r.ts.hurryDepartures(50 * time.Millisecond)
 
 	gmClient := r.ts.connect(t, r.room.Slug, r.gm.SessionToken)
 	gmClient.readEnvelope(t) // state.sync
@@ -268,5 +275,65 @@ func TestListParticipantsForRoom_IsScopedToItsRoomAndOrderedByJoin(t *testing.T)
 	}
 	if participants[0].Role != store.RoleGM || participants[1].Role != store.RolePlayer {
 		t.Fatalf("roles = %q, %q", participants[0].Role, participants[1].Role)
+	}
+}
+
+// The flicker this grace period exists for. A dropped socket used to
+// take the badge off every other rail in the room and the reconnect put
+// it back, half a second later at best and the better part of a minute
+// at worst as the client's backoff doubled. Nothing about that is a fact
+// anyone at the table wanted to know.
+//
+// The assertion is the strong one: not "it came back" but "nothing was
+// ever said". A resumption that announced an arrival would still leave
+// the badge correct, and would still write "Bob left / Bob joined" into
+// the chat log for a wobble on the wifi.
+func TestPresence_AReconnectInsideTheGraceSaysNothingAtAll(t *testing.T) {
+	r := newTokenTestRoom(t)
+	// The production grace, deliberately: the point is that the reconnect
+	// lands well inside it.
+
+	gmClient := r.ts.connect(t, r.room.Slug, r.gm.SessionToken)
+	gmClient.readEnvelope(t) // state.sync
+
+	playerClient := r.ts.connect(t, r.room.Slug, r.player.SessionToken)
+	playerClient.readEnvelope(t) // state.sync
+	if env := gmClient.readPresence(t); env.Type != "participant.connected" {
+		t.Fatalf("type = %q, want the player's arrival", env.Type)
+	}
+
+	playerClient.conn.CloseNow()
+	reconnected := r.ts.connect(t, r.room.Slug, r.player.SessionToken)
+	reconnected.readEnvelope(t) // state.sync
+
+	// Neither a departure nor a second arrival, proved with a round trip
+	// rather than a timeout so this connection stays usable.
+	assertNoPresenceYet(t, gmClient)
+
+	// And the room still agrees the player is here.
+	presence := presenceFromSync(t, r.ts.connect(t, r.room.Slug, r.gm.SessionToken).readEnvelope(t))
+	if !slices.Contains(presence.ConnectedParticipantIDs, r.player.ID) {
+		t.Fatalf("connected = %v, want the reconnected player among them", presence.ConnectedParticipantIDs)
+	}
+}
+
+// The trap that makes the grace period worth testing separately from the
+// flicker: a client syncing *during* someone else's grace window has to
+// see the same room as everyone else. A resumption is silent by design,
+// so if this sync left the departing participant out, the arrival that
+// would have corrected it never comes — and one rail is quietly missing
+// a person until something else resyncs it.
+func TestPresence_SomeoneInsideTheirGraceWindowIsStillConnected(t *testing.T) {
+	r := newTokenTestRoom(t)
+
+	playerClient := r.ts.connect(t, r.room.Slug, r.player.SessionToken)
+	playerClient.readEnvelope(t) // state.sync
+	playerClient.conn.CloseNow()
+
+	// Fresh client, mid-window: the player's grace has not expired.
+	gmClient := r.ts.connect(t, r.room.Slug, r.gm.SessionToken)
+	presence := presenceFromSync(t, gmClient.readEnvelope(t))
+	if !slices.Contains(presence.ConnectedParticipantIDs, r.player.ID) {
+		t.Fatalf("connected = %v, want the departing player still counted", presence.ConnectedParticipantIDs)
 	}
 }

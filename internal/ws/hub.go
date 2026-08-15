@@ -35,15 +35,53 @@ type envelope struct {
 	Payload json.RawMessage `json:"payload,omitempty"`
 }
 
+// How long someone may be gone before the room is told they left.
+//
+// Presence used to be a read of the socket map, which cannot tell "gone"
+// from "coming straight back" — and the reconnect backoff starts at half
+// a second, so every blip took a badge off every rail and put it back.
+// A phone locking its screen does it; a page reload does it.
+//
+// Long enough to cover a reload and a wobble, short enough that someone
+// who has actually shut the laptop leaves the list while anyone still
+// cares. Nothing about it is exact, which is why `-departure-grace`
+// exists: the right answer is the table's wifi rather than ours.
+const DefaultDepartureGrace = 30 * time.Second
+
 type Hub struct {
 	store *store.Store
 
 	mu    sync.Mutex
 	rooms map[string]map[*client]struct{}
+	// Participants whose last connection has closed but whose grace
+	// period has not expired: still present as far as the room is
+	// concerned, and holding the timer that will say otherwise. Keyed by
+	// room, then participant.
+	//
+	// Plain maps under mu rather than sync.Map for the same reason rooms
+	// is: every read here is already inside the lock that the socket map
+	// needs anyway.
+	departing map[string]map[string]*time.Timer
+	// Set from -departure-grace, and shortened by tests that would
+	// otherwise spend half a minute proving a timer fired.
+	departureGrace time.Duration
 }
 
-func NewHub(s *store.Store) *Hub {
-	return &Hub{store: s, rooms: make(map[string]map[*client]struct{})}
+// NewHub takes the grace period rather than reading the constant, so the
+// value a Host set on the command line is the one every room uses. Zero
+// or negative falls back to the default: a grace of nothing is the
+// flicker this was built to remove, and is more likely a typo than a
+// preference.
+func NewHub(s *store.Store, departureGrace time.Duration) *Hub {
+	if departureGrace <= 0 {
+		departureGrace = DefaultDepartureGrace
+	}
+	return &Hub{
+		store:          s,
+		rooms:          make(map[string]map[*client]struct{}),
+		departing:      make(map[string]map[string]*time.Timer),
+		departureGrace: departureGrace,
+	}
 }
 
 // ServeHTTP upgrades the request to a WebSocket connection. The room
@@ -91,17 +129,14 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	c := &client{conn: conn, roomID: room.ID, participant: participant}
 	arrived := h.register(c)
-	// Both of these are declared before the unregister defer so they run
-	// after it (defers run last-in-first-out): the leaving client
-	// shouldn't be among the recipients of its own cleanup.
-	var departed bool
-	defer func() {
-		if departed {
-			h.announceDeparture(c)
-		}
-	}()
+	// unregister no longer announces anything itself: a departure is
+	// broadcast by a timer, once the grace period has passed without the
+	// participant coming back. That also means the ordering this used to
+	// depend on — the leaver not being among the recipients of its own
+	// cleanup — is now free, since it has left the socket map long before
+	// the announcement goes out.
 	defer h.endMeasurementOnDisconnect(c)
-	defer func() { departed = h.unregister(c) }()
+	defer h.unregister(c)
 
 	ctx := r.Context()
 	h.sendStateSync(ctx, c, room)
@@ -120,6 +155,11 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			return payload
 		})
+		// The chat log's copy of the same fact, and the durable one: a
+		// badge says who is here now, this says who turned up tonight. It
+		// goes to the arrival as well — unlike the badge, they have no
+		// state.sync entry that already told them.
+		h.postSystemMessage(ctx, room.ID, participant, store.SystemEventJoined)
 	}
 
 	for {
@@ -131,14 +171,21 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// register adds c to its room and reports whether this is the first
-// connection its *participant* has open.
+// register adds c to its room and reports whether the room should be
+// told somebody arrived.
 //
 // Connections and people aren't the same thing: a second browser tab is
 // a second client but the same person at the table, so only the first
 // arriving and the last leaving are presence changes. Without that,
 // opening a tab announces someone who was already here and closing it
 // announces them gone while they're still looking at the map.
+//
+// A connection landing inside a pending departure is a **resumption**,
+// and returns false: the room was never told this participant left, so
+// telling it they arrived would announce a change that never happened —
+// and, with a chat log listening, write "Bob left" and "Bob joined" into
+// it for a wobble on the wifi. Cancelling the timer is the whole of what
+// a reconnect has to do.
 func (h *Hub) register(c *client) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -147,21 +194,79 @@ func (h *Hub) register(c *client) bool {
 	}
 	alreadyHere := h.participantConnectedLocked(c.roomID, c.participant.ID)
 	h.rooms[c.roomID][c] = struct{}{}
+
+	if timer, pending := h.departing[c.roomID][c.participant.ID]; pending {
+		timer.Stop()
+		h.clearDepartureLocked(c.roomID, c.participant.ID)
+		return false
+	}
 	return !alreadyHere
 }
 
-// unregister removes c and reports whether that was the last connection
-// its participant had open — see register for why that isn't the same
-// question as whether a client went away.
-func (h *Hub) unregister(c *client) bool {
+// unregister removes c and, if that was its participant's last
+// connection, starts the grace period. It never announces anything
+// itself — see departureGrace, and announceDeparture for what happens
+// when the timer runs out.
+//
+// The room map entry is deliberately kept alive while anyone is
+// departing: dropping it would take the pending timer's room with it,
+// and the last person to leave a room is exactly the case that has to
+// still work.
+func (h *Hub) unregister(c *client) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	delete(h.rooms[c.roomID], c)
-	stillHere := h.participantConnectedLocked(c.roomID, c.participant.ID)
-	if len(h.rooms[c.roomID]) == 0 {
-		delete(h.rooms, c.roomID)
+	if h.participantConnectedLocked(c.roomID, c.participant.ID) {
+		h.pruneRoomLocked(c.roomID)
+		return
 	}
-	return !stillHere
+
+	roomID, participant := c.roomID, c.participant
+	if h.departing[roomID] == nil {
+		h.departing[roomID] = make(map[string]*time.Timer)
+	}
+	h.departing[roomID][participant.ID] = time.AfterFunc(h.departureGrace, func() {
+		h.finishDeparture(roomID, participant)
+	})
+}
+
+// finishDeparture runs when a grace period expires without the
+// participant coming back: they are gone, and now the room hears about
+// it.
+//
+// It re-checks under the lock rather than trusting the timer, because
+// time.AfterFunc has no way to un-fire. A timer that was stopped a
+// microsecond too late is already running this function while register
+// holds the lock, so the entry it is looking for is the proof it is
+// still wanted.
+func (h *Hub) finishDeparture(roomID string, participant store.Participant) {
+	h.mu.Lock()
+	if _, pending := h.departing[roomID][participant.ID]; !pending {
+		h.mu.Unlock()
+		return
+	}
+	h.clearDepartureLocked(roomID, participant.ID)
+	h.pruneRoomLocked(roomID)
+	h.mu.Unlock()
+
+	h.announceDeparture(roomID, participant)
+}
+
+// clearDepartureLocked forgets a pending departure, and the room's map
+// with it once the last one goes. Caller holds h.mu.
+func (h *Hub) clearDepartureLocked(roomID, participantID string) {
+	delete(h.departing[roomID], participantID)
+	if len(h.departing[roomID]) == 0 {
+		delete(h.departing, roomID)
+	}
+}
+
+// pruneRoomLocked drops an empty room from the socket map, unless
+// somebody is still inside their grace period there. Caller holds h.mu.
+func (h *Hub) pruneRoomLocked(roomID string) {
+	if len(h.rooms[roomID]) == 0 && len(h.departing[roomID]) == 0 {
+		delete(h.rooms, roomID)
+	}
 }
 
 // participantConnectedLocked reports whether any connection in the room
@@ -175,8 +280,8 @@ func (h *Hub) participantConnectedLocked(roomID, participantID string) bool {
 	return false
 }
 
-// ConnectedParticipantIDs lists who is connected to roomID right now,
-// one entry per person however many tabs or devices they have open.
+// ConnectedParticipantIDs lists who is present in roomID right now, one
+// entry per person however many tabs or devices they have open.
 //
 // The dedupe is what makes "two devices on one seat is one person" true
 // rather than merely intended: it keys on the seat, so a phone and a
@@ -184,6 +289,13 @@ func (h *Hub) participantConnectedLocked(roomID, participantID string) bool {
 // two tabs always did. Exported for the pre-join seat list, which shows
 // whether anyone is sitting in a chair right now — a live question only
 // the hub can answer, since presence is never written down.
+//
+// **Anyone inside their grace period counts as present**, which is what
+// keeps a client that syncs mid-window agreeing with the room it just
+// joined. Leaving them out would be worse than the flicker this replaces:
+// a resumption broadcasts nothing by design, so the arrival that would
+// have corrected that client's list never comes, and the person stays
+// missing from one rail until something else resyncs it.
 func (h *Hub) ConnectedParticipantIDs(roomID string) []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -196,6 +308,13 @@ func (h *Hub) ConnectedParticipantIDs(roomID string) []string {
 		}
 		seen[c.participant.ID] = struct{}{}
 		ids = append(ids, c.participant.ID)
+	}
+	for participantID := range h.departing[roomID] {
+		if _, dup := seen[participantID]; dup {
+			continue
+		}
+		seen[participantID] = struct{}{}
+		ids = append(ids, participantID)
 	}
 	return ids
 }
@@ -1644,12 +1763,50 @@ func (h *Hub) endMeasurementOnDisconnect(c *client) {
 // Needs a fresh context for the same reason the measurement cleanup
 // above does: the request context is already canceled by the time a
 // connection drops, so writing on it would go nowhere.
-func (h *Hub) announceDeparture(c *client) {
+// announceDeparture tells the room that someone's grace period ran out.
+// Its own context, because the connection whose closing started all this
+// was torn down a grace period ago and took its context with it.
+func (h *Hub) announceDeparture(roomID string, participant store.Participant) {
 	ctx, cancel := context.WithTimeout(context.Background(), measureCleanupTimeout)
 	defer cancel()
-	h.broadcast(ctx, c.roomID, "participant.disconnected", map[string]any{
-		"participantId": c.participant.ID,
+	h.broadcast(ctx, roomID, "participant.disconnected", map[string]any{
+		"participantId": participant.ID,
 	})
+	h.postSystemMessage(ctx, roomID, participant, store.SystemEventLeft)
+}
+
+// postSystemMessage writes a line the room said about itself, rather
+// than one a person said, and broadcasts it down the same `chat.posted`
+// event as any other message — so a client that already renders chat
+// history and hydrates it from state.sync needs no new plumbing.
+//
+// It takes a room rather than a client, and reports failure to nobody:
+// there is often no connection left to tell. A departure in particular
+// is announced by a timer whose participant has been gone half a minute,
+// so a failed insert is the server's problem alone and belongs in the
+// log with the rest of them.
+func (h *Hub) postSystemMessage(ctx context.Context, roomID string, participant store.Participant, event store.SystemEvent) {
+	msg, err := h.store.InsertMessage(store.Message{
+		RoomID: roomID,
+		// No participant id, deliberately, though the name is kept. Two
+		// reasons, and the first one bit: a GM removing a seat while that
+		// person is inside their grace window deletes the row this would
+		// point at, and the foreign key then refuses the very line saying
+		// they left. The second is that nobody wrote this message —
+		// pointing it at a participant would make it theirs, and "theirs"
+		// is what chat.delete checks when deciding who may remove it.
+		ParticipantID:   nil,
+		ParticipantName: participant.DisplayName,
+		Kind:            store.MessageKindSystem,
+		// The event, never the sentence — see the Body comment on
+		// store.Message. The client writes the words.
+		Body: string(event),
+	})
+	if err != nil {
+		slog.Error("ws: insert system message failed", "error", err, "event", event)
+		return
+	}
+	h.broadcast(ctx, roomID, "chat.posted", messagePayload(msg, ""))
 }
 
 type sceneCreateRequest struct {

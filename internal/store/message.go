@@ -13,12 +13,32 @@ type MessageKind string
 const (
 	MessageKindText MessageKind = "text"
 	MessageKindRoll MessageKind = "roll"
+	// Something the room did, not something a person said: so far, one
+	// of the SystemEvents below. Nothing accepts this kind from a
+	// client — the hub writes it itself, off the presence it owns.
+	MessageKindSystem MessageKind = "system"
+)
+
+// SystemEvent is what a MessageKindSystem row records, held in Body.
+//
+// The event rather than the sentence, deliberately. A row reading
+// `joined` lets the wording be settled by longtable-copy and changed
+// afterwards; a row reading "Bob joined the room" freezes one phrasing
+// into the database and leaves a log carrying two of them the first
+// time anybody improves it.
+type SystemEvent string
+
+const (
+	SystemEventJoined SystemEvent = "joined"
+	SystemEventLeft   SystemEvent = "left"
 )
 
 // Message is a single entry in a room's chat log. Plain chat (Kind ==
 // text) only uses Body; a /roll command (Kind == roll) additionally
 // carries the roll fields — Body still holds the raw text that was
-// typed, so the log can show exactly what the player sent.
+// typed, so the log can show exactly what the player sent. For Kind ==
+// system, Body is a SystemEvent and ParticipantName is who it happened
+// to; there is no prose in the row at all.
 //
 // DeletedAt set means the first of the two delete stages has happened.
 // SoftDeleteMessage deliberately leaves Body and the roll fields alone —

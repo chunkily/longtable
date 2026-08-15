@@ -186,17 +186,11 @@ func TestStateSync_ReflectsChatDeleteRedactionPerViewer(t *testing.T) {
 	if env.Type != "state.sync" {
 		t.Fatalf("type = %q, want state.sync", env.Type)
 	}
-	var syncPayload struct {
-		Messages []struct {
-			ID   string `json:"id"`
-			Body string `json:"body"`
-		} `json:"messages"`
-	}
-	if err := json.Unmarshal(env.Payload, &syncPayload); err != nil {
-		t.Fatalf("unmarshal state.sync payload: %v", err)
-	}
-	if len(syncPayload.Messages) != 1 || syncPayload.Messages[0].Body != r.body {
-		t.Fatalf("bob's synced messages = %+v, want the original body kept", syncPayload.Messages)
+	// Filtered to what people said: the sync also carries the room's own
+	// joined lines, one per connection this test has opened.
+	said := saidInSync(t, env)
+	if len(said) != 1 || said[0].Body != r.body {
+		t.Fatalf("bob's synced messages = %+v, want the original body kept", said)
 	}
 
 	// A stranger connecting fresh only ever sees the placeholder.
@@ -205,17 +199,9 @@ func TestStateSync_ReflectsChatDeleteRedactionPerViewer(t *testing.T) {
 		t.Fatalf("JoinRoom: %v", err)
 	}
 	eveClient := r.ts.connect(t, r.room, eve.SessionToken)
-	eveEnv := eveClient.readEnvelope(t)
-	var eveSync struct {
-		Messages []struct {
-			Body string `json:"body"`
-		} `json:"messages"`
-	}
-	if err := json.Unmarshal(eveEnv.Payload, &eveSync); err != nil {
-		t.Fatalf("unmarshal state.sync payload: %v", err)
-	}
-	if len(eveSync.Messages) != 1 || eveSync.Messages[0].Body != "" {
-		t.Fatalf("eve's synced messages = %+v, want redacted", eveSync.Messages)
+	eveSaid := saidInSync(t, eveClient.readEnvelope(t))
+	if len(eveSaid) != 1 || eveSaid[0].Body != "" {
+		t.Fatalf("eve's synced messages = %+v, want redacted", eveSaid)
 	}
 }
 

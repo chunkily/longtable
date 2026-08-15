@@ -138,9 +138,24 @@ map mid-fight keeps the encounter,
 chat with `/roll` and a two-stage delete (a GM may delete or purge any message, everyone else
 only their own — the first delete leaves the room seeing "this message has been deleted", while
 the author and whoever just deleted it still see the original text struck through; a second
-delete on that same message purges it outright for everyone), and a live list of who's connected
+delete on that same message purges it outright for everyone). **Every entry carries the time it
+landed**, with the full date on hover, and the log also records **who came and went**: a `system`
+message kind the hub writes itself, holding the event (`joined`/`left`) rather than a sentence, so
+the wording stays a `longtable-copy` decision. Those lines are the room talking — no bold name, no
+delete button — and they persist, so a refresh and a late arrival read the same history.
+And a live list of who's connected
 (distinct from the room's roster of everyone who has ever joined, which `state.sync` also
 carries).
+
+**Presence is the hub's, and leaving is on a timer.** A participant whose last connection closes
+stays present for `-departure-grace` (30 seconds by default); coming back inside that window
+cancels it and broadcasts *nothing at all*, since the room was never told they left. Only when it
+expires do `participant.disconnected` and the chat log's `left` line go out. That is what stopped
+the badges flickering every time a phone locked its screen — the reconnect backoff starts at half a
+second and doubles towards fifteen — and it is what makes a durable "left the room" line mean
+something rather than recording every wobble on the wifi. `ConnectedParticipantIDs` counts anyone
+mid-grace as connected, which is load-bearing: a resumption is silent, so a client that synced
+during someone's window would never get the arrival that corrected it.
 
 **The room page is built around the map**: the canvas fills the window, with no page padding, no
 card and no header. The toolbar floats over its top-left as five tool *families* — hand, draw,
@@ -207,7 +222,9 @@ since enumerating the rest would be a lie about where the server is.
 puts a message across the top of every page for everyone on the server, dismissable per browser
 and keyed by its own text, so changing the message brings it back for people who dismissed the
 last one. A Host runs the server and needn't be at any table on it (`planning/roles.md`), which is
-why it is a flag rather than a screen.
+why it is a flag rather than a screen. `-departure-grace` is the second one and the same shape of
+decision: how long a dropped connection has to come back before the room is told, where the right
+answer is the hall's wifi rather than ours.
 
 Known gaps, which is also roughly the queue: nothing rolls initiative for you — the tracker takes
 the number and `/roll 1d20+2` in chat is where it comes from; `Manage room` holds seats and the

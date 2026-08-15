@@ -22,6 +22,21 @@ import (
 type testServer struct {
 	store *store.Store
 	url   string
+	// Exposed so a test can shorten the departure grace period. It is
+	// half a minute in production, and a test that actually waits that
+	// out is a test nobody runs.
+	hub *Hub
+}
+
+// hurryDepartures shrinks the grace period to something a test can wait
+// for, and returns it so the test can wait a little longer than that.
+//
+// Only for tests that *want* the timer to fire. Anything else should
+// leave the production value alone: a departure going off mid-test turns
+// unrelated assertions into a race.
+func (ts *testServer) hurryDepartures(grace time.Duration) time.Duration {
+	ts.hub.departureGrace = grace
+	return grace
 }
 
 func newTestServer(t *testing.T) *testServer {
@@ -38,11 +53,11 @@ func newTestServer(t *testing.T) *testServer {
 		t.Fatalf("new store: %v", err)
 	}
 
-	hub := NewHub(s)
+	hub := NewHub(s, DefaultDepartureGrace)
 	srv := httptest.NewServer(http.HandlerFunc(hub.ServeHTTP))
 	t.Cleanup(srv.Close)
 
-	return &testServer{store: s, url: srv.URL}
+	return &testServer{store: s, url: srv.URL, hub: hub}
 }
 
 type testClient struct {
@@ -86,6 +101,42 @@ func isPresence(eventType string) bool {
 	return eventType == "participant.connected" || eventType == "participant.disconnected"
 }
 
+// isPresenceNoise is the same question asked of a whole envelope,
+// because presence now announces itself twice: once as a badge event,
+// and once as a durable line in the chat log. Both land on every client
+// in the room the moment a connection opens, so a test about tokens has
+// to skip both or read someone else's arrival where it expected its own
+// event.
+//
+// Only the system kind is skipped. A chat.posted carrying a person's
+// message is exactly what the chat tests are reading.
+func isPresenceNoise(env envelope) bool {
+	if isPresence(env.Type) {
+		return true
+	}
+	if env.Type != "chat.posted" {
+		return false
+	}
+	var msg struct {
+		Kind string `json:"kind"`
+	}
+	return json.Unmarshal(env.Payload, &msg) == nil && msg.Kind == string(store.MessageKindSystem)
+}
+
+// saidByPeople drops the room's own lines from a chat log, leaving what
+// somebody actually typed. Every connection writes a joined line now, so
+// a test connecting one client and asserting on an empty log is asking
+// about people rather than about the log.
+func saidByPeople(messages []store.Message) []store.Message {
+	said := make([]store.Message, 0, len(messages))
+	for _, m := range messages {
+		if m.Kind != store.MessageKindSystem {
+			said = append(said, m)
+		}
+	}
+	return said
+}
+
 // readAnyEnvelope reads exactly the next envelope, whatever it is. Only
 // the presence tests want this; everything else wants readEnvelope.
 func (c *testClient) readAnyEnvelope(t *testing.T) envelope {
@@ -115,7 +166,7 @@ func (c *testClient) readEnvelope(t *testing.T) envelope {
 	t.Helper()
 
 	for {
-		if env := c.readAnyEnvelope(t); !isPresence(env.Type) {
+		if env := c.readAnyEnvelope(t); !isPresenceNoise(env) {
 			return env
 		}
 	}
@@ -166,7 +217,7 @@ func (c *testClient) expectNoMessage(t *testing.T, d time.Duration) {
 		if err := json.Unmarshal(data, &env); err != nil {
 			t.Fatalf("unmarshal envelope: %v", err)
 		}
-		if !isPresence(env.Type) {
+		if !isPresenceNoise(env) {
 			t.Fatalf("expected no message, but received %q", env.Type)
 		}
 	}
@@ -470,8 +521,10 @@ func TestChatSend_UnknownSlashCommandNotPersisted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListRecentMessages: %v", err)
 	}
-	if len(messages) != 0 {
-		t.Fatalf("len(messages) = %d, want 0 (unknown command must not be persisted)", len(messages))
+	// Excluding the room's own line about the GM connecting a moment ago
+	// — the claim here is that nothing the *client* typed was kept.
+	if said := saidByPeople(messages); len(said) != 0 {
+		t.Fatalf("len(messages) = %d, want 0 (unknown command must not be persisted)", len(said))
 	}
 }
 
@@ -490,4 +543,35 @@ func TestHandleMessage_UnknownEnvelopeTypeReturnsError(t *testing.T) {
 	if env.Type != "error" {
 		t.Fatalf("type = %q, want error", env.Type)
 	}
+}
+
+// syncedMessage is the slice of a state.sync message the chat tests
+// assert on.
+type syncedMessage struct {
+	ID   string `json:"id"`
+	Kind string `json:"kind"`
+	Body string `json:"body"`
+}
+
+// saidInSync pulls the chat log out of a state.sync envelope, minus the
+// room's own joined/left lines — every connection a test opens adds one,
+// so a count of "what is in the log" otherwise counts the test's own
+// plumbing.
+func saidInSync(t *testing.T, env envelope) []syncedMessage {
+	t.Helper()
+
+	var payload struct {
+		Messages []syncedMessage `json:"messages"`
+	}
+	if err := json.Unmarshal(env.Payload, &payload); err != nil {
+		t.Fatalf("unmarshal state.sync payload: %v", err)
+	}
+
+	said := make([]syncedMessage, 0, len(payload.Messages))
+	for _, m := range payload.Messages {
+		if m.Kind != string(store.MessageKindSystem) {
+			said = append(said, m)
+		}
+	}
+	return said
 }

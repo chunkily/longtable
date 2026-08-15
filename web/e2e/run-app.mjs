@@ -117,7 +117,17 @@ const server = spawn(
 		'-db',
 		path.join(dataDir, 'longtable.db'),
 		'-assets',
-		path.join(dataDir, 'assets')
+		path.join(dataDir, 'assets'),
+		// Someone closing a browser context has to leave the room while a
+		// spec is still watching, and the real half-minute would mean
+		// every presence assertion outliving Playwright's timeout.
+		//
+		// Two seconds rather than something tiny: it still has to be
+		// longer than a page reload, or the reconnect lands outside the
+		// grace and the specs that reload would see spurious departures —
+		// including in the chat log, which keeps them.
+		'-departure-grace',
+		'2s'
 	],
 	{ stdio: 'inherit' }
 );

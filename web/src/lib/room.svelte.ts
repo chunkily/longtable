@@ -11,11 +11,21 @@ import { PING_COOLDOWN_MS, PING_LIFETIME_MS } from './ping';
 import { randomId } from './random-id';
 import { sameTokenFields, tokenFields, type TokenFields } from './token-fields';
 
+/**
+ * What a `system` message records: something the room did, not something
+ * a person said. `body` carries one of these rather than a sentence —
+ * the wording is written on screen, so it can change without a migration
+ * and without a log carrying two phrasings of the same event.
+ */
+export type SystemEvent = 'joined' | 'left';
+
 export interface ChatMessage {
 	id: string;
 	participantId: string | null;
 	participantName: string;
-	kind: 'text' | 'roll';
+	// `system` is the room talking: nobody sends one, the hub writes it
+	// off the presence it owns, and `body` is a SystemEvent.
+	kind: 'text' | 'roll' | 'system';
 	body: string;
 	rollExpression: string | null;
 	rollResult: number | null;

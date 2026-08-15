@@ -70,6 +70,16 @@ Unknown command types get an `error` back naming the type. `chat.send` text star
 routed to `handleSlashCommand` (only `/roll` and `/r` today; unknown commands error back to the
 sender and never enter the chat log).
 
+**A message's `kind` is `text`, `roll` or `system`, and no client can send the third.** A system
+line is the room talking rather than a person — a join or a leave — written by the hub off the
+presence it owns and broadcast down the same `chat.posted` event, so it lands in `state.sync`'s
+message history like anything else and needs no plumbing of its own. Its `body` is the *event*
+(`joined` / `left`) rather than a sentence, so the wording stays a `longtable-copy` decision that
+can change without a migration; `participantName` says who it happened to and `participantId` is
+deliberately null (nobody wrote it, and a seat removed mid-grace would otherwise break the foreign
+key on the very line saying they left). Anything asserting on a room's chat log in a test now has
+to filter these out — see `isPresenceNoise` and `saidInSync` in the Go tests.
+
 `chat.delete` folds two delete stages into one command, the way `token.update` folds several
 permission levels into one: which one fires depends on the message's current state, not on
 anything the client sends. The first call stamps `deleted_at` and `deleted_by_participant_id` but
@@ -353,12 +363,30 @@ Two different questions, kept apart on purpose:
 Folding them into one "online" flag per row would make the offline half unrepresentable, which is
 exactly the half a GM prepping tokens needs.
 
-Three things worth knowing before touching it:
+**The hub owns presence, and a departure is on a timer.** A participant whose last connection
+closes is still present for `-departure-grace` (30s by default): `unregister` starts a
+`time.AfterFunc` and announces nothing, and a connection arriving inside that window cancels it and
+broadcasts *nothing at all* — the room was never told they left, so telling it they arrived would
+announce a change that never happened. Only when the timer runs out does `participant.disconnected`
+go out, followed by the chat log's `left` line.
+
+That is what stopped presence badges flickering on every blip, and it is the reason the chat log
+can carry durable join/leave lines: hung off the raw disconnect, a wobble on the wifi wrote a pair
+of lines that never healed. Two consequences worth holding on to:
+
+- **`ConnectedParticipantIDs` counts anyone mid-grace as connected.** Leaving them out is worse
+  than the flicker: a resumption is silent by design, so a client that synced mid-window would
+  never receive the arrival that corrected it.
+- **`finishDeparture` re-checks under the lock.** `time.AfterFunc` cannot un-fire, so a timer
+  stopped a microsecond too late is already running while `register` holds the lock; the pending
+  entry is the proof the announcement is still wanted.
+
+Three more things worth knowing before touching it:
 
 - **A person is not a connection.** Two browser tabs are two clients and one participant, so
-  `register`/`unregister` return whether this was the *first* or *last* connection that
-  participant had open, and only those broadcast. Otherwise opening a tab announces someone who
-  was already here. Since seats this covers two *devices* as well, for free and for the same
+  `register` reports whether this was the *first* connection that participant had open and
+  `unregister` starts the grace period on the last, and only those two announce anything.
+  Otherwise opening a tab announces someone who was already here. Since seats this covers two *devices* as well, for free and for the same
   reason: the dedupe keys on the participant, and a phone and a laptop signed into one seat are
   two sessions pointing at one participant. `ConnectedParticipantIDs` is exported for the
   pre-join seat list, which needs the same live answer to say whether a chair is taken.

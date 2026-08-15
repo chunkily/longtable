@@ -222,6 +222,15 @@ Two things that quietly make a pixel assertion measure nothing:
   re-hide, and an exact zero after a reveal-all.
 - **The freehand tool always has ink on the preview layer**, because it paints a cursor ring
   sized to the stroke width that tracks the pointer whether or not a stroke is in progress.
+- **Every connection writes a line into the chat log**, so presence is now noise in two places at
+  once. `readEnvelope` skips both via `isPresenceNoise`; `saidByPeople` and `saidInSync` strip the
+  room's own lines out of a stored log or a `state.sync` payload, which is what a test asserting
+  "the log is empty" actually means. A test that *wants* them uses `readSystemLine`.
+- **A departure is announced by a timer**, half a minute after the socket closed. `hurryDepartures`
+  shortens it for the tests that want to watch someone leave; everything else should leave the
+  production value alone, since a timer firing mid-test turns unrelated assertions into a race.
+  The e2e harness passes `-departure-grace 2s` — long enough that a spec reloading a page doesn't
+  trip a spurious departure, short enough for a presence assertion to outlast it.
 - **`toBeVisible()` says nothing about opacity**, so a popup whose enter animation never finishes
   passes every locator assertion in the suite while being invisible to a person. Worth knowing
   before reading a hand-inspection of one: a page in a browser pane that isn't being displayed
