@@ -19,6 +19,7 @@ type sessionResponse struct {
 	RoomName      string `json:"roomName"`
 	ParticipantID string `json:"participantId"`
 	DisplayName   string `json:"displayName"`
+	Color         string `json:"color"`
 	Role          string `json:"role"`
 	SessionToken  string `json:"sessionToken"`
 }
@@ -29,14 +30,30 @@ func toSessionResponse(room store.Room, p store.Participant) sessionResponse {
 		RoomName:      room.Name,
 		ParticipantID: p.ID,
 		DisplayName:   p.DisplayName,
+		Color:         p.Color,
 		Role:          string(p.Role),
 		SessionToken:  p.SessionToken,
 	}
 }
 
+// rejectUnknownColor guards every path that writes a colour. The set
+// lives in Go rather than in a CHECK constraint (see the note above
+// addMissingColumns), and it has to be enforced somewhere: the stored
+// value ends up in a style attribute on every other client's screen, so
+// "the table is trusted" (ADR-0007) does not stretch to letting a
+// crafted request put arbitrary text there.
+func rejectUnknownColor(w http.ResponseWriter, color string) bool {
+	if store.ValidIdentityColor(color) {
+		return false
+	}
+	writeError(w, http.StatusBadRequest, "unknown colour")
+	return true
+}
+
 type createRoomRequest struct {
 	RoomName string `json:"roomName"`
 	GMName   string `json:"gmName"`
+	GMColor  string `json:"gmColor"`
 	Password string `json:"password"`
 }
 
@@ -62,7 +79,11 @@ func (srv *Server) createRoom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	room, participant, err := srv.store.CreateRoom(req.RoomName, req.GMName, req.Password)
+	if rejectUnknownColor(w, req.GMColor) {
+		return
+	}
+
+	room, participant, err := srv.store.CreateRoom(req.RoomName, req.GMName, req.GMColor, req.Password)
 	if err != nil {
 		slog.Error("api: create room failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to create room")
@@ -81,8 +102,15 @@ func (srv *Server) createRoom(w http.ResponseWriter, r *http.Request) {
 type seatResponse struct {
 	ParticipantID string `json:"participantId"`
 	DisplayName   string `json:"displayName"`
-	Role          string `json:"role"`
-	Connected     bool   `json:"connected"`
+	// The seat's colour, so the picker can show which are taken before
+	// anyone chooses one. A name and a colour is more than this endpoint
+	// used to tell a stranger with the link and still less than a
+	// credential — and without it the "see what everyone else picked"
+	// half of the feature can't happen before joining, which is the only
+	// moment it is any use.
+	Color     string `json:"color"`
+	Role      string `json:"role"`
+	Connected bool   `json:"connected"`
 }
 
 // listSeats answers "which chairs are at this table, and is anyone in
@@ -119,6 +147,7 @@ func (srv *Server) listSeats(w http.ResponseWriter, r *http.Request) {
 		out = append(out, seatResponse{
 			ParticipantID: seat.ID,
 			DisplayName:   seat.DisplayName,
+			Color:         seat.Color,
 			Role:          string(seat.Role),
 			Connected:     connected[seat.ID],
 		})
@@ -132,6 +161,7 @@ func (srv *Server) listSeats(w http.ResponseWriter, r *http.Request) {
 
 type joinRequest struct {
 	DisplayName  string `json:"displayName"`
+	Color        string `json:"color"`
 	SessionToken string `json:"sessionToken"`
 	// Set to take an existing seat rather than make a new one. Empty is
 	// the "I'm new here" path, which is exactly what joining used to be.
@@ -186,7 +216,11 @@ func (srv *Server) joinRoom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	participant, err := srv.store.JoinRoom(room.ID, req.DisplayName)
+	if rejectUnknownColor(w, req.Color) {
+		return
+	}
+
+	participant, err := srv.store.JoinRoom(room.ID, req.DisplayName, req.Color)
 	if err != nil {
 		slog.Error("api: join room failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to join room")
@@ -198,6 +232,7 @@ func (srv *Server) joinRoom(w http.ResponseWriter, r *http.Request) {
 
 type gmLoginRequest struct {
 	DisplayName string `json:"displayName"`
+	Color       string `json:"color"`
 	Password    string `json:"password"`
 }
 
@@ -224,7 +259,11 @@ func (srv *Server) gmLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	participant, err := srv.store.GMLogin(room.ID, req.DisplayName)
+	if rejectUnknownColor(w, req.Color) {
+		return
+	}
+
+	participant, err := srv.store.GMLogin(room.ID, req.DisplayName, req.Color)
 	if err != nil {
 		slog.Error("api: gm login failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to log in")
@@ -236,6 +275,7 @@ func (srv *Server) gmLogin(w http.ResponseWriter, r *http.Request) {
 
 type createSeatRequest struct {
 	DisplayName string `json:"displayName"`
+	Color       string `json:"color"`
 }
 
 // createSeat lets a GM set the table before anyone arrives: a named
@@ -260,7 +300,11 @@ func (srv *Server) createSeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	seat, err := srv.store.CreateSeat(room.ID, req.DisplayName)
+	if rejectUnknownColor(w, req.Color) {
+		return
+	}
+
+	seat, err := srv.store.CreateSeat(room.ID, req.DisplayName, req.Color)
 	if err != nil {
 		slog.Error("api: create seat failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to add a seat")
@@ -270,6 +314,7 @@ func (srv *Server) createSeat(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, seatResponse{
 		ParticipantID: seat.ID,
 		DisplayName:   seat.DisplayName,
+		Color:         seat.Color,
 		Role:          string(seat.Role),
 	})
 }

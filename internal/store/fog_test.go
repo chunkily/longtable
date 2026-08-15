@@ -10,7 +10,7 @@ func twoScenesWithFog(t *testing.T) (*Store, Scene, Scene) {
 	t.Helper()
 
 	s := newTestStore(t)
-	room, _, err := s.CreateRoom("Room", "GM", "password")
+	room, _, err := s.CreateRoom("Room", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -34,7 +34,7 @@ func sceneWithNoFog(t *testing.T) (*Store, Scene) {
 	t.Helper()
 
 	s := newTestStore(t)
-	room, _, err := s.CreateRoom("Room", "GM", "password")
+	room, _, err := s.CreateRoom("Room", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}

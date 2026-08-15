@@ -91,7 +91,7 @@ func TestStateSync_CarriesTheRosterAndWhoIsConnected(t *testing.T) {
 
 	// Someone who joined and never came back is on the roster and not in
 	// the connected list — the whole reason the two are separate.
-	absent, err := r.ts.store.JoinRoom(r.room.ID, "Carol")
+	absent, err := r.ts.store.JoinRoom(r.room.ID, "Carol", "")
 	if err != nil {
 		t.Fatalf("JoinRoom: %v", err)
 	}
@@ -244,19 +244,19 @@ func TestPresence_ASecondTabIsNotASecondPerson(t *testing.T) {
 
 func TestListParticipantsForRoom_IsScopedToItsRoomAndOrderedByJoin(t *testing.T) {
 	ts := newTestServer(t)
-	room, gm, err := ts.store.CreateRoom("Room", "GM", "password")
+	room, gm, err := ts.store.CreateRoom("Room", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
-	player, err := ts.store.JoinRoom(room.ID, "Bob")
+	player, err := ts.store.JoinRoom(room.ID, "Bob", "")
 	if err != nil {
 		t.Fatalf("JoinRoom: %v", err)
 	}
-	other, _, err := ts.store.CreateRoom("Other", "Their GM", "password")
+	other, _, err := ts.store.CreateRoom("Other", "Their GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
-	if _, err := ts.store.JoinRoom(other.ID, "Stranger"); err != nil {
+	if _, err := ts.store.JoinRoom(other.ID, "Stranger", ""); err != nil {
 		t.Fatalf("JoinRoom: %v", err)
 	}
 

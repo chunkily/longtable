@@ -6,6 +6,7 @@
 	// backlog item.
 	import { toast } from 'svelte-sonner';
 	import { addSeat, listSeats, removeSeat, type Seat } from '$lib/api';
+	import { identityHex, suggestedColor } from '$lib/identity-color';
 	import type { RoomClient } from '$lib/room.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -54,7 +55,10 @@
 		if (!name) return;
 		busy = true;
 		try {
-			await addSeat(roomSlug, sessionToken, name);
+			// The GM picks the chair's colour too, so whoever takes it
+			// arrives with one rather than being the only person at the
+			// table with no way to have chosen.
+			await addSeat(roomSlug, sessionToken, name, suggestedColor(seats.map((s) => s.color)));
 			newName = '';
 			await refresh();
 		} catch (err) {
@@ -140,6 +144,12 @@
 		<ul class="flex max-h-72 flex-col gap-2 overflow-y-auto">
 			{#each seats as seat (seat.participantId)}
 				<li class="flex flex-wrap items-center gap-2 rounded-md border p-2">
+					{#if identityHex(seat.color)}
+						<span
+							class="h-3 w-3 shrink-0 rounded-full"
+							style="background-color: {identityHex(seat.color)}"
+						></span>
+					{/if}
 					<span class="min-w-0 flex-1 truncate text-sm">{seat.displayName}</span>
 					{#if seat.role === 'gm'}
 						<Badge>GM</Badge>

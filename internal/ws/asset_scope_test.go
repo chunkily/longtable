@@ -16,11 +16,11 @@ import (
 func TestSceneCreate_RejectsAssetFromAnotherRoom(t *testing.T) {
 	ts := newTestServer(t)
 
-	roomA, gmA, err := ts.store.CreateRoom("Room A", "GM", "password")
+	roomA, gmA, err := ts.store.CreateRoom("Room A", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
-	roomB, gmB, err := ts.store.CreateRoom("Room B", "GM", "password")
+	roomB, gmB, err := ts.store.CreateRoom("Room B", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -66,11 +66,11 @@ func TestSceneCreate_RejectsAssetFromAnotherRoom(t *testing.T) {
 func TestTokenCreate_RejectsAssetFromAnotherRoom(t *testing.T) {
 	ts := newTestServer(t)
 
-	roomA, _, err := ts.store.CreateRoom("Room A", "GM", "password")
+	roomA, _, err := ts.store.CreateRoom("Room A", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
-	roomB, gmB, err := ts.store.CreateRoom("Room B", "GM", "password")
+	roomB, gmB, err := ts.store.CreateRoom("Room B", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -123,11 +123,11 @@ func TestTokenCreate_RejectsAssetFromAnotherRoom(t *testing.T) {
 func TestAssetScope_UnknownAndForeignAssetsFailAlike(t *testing.T) {
 	ts := newTestServer(t)
 
-	roomA, _, err := ts.store.CreateRoom("Room A", "GM", "password")
+	roomA, _, err := ts.store.CreateRoom("Room A", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
-	roomB, gmB, err := ts.store.CreateRoom("Room B", "GM", "password")
+	roomB, gmB, err := ts.store.CreateRoom("Room B", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -167,7 +167,7 @@ func TestAssetScope_UnknownAndForeignAssetsFailAlike(t *testing.T) {
 func TestSceneCreate_NoAssetIsStillFine(t *testing.T) {
 	ts := newTestServer(t)
 
-	room, gm, err := ts.store.CreateRoom("Room", "GM", "password")
+	room, gm, err := ts.store.CreateRoom("Room", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}

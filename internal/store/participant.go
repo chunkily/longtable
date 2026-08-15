@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -28,9 +29,12 @@ const (
 // mint a session (JoinRoom, GMLogin, ClaimSeat), as the token to hand
 // back to that one caller; every other read leaves it empty.
 type Participant struct {
-	ID           string
-	RoomID       string
-	DisplayName  string
+	ID          string
+	RoomID      string
+	DisplayName string
+	// One of IdentityColors, or empty for a seat made before colours
+	// existed. Held as a key rather than a colour — see IdentityColors.
+	Color        string
 	SessionToken string
 	Role         Role
 	CreatedAt    string
@@ -43,21 +47,45 @@ type execer interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 }
 
+// IdentityColors are the colours a seat may be, and the authority on
+// that set — mirrored by IDENTITY_COLORS in web/src/lib/identity-color.ts,
+// which holds the hex each one is actually painted in.
+//
+// Keys rather than colours, deliberately. What is stored ends up in a
+// `style` attribute on everyone else's screen, and a column that accepts
+// any string is a CSS injection waiting for someone to try it — the
+// table is trusted for the things ADR-0007 lists, not for arbitrary
+// values reaching another person's stylesheet. Keys also mean retuning a
+// shade is a client-side edit rather than a migration.
+//
+// The set dodges the colours the canvas already speaks with: amber is
+// the erase highlight, sky blue the measuring tool, red the fog-hide
+// preview. Anything added here has to clear those too.
+var IdentityColors = []string{"violet", "indigo", "teal", "emerald", "lime", "pink"}
+
+// ValidIdentityColor reports whether c is one of IdentityColors. Empty
+// is valid and means unchosen: every seat made before this existed has
+// no colour, and the client renders those the way it always did.
+func ValidIdentityColor(c string) bool {
+	return c == "" || slices.Contains(IdentityColors, c)
+}
+
 // createSeat writes the durable half only. Callers that need a device
 // signed in to it call issueSession afterwards; a GM adding an empty
 // seat before anyone arrives deliberately doesn't.
-func createSeat(e execer, roomID, displayName string, role Role) (Participant, error) {
+func createSeat(e execer, roomID, displayName, color string, role Role) (Participant, error) {
 	p := Participant{
 		ID:          uuid.NewString(),
 		RoomID:      roomID,
 		DisplayName: displayName,
+		Color:       color,
 		Role:        role,
 		CreatedAt:   time.Now().UTC().Format(time.RFC3339Nano),
 	}
 
 	_, err := e.ExecContext(context.Background(),
-		`INSERT INTO participant (id, room_id, display_name, role, created_at) VALUES (?, ?, ?, ?, ?)`,
-		p.ID, p.RoomID, p.DisplayName, string(p.Role), p.CreatedAt,
+		`INSERT INTO participant (id, room_id, display_name, color, role, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		p.ID, p.RoomID, p.DisplayName, p.Color, string(p.Role), p.CreatedAt,
 	)
 	if err != nil {
 		return Participant{}, err
@@ -82,8 +110,8 @@ func issueSession(e execer, participantID string) (string, error) {
 	return token, nil
 }
 
-func createParticipant(e execer, roomID, displayName string, role Role) (Participant, error) {
-	p, err := createSeat(e, roomID, displayName, role)
+func createParticipant(e execer, roomID, displayName, color string, role Role) (Participant, error) {
+	p, err := createSeat(e, roomID, displayName, color, role)
 	if err != nil {
 		return Participant{}, err
 	}
@@ -97,8 +125,8 @@ func createParticipant(e execer, roomID, displayName string, role Role) (Partici
 
 // JoinRoom creates a new player seat in roomID and signs this device
 // into it — the "I'm new here" path.
-func (s *Store) JoinRoom(roomID, displayName string) (Participant, error) {
-	return createParticipant(s.db, roomID, displayName, RolePlayer)
+func (s *Store) JoinRoom(roomID, displayName, color string) (Participant, error) {
+	return createParticipant(s.db, roomID, displayName, color, RolePlayer)
 }
 
 // GMLogin signs a device into the room's GM seat, creating one only if
@@ -107,16 +135,19 @@ func (s *Store) JoinRoom(roomID, displayName string) (Participant, error) {
 // device was a second person and the roster grew one entry per login.
 // Called after the caller has already verified the room password —
 // which is a role boundary, not an identity one (ADR-0007).
-func (s *Store) GMLogin(roomID, displayName string) (Participant, error) {
+// color is used only if the seat has to be created; a GM signing back
+// into an existing seat keeps whatever colour that seat already has,
+// like every other returning device.
+func (s *Store) GMLogin(roomID, displayName, color string) (Participant, error) {
 	var p Participant
 	var role string
 	err := s.db.QueryRow(
-		`SELECT id, room_id, display_name, role, created_at
+		`SELECT id, room_id, display_name, color, role, created_at
 		 FROM participant WHERE room_id = ? AND role = 'gm' ORDER BY created_at ASC LIMIT 1`,
 		roomID,
-	).Scan(&p.ID, &p.RoomID, &p.DisplayName, &role, &p.CreatedAt)
+	).Scan(&p.ID, &p.RoomID, &p.DisplayName, &p.Color, &role, &p.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
-		return createParticipant(s.db, roomID, displayName, RoleGM)
+		return createParticipant(s.db, roomID, displayName, color, RoleGM)
 	}
 	if err != nil {
 		return Participant{}, err
@@ -139,10 +170,10 @@ func (s *Store) ClaimSeat(roomID, participantID string) (Participant, error) {
 	var p Participant
 	var role string
 	err := s.db.QueryRow(
-		`SELECT id, room_id, display_name, role, created_at
+		`SELECT id, room_id, display_name, color, role, created_at
 		 FROM participant WHERE room_id = ? AND id = ?`,
 		roomID, participantID,
-	).Scan(&p.ID, &p.RoomID, &p.DisplayName, &role, &p.CreatedAt)
+	).Scan(&p.ID, &p.RoomID, &p.DisplayName, &p.Color, &role, &p.CreatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Participant{}, ErrNotFound
@@ -164,8 +195,8 @@ func (s *Store) ClaimSeat(roomID, participantID string) (Participant, error) {
 
 // CreateSeat adds an empty seat, for a GM setting the table before
 // anyone arrives. Nobody is signed into it until someone claims it.
-func (s *Store) CreateSeat(roomID, displayName string) (Participant, error) {
-	return createSeat(s.db, roomID, displayName, RolePlayer)
+func (s *Store) CreateSeat(roomID, displayName, color string) (Participant, error) {
+	return createSeat(s.db, roomID, displayName, color, RolePlayer)
 }
 
 // DeleteSeat removes a seat and, by cascade, every session on it.
@@ -203,7 +234,7 @@ func (s *Store) DeleteSeat(roomID, participantID string) error {
 // be loaded in the first place. The field comes back zero.
 func (s *Store) ListParticipantsForRoom(roomID string) ([]Participant, error) {
 	rows, err := s.db.Query(
-		`SELECT id, room_id, display_name, role, created_at
+		`SELECT id, room_id, display_name, color, role, created_at
 		 FROM participant WHERE room_id = ? ORDER BY created_at ASC`, roomID,
 	)
 	if err != nil {
@@ -215,7 +246,7 @@ func (s *Store) ListParticipantsForRoom(roomID string) ([]Participant, error) {
 	for rows.Next() {
 		var p Participant
 		var role string
-		if err := rows.Scan(&p.ID, &p.RoomID, &p.DisplayName, &role, &p.CreatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.RoomID, &p.DisplayName, &p.Color, &role, &p.CreatedAt); err != nil {
 			return nil, err
 		}
 		p.Role = Role(role)
@@ -238,6 +269,7 @@ func (s *Store) ListParticipantsForRoom(roomID string) ([]Participant, error) {
 type Seat struct {
 	ID          string
 	DisplayName string
+	Color       string
 	Role        Role
 	Sessions    int
 }
@@ -246,10 +278,10 @@ type Seat struct {
 // people sat down in, which is stabler than sorting by name.
 func (s *Store) ListSeatsForRoom(roomID string) ([]Seat, error) {
 	rows, err := s.db.Query(
-		`SELECT p.id, p.display_name, p.role, COUNT(s.token)
+		`SELECT p.id, p.display_name, p.color, p.role, COUNT(s.token)
 		 FROM participant p LEFT JOIN session s ON s.participant_id = p.id
 		 WHERE p.room_id = ?
-		 GROUP BY p.id, p.display_name, p.role, p.created_at
+		 GROUP BY p.id, p.display_name, p.color, p.role, p.created_at
 		 ORDER BY p.created_at ASC`, roomID,
 	)
 	if err != nil {
@@ -261,7 +293,7 @@ func (s *Store) ListSeatsForRoom(roomID string) ([]Seat, error) {
 	for rows.Next() {
 		var seat Seat
 		var role string
-		if err := rows.Scan(&seat.ID, &seat.DisplayName, &role, &seat.Sessions); err != nil {
+		if err := rows.Scan(&seat.ID, &seat.DisplayName, &seat.Color, &role, &seat.Sessions); err != nil {
 			return nil, err
 		}
 		seat.Role = Role(role)
@@ -303,11 +335,11 @@ func (s *Store) GetParticipantByToken(roomID, token string) (Participant, error)
 	var p Participant
 	var role string
 	err := s.db.QueryRow(
-		`SELECT p.id, p.room_id, p.display_name, p.role, p.created_at
+		`SELECT p.id, p.room_id, p.display_name, p.color, p.role, p.created_at
 		 FROM participant p JOIN session s ON s.participant_id = p.id
 		 WHERE p.room_id = ? AND s.token = ?`,
 		roomID, token,
-	).Scan(&p.ID, &p.RoomID, &p.DisplayName, &role, &p.CreatedAt)
+	).Scan(&p.ID, &p.RoomID, &p.DisplayName, &p.Color, &role, &p.CreatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Participant{}, ErrNotFound

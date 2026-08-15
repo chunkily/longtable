@@ -9,11 +9,11 @@ import (
 
 func TestDrawCreate_PlayerCanDrawAndItPersists(t *testing.T) {
 	ts := newTestServer(t)
-	room, _, err := ts.store.CreateRoom("Room", "GM", "password")
+	room, _, err := ts.store.CreateRoom("Room", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
-	player, err := ts.store.JoinRoom(room.ID, "Bob")
+	player, err := ts.store.JoinRoom(room.ID, "Bob", "")
 	if err != nil {
 		t.Fatalf("JoinRoom: %v", err)
 	}
@@ -66,11 +66,11 @@ func TestDrawCreate_PlayerCanDrawAndItPersists(t *testing.T) {
 
 func TestDrawCreate_RecordsAuthorFromSession(t *testing.T) {
 	ts := newTestServer(t)
-	room, gm, err := ts.store.CreateRoom("Room", "GM", "password")
+	room, gm, err := ts.store.CreateRoom("Room", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
-	player, err := ts.store.JoinRoom(room.ID, "Bob")
+	player, err := ts.store.JoinRoom(room.ID, "Bob", "")
 	if err != nil {
 		t.Fatalf("JoinRoom: %v", err)
 	}
@@ -123,11 +123,11 @@ func TestDrawCreate_RecordsAuthorFromSession(t *testing.T) {
 
 func TestStateSync_DrawingsIncludeAuthor(t *testing.T) {
 	ts := newTestServer(t)
-	room, gm, err := ts.store.CreateRoom("Room", "GM", "password")
+	room, gm, err := ts.store.CreateRoom("Room", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
-	player, err := ts.store.JoinRoom(room.ID, "Bob")
+	player, err := ts.store.JoinRoom(room.ID, "Bob", "")
 	if err != nil {
 		t.Fatalf("JoinRoom: %v", err)
 	}
@@ -259,7 +259,7 @@ func TestDrawCreate_RejectsMalformedAndDuplicateIDs(t *testing.T) {
 // drawing, so exactly that stroke can be taken back off the map.
 func TestDrawCreate_RejectionsNameTheDrawing(t *testing.T) {
 	r := newDrawTestRoom(t)
-	otherRoom, _, err := r.ts.store.CreateRoom("Room B", "GM", "password")
+	otherRoom, _, err := r.ts.store.CreateRoom("Room B", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -339,11 +339,11 @@ func errorDrawingID(t *testing.T, env envelope) string {
 
 func TestDrawCreate_BroadcastsToOtherClients(t *testing.T) {
 	ts := newTestServer(t)
-	room, gm, err := ts.store.CreateRoom("Room", "GM", "password")
+	room, gm, err := ts.store.CreateRoom("Room", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
-	player, err := ts.store.JoinRoom(room.ID, "Bob")
+	player, err := ts.store.JoinRoom(room.ID, "Bob", "")
 	if err != nil {
 		t.Fatalf("JoinRoom: %v", err)
 	}
@@ -372,7 +372,7 @@ func TestDrawCreate_BroadcastsToOtherClients(t *testing.T) {
 
 func TestDrawCreate_RejectsUnknownKind(t *testing.T) {
 	ts := newTestServer(t)
-	room, gm, err := ts.store.CreateRoom("Room", "GM", "password")
+	room, gm, err := ts.store.CreateRoom("Room", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -397,7 +397,7 @@ func TestDrawCreate_RejectsUnknownKind(t *testing.T) {
 
 func TestDrawCreate_RejectsWrongPointCountForFixedShapes(t *testing.T) {
 	ts := newTestServer(t)
-	room, gm, err := ts.store.CreateRoom("Room", "GM", "password")
+	room, gm, err := ts.store.CreateRoom("Room", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -430,11 +430,11 @@ func TestDrawCreate_RejectsWrongPointCountForFixedShapes(t *testing.T) {
 
 func TestDrawCreate_RejectsSceneFromAnotherRoom(t *testing.T) {
 	ts := newTestServer(t)
-	roomA, _, err := ts.store.CreateRoom("Room A", "GM", "password")
+	roomA, _, err := ts.store.CreateRoom("Room A", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
-	roomB, gmB, err := ts.store.CreateRoom("Room B", "GM", "password")
+	roomB, gmB, err := ts.store.CreateRoom("Room B", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -467,7 +467,7 @@ func TestDrawCreate_RejectsSceneFromAnotherRoom(t *testing.T) {
 
 func TestDrawCreate_UsesGivenColorWhenProvided(t *testing.T) {
 	ts := newTestServer(t)
-	room, gm, err := ts.store.CreateRoom("Room", "GM", "password")
+	room, gm, err := ts.store.CreateRoom("Room", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -499,7 +499,7 @@ func TestDrawCreate_UsesGivenColorWhenProvided(t *testing.T) {
 
 func TestStateSync_IncludesDrawings(t *testing.T) {
 	ts := newTestServer(t)
-	room, gm, err := ts.store.CreateRoom("Room", "GM", "password")
+	room, gm, err := ts.store.CreateRoom("Room", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -545,11 +545,11 @@ func newDrawTestRoom(t *testing.T) drawTestRoom {
 	t.Helper()
 
 	ts := newTestServer(t)
-	room, gm, err := ts.store.CreateRoom("Room", "GM", "password")
+	room, gm, err := ts.store.CreateRoom("Room", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
-	player, err := ts.store.JoinRoom(room.ID, "Bob")
+	player, err := ts.store.JoinRoom(room.ID, "Bob", "")
 	if err != nil {
 		t.Fatalf("JoinRoom: %v", err)
 	}
@@ -687,7 +687,7 @@ func TestDrawDelete_RejectsDrawingFromAnotherRoom(t *testing.T) {
 	drawing := r.drawing(t, nil)
 
 	// A GM of a different room can't reach this one's drawings by ID.
-	otherRoom, otherGM, err := r.ts.store.CreateRoom("Room B", "GM", "password")
+	otherRoom, otherGM, err := r.ts.store.CreateRoom("Room B", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -720,11 +720,11 @@ func TestDrawDelete_RejectsUnknownDrawing(t *testing.T) {
 
 func TestPing_BroadcastsWithoutPersisting(t *testing.T) {
 	ts := newTestServer(t)
-	room, gm, err := ts.store.CreateRoom("Room", "GM", "password")
+	room, gm, err := ts.store.CreateRoom("Room", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
-	player, err := ts.store.JoinRoom(room.ID, "Bob")
+	player, err := ts.store.JoinRoom(room.ID, "Bob", "")
 	if err != nil {
 		t.Fatalf("JoinRoom: %v", err)
 	}
@@ -773,11 +773,11 @@ func TestPing_BroadcastsWithoutPersisting(t *testing.T) {
 
 func TestPing_RejectsSceneFromAnotherRoom(t *testing.T) {
 	ts := newTestServer(t)
-	roomA, _, err := ts.store.CreateRoom("Room A", "GM", "password")
+	roomA, _, err := ts.store.CreateRoom("Room A", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
-	roomB, gmB, err := ts.store.CreateRoom("Room B", "GM", "password")
+	roomB, gmB, err := ts.store.CreateRoom("Room B", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -801,11 +801,11 @@ func TestPing_RejectsSceneFromAnotherRoom(t *testing.T) {
 func drawRoom(t *testing.T) (*testServer, *testClient, store.Scene) {
 	t.Helper()
 	ts := newTestServer(t)
-	room, _, err := ts.store.CreateRoom("Room", "GM", "password")
+	room, _, err := ts.store.CreateRoom("Room", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
-	player, err := ts.store.JoinRoom(room.ID, "Bob")
+	player, err := ts.store.JoinRoom(room.ID, "Bob", "")
 	if err != nil {
 		t.Fatalf("JoinRoom: %v", err)
 	}

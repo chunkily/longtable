@@ -26,11 +26,11 @@ func newTokenTestRoom(t *testing.T) tokenTestRoom {
 	t.Helper()
 
 	ts := newTestServer(t)
-	room, gm, err := ts.store.CreateRoom("Room", "GM", "password")
+	room, gm, err := ts.store.CreateRoom("Room", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
-	player, err := ts.store.JoinRoom(room.ID, "Bob")
+	player, err := ts.store.JoinRoom(room.ID, "Bob", "")
 	if err != nil {
 		t.Fatalf("JoinRoom: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestTokenDelete_TokenFromAnotherRoomFailsLikeAMissingOne(t *testing.T) {
 	r := newTokenTestRoom(t)
 	token := r.token(t, "Goblin", store.VisibilityVisible)
 
-	otherRoom, otherGM, err := r.ts.store.CreateRoom("Other", "GM", "password")
+	otherRoom, otherGM, err := r.ts.store.CreateRoom("Other", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}

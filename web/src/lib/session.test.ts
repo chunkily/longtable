@@ -8,6 +8,7 @@ function session(slug: string, overrides: Partial<Session> = {}): Session {
 		roomName: `Room ${slug}`,
 		participantId: `p-${slug}`,
 		displayName: 'Alice',
+		color: 'violet',
 		role: 'player',
 		sessionToken: `t-${slug}`,
 		...overrides

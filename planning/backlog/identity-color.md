@@ -1,7 +1,7 @@
 ---
 title: Room Member identity color
 created: 2026-08-03
-status: open
+status: done
 tags: [identity]
 story: room-member-identity-color
 ---
@@ -49,3 +49,44 @@ Not yet decided, worth settling before picking this up:
 ## Related user stories
 
 - [room-member-identity-color](../user-stories/room-member-identity-color.md)
+
+## What shipped
+
+All four open questions above, answered:
+
+**It ships.** Six colours — violet, indigo, teal, emerald, lime, pink — picked on the same form as
+a name, on every path that makes a seat: creating a room, taking a new chair, a GM setting one out
+in `Manage room`.
+
+**The palette dodges what the canvas already says.** Amber is the erase highlight, sky blue the
+measuring tool, red the fog-hide preview, and a unit test asserts none of the six is one of those.
+All six are mid-tone and saturated rather than pastel or deep, which is the same light-map/dark-map
+constraint [dark-map-stroke-palette](dark-map-stroke-palette.md) is still open about for drawings.
+
+**Colour reaches the name in chat and the colour a ping pulses in** — the two the story named — plus
+a swatch on the seat picker, which is not decoration: "see which colours are taken before choosing"
+can only be answered on the screen that exists before joining.
+
+Decisions worth not rediscovering:
+
+- **A seat stores a palette key, never a colour.** `violet`, not `#8b5cf6`. The value ends up in a
+  `style` attribute on every other client's screen, and a column that takes any string is a CSS
+  injection waiting for somebody to try it — ADR-0007 trusts the table with the room's contents,
+  not with arbitrary text in someone else's stylesheet. `rejectUnknownColor` guards every write.
+  Keys also mean retuning a shade is a client-side edit rather than a migration.
+- **The palette therefore lives twice**, in Go and in TypeScript, and
+  `TestIdentityColors_MatchTheClientPalette` reads the `.ts` file to keep them identical. A key with
+  no hex renders as no colour at all — silently, for one person, on a screen no Go test looks at.
+  Checked by renaming a key and watching it fail.
+- **A ping carries `participantId`, not a colour.** The colour is looked up in the roster every
+  client already has, so there is no second copy to go stale. Same for a chat name.
+- **The suggestion happens when the form opens, not in an effect.** The first version recomputed
+  "first unused colour" whenever the seat list changed, which would quietly overwrite a colour
+  somebody had just picked on the form it was helping with.
+- **Adding `color` to `GET /seats` tripped the guard test that keeps that endpoint thin**, which is
+  exactly what the item warned about. It was widened deliberately, with the reasoning in the test:
+  a colour beside a name a stranger could already read, in exchange for the only moment the choice
+  is any use.
+- The e2e helper matches a swatch loosely, because a colour someone already has is announced as
+  "Pink, taken" — matching exactly finds it for the first taker and then silently stops, costing a
+  full test timeout instead of a clear failure.

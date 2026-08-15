@@ -40,7 +40,7 @@ export interface Table {
 	 * second tab. Tabs share localStorage, so a second tab is the same
 	 * seat and proves nothing about two people.
 	 */
-	join(name?: string): Promise<Member>;
+	join(name?: string, color?: string): Promise<Member>;
 }
 
 interface TableOptions {
@@ -83,10 +83,10 @@ export const test = base.extend<TableOptions & { table: Table }>({
 		await use({
 			slug,
 			gm,
-			async join(name = 'Bob') {
+			async join(name = 'Bob', color?: string) {
 				const member = await device();
 				await member.page.goto(`/r/${slug}`);
-				await joinAsNewPlayer(member.page, name);
+				await joinAsNewPlayer(member.page, name, color);
 				if (scene) await expect(member.page.locator('canvas').first()).toBeVisible();
 				return member;
 			}

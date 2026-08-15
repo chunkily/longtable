@@ -21,11 +21,11 @@ func newChatDeleteTestRoom(t *testing.T) chatDeleteTestRoom {
 	t.Helper()
 
 	ts := newTestServer(t)
-	room, gm, err := ts.store.CreateRoom("Room", "GM", "password")
+	room, gm, err := ts.store.CreateRoom("Room", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
-	player, err := ts.store.JoinRoom(room.ID, "Bob")
+	player, err := ts.store.JoinRoom(room.ID, "Bob", "")
 	if err != nil {
 		t.Fatalf("JoinRoom: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestChatDelete_AuthorSeesStrikethroughContentAfterOwnDelete(t *testing.T) {
 func TestChatDelete_OtherParticipantsSeeOnlyThePlaceholder(t *testing.T) {
 	r := newChatDeleteTestRoom(t)
 
-	eve, err := r.ts.store.JoinRoom(mustRoomIDFromSlug(t, r.ts, r.room), "Eve")
+	eve, err := r.ts.store.JoinRoom(mustRoomIDFromSlug(t, r.ts, r.room), "Eve", "")
 	if err != nil {
 		t.Fatalf("JoinRoom: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestChatDelete_OtherParticipantsSeeOnlyThePlaceholder(t *testing.T) {
 func TestChatDelete_GMDeletingSomeoneElsesMessage_BothSeeContentBystanderDoesNot(t *testing.T) {
 	r := newChatDeleteTestRoom(t)
 
-	eve, err := r.ts.store.JoinRoom(mustRoomIDFromSlug(t, r.ts, r.room), "Eve")
+	eve, err := r.ts.store.JoinRoom(mustRoomIDFromSlug(t, r.ts, r.room), "Eve", "")
 	if err != nil {
 		t.Fatalf("JoinRoom: %v", err)
 	}
@@ -194,7 +194,7 @@ func TestStateSync_ReflectsChatDeleteRedactionPerViewer(t *testing.T) {
 	}
 
 	// A stranger connecting fresh only ever sees the placeholder.
-	eve, err := r.ts.store.JoinRoom(mustRoomIDFromSlug(t, r.ts, r.room), "Eve")
+	eve, err := r.ts.store.JoinRoom(mustRoomIDFromSlug(t, r.ts, r.room), "Eve", "")
 	if err != nil {
 		t.Fatalf("JoinRoom: %v", err)
 	}
@@ -258,7 +258,7 @@ func TestChatDelete_GMDeletesAnyonesMessage(t *testing.T) {
 func TestChatDelete_PlayerCannotDeleteSomeoneElsesMessage(t *testing.T) {
 	r := newChatDeleteTestRoom(t)
 
-	other, err := r.ts.store.JoinRoom(mustRoomIDFromSlug(t, r.ts, r.room), "Eve")
+	other, err := r.ts.store.JoinRoom(mustRoomIDFromSlug(t, r.ts, r.room), "Eve", "")
 	if err != nil {
 		t.Fatalf("JoinRoom: %v", err)
 	}
@@ -283,7 +283,7 @@ func TestChatDelete_PlayerCannotDeleteSomeoneElsesMessage(t *testing.T) {
 func TestChatDelete_RejectsMessageFromAnotherRoom(t *testing.T) {
 	r := newChatDeleteTestRoom(t)
 
-	otherRoom, otherGM, err := r.ts.store.CreateRoom("Room B", "GM", "password")
+	otherRoom, otherGM, err := r.ts.store.CreateRoom("Room B", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}

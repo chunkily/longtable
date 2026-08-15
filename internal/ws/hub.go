@@ -1652,9 +1652,15 @@ func (h *Hub) handlePing(ctx context.Context, c *client, raw json.RawMessage) {
 	}
 
 	h.broadcast(ctx, c.roomID, "ping", map[string]any{
-		"sceneId":         req.SceneID,
-		"x":               req.X,
-		"y":               req.Y,
+		"sceneId": req.SceneID,
+		"x":       req.X,
+		"y":       req.Y,
+		// The id as well as the name, so a recipient can look the pinger's
+		// identity colour up in the roster it already has. The colour
+		// itself deliberately doesn't ride along: it would be a second
+		// copy of something the roster already answers, going stale the
+		// moment a seat's colour changes.
+		"participantId":   c.participant.ID,
 		"participantName": c.participant.DisplayName,
 	})
 }

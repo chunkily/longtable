@@ -412,7 +412,7 @@ func TestInitiative_PlayerMayNotChangeAnything(t *testing.T) {
 func TestInitiative_EntryFromAnotherRoomFailsLikeAMissingOne(t *testing.T) {
 	r := newTokenTestRoom(t)
 
-	other, otherGM, err := r.ts.store.CreateRoom("Other", "GM", "password")
+	other, otherGM, err := r.ts.store.CreateRoom("Other", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}

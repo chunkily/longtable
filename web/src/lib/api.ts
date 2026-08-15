@@ -8,6 +8,8 @@ export interface Session {
 	roomName: string;
 	participantId: string;
 	displayName: string;
+	/** An IDENTITY_COLORS key, or '' for a seat that never chose one. */
+	color: string;
 	role: 'gm' | 'player';
 	sessionToken: string;
 }
@@ -109,10 +111,15 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 	return res.json();
 }
 
-export function createRoom(roomName: string, gmName: string, password: string): Promise<Session> {
+export function createRoom(
+	roomName: string,
+	gmName: string,
+	gmColor: string,
+	password: string
+): Promise<Session> {
 	return apiFetch('/api/rooms', {
 		method: 'POST',
-		body: JSON.stringify({ roomName, gmName, password })
+		body: JSON.stringify({ roomName, gmName, gmColor, password })
 	});
 }
 
@@ -124,6 +131,12 @@ export function createRoom(roomName: string, gmName: string, password: string): 
 export interface Seat {
 	participantId: string;
 	displayName: string;
+	/**
+	 * An IDENTITY_COLORS key, or '' for a seat from before colours. Here
+	 * so the picker can show what is taken *before* anyone joins, which
+	 * is the only moment that is any use.
+	 */
+	color: string;
 	role: 'gm' | 'player';
 	/** Whether anyone has a socket open on this seat right now. */
 	connected: boolean;
@@ -150,7 +163,7 @@ export function listSeats(slug: string): Promise<{ roomName: string; seats: Seat
  */
 export function joinRoom(
 	slug: string,
-	opts: { displayName?: string; sessionToken?: string; participantId?: string }
+	opts: { displayName?: string; color?: string; sessionToken?: string; participantId?: string }
 ): Promise<Session> {
 	return apiFetch(`/api/rooms/${encodeURIComponent(slug)}/join`, {
 		method: 'POST',
@@ -158,11 +171,16 @@ export function joinRoom(
 	});
 }
 
-export function addSeat(slug: string, sessionToken: string, displayName: string): Promise<Seat> {
+export function addSeat(
+	slug: string,
+	sessionToken: string,
+	displayName: string,
+	color: string
+): Promise<Seat> {
 	return apiFetch(`/api/rooms/${encodeURIComponent(slug)}/seats`, {
 		method: 'POST',
 		headers: { Authorization: `Bearer ${sessionToken}` },
-		body: JSON.stringify({ displayName })
+		body: JSON.stringify({ displayName, color })
 	});
 }
 
@@ -194,10 +212,15 @@ export async function endSession(slug: string, sessionToken: string): Promise<vo
 	}
 }
 
-export function gmLogin(slug: string, displayName: string, password: string): Promise<Session> {
+export function gmLogin(
+	slug: string,
+	displayName: string,
+	color: string,
+	password: string
+): Promise<Session> {
 	return apiFetch(`/api/rooms/${encodeURIComponent(slug)}/gm-login`, {
 		method: 'POST',
-		body: JSON.stringify({ displayName, password })
+		body: JSON.stringify({ displayName, color, password })
 	});
 }
 

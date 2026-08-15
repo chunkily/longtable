@@ -4,6 +4,7 @@
 	import Konva from 'konva';
 	import { assetUrl } from '$lib/api';
 	import { DRAWING_STROKE_WIDTH, isFilled, pickDrawing, strokeWidthOf } from '$lib/drawing-hit';
+	import { identityHex } from '$lib/identity-color';
 	import { fillFor } from '$lib/drawing-fill';
 	import {
 		DEFAULT_LINE_WIDTH_FEET,
@@ -132,6 +133,10 @@
 	// participant: they're transient, and at most one per person is on
 	// the map at a time with their name on it.
 	const MEASURE_COLOR = '#0ea5e9';
+	// What a ping is when nobody has an identity colour — every ping's
+	// colour until seats could carry one, and still the fallback for a
+	// seat that predates them.
+	const PING_COLOR = '#f59e0b';
 	// Area templates are filled as well as outlined, faintly enough to
 	// read the map and the tokens through — the point is to see what a
 	// shape covers, not to hide it. A paper cutout you can see through.
@@ -1644,13 +1649,18 @@
 	function startPingPulses(ping: Ping): PingMarker {
 		const rings: Konva.Circle[] = [];
 		const timers: ReturnType<typeof setTimeout>[] = [];
+		// The pinger's own colour, falling back to the amber every ping
+		// used to be. That fallback is not decoration: a seat from before
+		// colours has none, and a ping nobody can see is worse than one
+		// that doesn't say whose it is.
+		const stroke = identityHex(room.colorOf(ping.participantId)) ?? PING_COLOR;
 
 		for (let i = 0; i < PING_PULSES; i++) {
 			const ring = new Konva.Circle({
 				x: ping.x,
 				y: ping.y,
 				radius: 6,
-				stroke: '#f59e0b',
+				stroke,
 				strokeWidth: 3,
 				// Later pulses stay invisible until their turn, rather than
 				// sitting on the map as a static dot in the meantime.

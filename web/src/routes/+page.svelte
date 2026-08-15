@@ -7,6 +7,8 @@
 	import LogInIcon from '@lucide/svelte/icons/log-in';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import { createRoom } from '$lib/api';
+	import { IDENTITY_COLORS } from '$lib/identity-color';
+	import IdentityColorPicker from '$lib/components/identity-color-picker.svelte';
 	import { parseRoomCode } from '$lib/room-code';
 	import { clearSession, listSessions, saveSession, type StoredSession } from '$lib/session';
 	import { Badge } from '$lib/components/ui/badge';
@@ -43,6 +45,9 @@
 
 	let roomName = $state('');
 	let gmName = $state('');
+	// The room's first seat, so its colour is picked on the same form as
+	// its name. Nobody else is here yet, so nothing is taken.
+	let gmColor = $state(IDENTITY_COLORS[0].key);
 	let password = $state('');
 	let creating = $state(false);
 
@@ -72,7 +77,7 @@
 		event.preventDefault();
 		creating = true;
 		try {
-			const session = await createRoom(roomName, gmName, password);
+			const session = await createRoom(roomName, gmName, gmColor, password);
 			saveSession(session);
 			await goto(resolve('/r/[slug]', { slug: session.roomSlug }));
 		} catch (err) {
@@ -245,6 +250,10 @@
 					<div class="flex flex-col gap-2">
 						<Label for="gm-name">Your name</Label>
 						<Input id="gm-name" bind:value={gmName} required />
+					</div>
+					<div class="flex flex-col gap-2">
+						<Label for="gm-color">Your colour</Label>
+						<IdentityColorPicker bind:value={gmColor} />
 					</div>
 					<div class="flex flex-col gap-2">
 						<Label for="gm-password">GM password</Label>

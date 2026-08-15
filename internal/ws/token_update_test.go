@@ -142,7 +142,7 @@ func TestTokenUpdate_RefusesAnOwnerFromAnotherRoom(t *testing.T) {
 	r := newTokenTestRoom(t)
 	token := r.token(t, "Goblin", store.VisibilityVisible)
 
-	_, otherGM, err := r.ts.store.CreateRoom("Elsewhere", "Carol", "pw")
+	_, otherGM, err := r.ts.store.CreateRoom("Elsewhere", "Carol", "", "pw")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -271,7 +271,7 @@ func TestTokenUpdate_TokenFromAnotherRoomFailsLikeAMissingOne(t *testing.T) {
 	r := newTokenTestRoom(t)
 	token := r.token(t, "Goblin", store.VisibilityVisible)
 
-	otherRoom, otherGM, err := r.ts.store.CreateRoom("Other", "GM", "password")
+	otherRoom, otherGM, err := r.ts.store.CreateRoom("Other", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}

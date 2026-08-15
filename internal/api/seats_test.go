@@ -128,7 +128,15 @@ func TestListSeats_AnswersWithoutASessionAndCarriesNoCredential(t *testing.T) {
 	for _, seat := range loose["seats"].([]any) {
 		for key := range seat.(map[string]any) {
 			switch key {
-			case "participantId", "displayName", "role", "connected":
+			// `color` was added on 2026-08-15 as a deliberate decision
+			// rather than a free extension. What a stranger with the link
+			// gains is which colour each chair is, next to a name they
+			// could already read; what it buys is the only moment the
+			// choice is any use, since a picker that can't show what is
+			// taken until after you have joined is a picker that has
+			// already failed. Nothing here is a credential, and that is
+			// the line this list exists to hold.
+			case "participantId", "displayName", "color", "role", "connected":
 			default:
 				t.Errorf("seat carries unexpected field %q — this endpoint is unauthenticated", key)
 			}
@@ -345,5 +353,50 @@ func TestEndSession_SignsOutOneDeviceOnly(t *testing.T) {
 	if code := deleteWithToken(t, srv.URL+"/api/rooms/"+created.RoomSlug+"/session",
 		first.SessionToken); code != http.StatusNoContent {
 		t.Fatalf("second leave: status = %d, want 204", code)
+	}
+}
+
+// The seat picker's whole job, at the API level: a device with no
+// session can see which colours the chairs already carry, which is the
+// only moment "so I can avoid a clash" is any use.
+func TestListSeats_CarriesTheColourEachSeatChose(t *testing.T) {
+	srv, _ := newTestServer(t)
+	created := createTestRoom(t, srv)
+
+	postJSON(t, srv.URL+"/api/rooms/"+created.RoomSlug+"/join", map[string]string{
+		"displayName": "Bob",
+		"color":       "teal",
+	})
+
+	body := getSeats(t, srv, created.RoomSlug)
+	if got := seatNamed(t, body.Seats, "Bob").Color; got != "teal" {
+		t.Errorf("Bob's colour = %q, want teal", got)
+	}
+}
+
+// The colour reaches a style attribute on everyone else's screen, so the
+// set is enforced on the way in rather than trusted. ADR-0007 trusts the
+// table with the room's contents, not with arbitrary values in someone
+// else's stylesheet.
+func TestJoin_RefusesAColourOutsideThePalette(t *testing.T) {
+	srv, _ := newTestServer(t)
+	created := createTestRoom(t, srv)
+
+	resp := postJSON(t, srv.URL+"/api/rooms/"+created.RoomSlug+"/join", map[string]string{
+		"displayName": "Mallory",
+		"color":       "red; background: url(http://example.com)",
+	})
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 for a colour outside the palette", resp.StatusCode)
+	}
+
+	// And nothing was written: a refused colour must not leave a seat
+	// behind with a blank one.
+	body := getSeats(t, srv, created.RoomSlug)
+	for _, seat := range body.Seats {
+		if seat.DisplayName == "Mallory" {
+			t.Fatal("a refused join created a seat anyway")
+		}
 	}
 }

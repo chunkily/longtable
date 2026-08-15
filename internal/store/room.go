@@ -42,8 +42,9 @@ type Room struct {
 const roomColumns = `id, slug, name, gm_password_hash, active_scene_id, owner_only_movement, created_at`
 
 // CreateRoom creates a room and its founding GM participant in one
-// transaction, retrying on the rare slug collision.
-func (s *Store) CreateRoom(name, gmDisplayName, password string) (Room, Participant, error) {
+// transaction, retrying on the rare slug collision. gmColor is the GM's
+// identity colour, chosen on the same form as their name.
+func (s *Store) CreateRoom(name, gmDisplayName, gmColor, password string) (Room, Participant, error) {
 	passwordHash, err := auth.HashPassword(password)
 	if err != nil {
 		return Room{}, Participant{}, fmt.Errorf("hash password: %w", err)
@@ -56,7 +57,7 @@ func (s *Store) CreateRoom(name, gmDisplayName, password string) (Room, Particip
 			return Room{}, Participant{}, fmt.Errorf("generate slug: %w", err)
 		}
 
-		room, participant, err := s.tryCreateRoom(slug, name, passwordHash, gmDisplayName)
+		room, participant, err := s.tryCreateRoom(slug, name, passwordHash, gmDisplayName, gmColor)
 		if err == nil {
 			return room, participant, nil
 		}
@@ -69,7 +70,7 @@ func (s *Store) CreateRoom(name, gmDisplayName, password string) (Room, Particip
 	return Room{}, Participant{}, fmt.Errorf("could not generate a unique room slug after %d attempts", maxAttempts)
 }
 
-func (s *Store) tryCreateRoom(slug, name, passwordHash, gmDisplayName string) (Room, Participant, error) {
+func (s *Store) tryCreateRoom(slug, name, passwordHash, gmDisplayName, gmColor string) (Room, Participant, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return Room{}, Participant{}, err
@@ -90,7 +91,7 @@ func (s *Store) tryCreateRoom(slug, name, passwordHash, gmDisplayName string) (R
 		return Room{}, Participant{}, err
 	}
 
-	participant, err := createParticipant(tx, room.ID, gmDisplayName, RoleGM)
+	participant, err := createParticipant(tx, room.ID, gmDisplayName, gmColor, RoleGM)
 	if err != nil {
 		return Room{}, Participant{}, err
 	}

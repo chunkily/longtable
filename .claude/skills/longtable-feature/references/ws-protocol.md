@@ -394,6 +394,11 @@ Three more things worth knowing before touching it:
   echoes back because the sender has something optimistic to reconcile; here the arriving client's
   `state.sync` already lists it among the connected, so an echo would be a second copy of
   something it acted on a moment ago.
+- **A participant carries an identity colour**, as a palette *key* (`violet`) rather than a colour.
+  The hex lives only on the client (`web/src/lib/identity-color.ts`); the server validates the key
+  against `store.IdentityColors` on the way in, because the value ends up in a `style` attribute on
+  every other client's screen. `ping` carries `participantId` for the same feature — the colour is
+  looked up in the roster rather than copied onto each ping, so it can't go stale.
 - **It carries the whole participant**, so a first-time joiner — who is on nobody else's roster
   yet — can be upserted. `participant.disconnected` carries only an id: they stay on the roster,
   because leaving the table isn't leaving the room.

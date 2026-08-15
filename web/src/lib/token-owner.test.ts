@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { ownerOptions } from './token-owner';
 import type { Participant } from './room.svelte';
 
-const alice: Participant = { id: 'p1', displayName: 'Alice', role: 'gm' };
-const bob: Participant = { id: 'p2', displayName: 'Bob', role: 'player' };
+const alice: Participant = { id: 'p1', displayName: 'Alice', color: '', role: 'gm' };
+const bob: Participant = { id: 'p2', displayName: 'Bob', color: '', role: 'player' };
 // Joined once weeks ago and never came back — the kind of entry that
 // makes the full roster the wrong list to choose from.
-const carol: Participant = { id: 'p3', displayName: 'Carol', role: 'player' };
-const dave: Participant = { id: 'p4', displayName: 'Dave', role: 'player' };
+const carol: Participant = { id: 'p3', displayName: 'Carol', color: '', role: 'player' };
+const dave: Participant = { id: 'p4', displayName: 'Dave', color: '', role: 'player' };
 
 describe('ownerOptions', () => {
 	it('offers the people at the table, not everyone who has ever joined', () => {

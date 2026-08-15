@@ -169,6 +169,8 @@ export interface Ping {
 	sceneId: string;
 	x: number;
 	y: number;
+	/** Who pinged, so the canvas can paint it in their colour. */
+	participantId: string;
 	participantName: string;
 }
 
@@ -199,6 +201,13 @@ export interface Measurement {
 export interface Participant {
 	id: string;
 	displayName: string;
+	/**
+	 * An IDENTITY_COLORS key, or '' for a seat from before colours. Held
+	 * as a key rather than a colour so nothing arbitrary reaches a style
+	 * attribute — `identityHex` in $lib/identity-color is what turns it
+	 * into something paintable.
+	 */
+	color: string;
 	role: 'gm' | 'player';
 }
 
@@ -331,6 +340,7 @@ interface PingPayload {
 	sceneId: string;
 	x: number;
 	y: number;
+	participantId: string;
 	participantName: string;
 }
 
@@ -789,6 +799,21 @@ export class RoomClient {
 		this.pendingErases.set(drawingId, { drawing, index });
 		this.drawings = this.drawings.filter((d) => d.id !== drawingId);
 		return drawing;
+	}
+
+	/**
+	 * The identity colour key for whoever owns participantId, or '' when
+	 * there is nobody to ask about — a system chat line, a seat from
+	 * before colours, or an id the roster hasn't got.
+	 *
+	 * Resolved off the roster rather than carried on each message or
+	 * ping: the roster is already in state.sync and already kept current,
+	 * and a colour copied onto every payload would be a second answer
+	 * going stale the moment a seat changed.
+	 */
+	colorOf(participantId: string | null | undefined): string {
+		if (!participantId) return '';
+		return this.participants.find((p) => p.id === participantId)?.color ?? '';
 	}
 
 	createDrawing(

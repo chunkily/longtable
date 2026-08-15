@@ -198,3 +198,40 @@ func TestSystemMessage_SurvivesTheSeatBeingRemovedMidGrace(t *testing.T) {
 		t.Fatalf("log = %v, want it ending with Bob leaving", lines)
 	}
 }
+
+// A ping carries who sent it, not what colour they are. The colour is
+// looked up in the roster every client already has, so it can't be a
+// second copy going stale — and this is the wire half of that: without
+// the id there is nothing to look anything up by, and every ping stays
+// the one hardcoded amber.
+func TestPing_CarriesTheSenderSoItCanBePaintedInTheirColour(t *testing.T) {
+	r := newTokenTestRoom(t)
+
+	gmClient := r.ts.connect(t, r.room.Slug, r.gm.SessionToken)
+	gmClient.readEnvelope(t) // state.sync
+
+	playerClient := r.ts.connect(t, r.room.Slug, r.player.SessionToken)
+	playerClient.readEnvelope(t) // state.sync
+	playerClient.send(t, "ping", map[string]any{"sceneId": r.scene.ID, "x": 10, "y": 20})
+
+	for {
+		env := gmClient.readEnvelope(t)
+		if env.Type != "ping" {
+			continue
+		}
+		var payload struct {
+			ParticipantID   string `json:"participantId"`
+			ParticipantName string `json:"participantName"`
+		}
+		if err := json.Unmarshal(env.Payload, &payload); err != nil {
+			t.Fatalf("unmarshal ping payload: %v", err)
+		}
+		if payload.ParticipantID != r.player.ID {
+			t.Fatalf("participantId = %q, want the pinger's %q", payload.ParticipantID, r.player.ID)
+		}
+		if payload.ParticipantName != "Bob" {
+			t.Fatalf("participantName = %q, want Bob", payload.ParticipantName)
+		}
+		return
+	}
+}

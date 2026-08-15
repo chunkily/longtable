@@ -140,6 +140,7 @@ func participantPayload(p store.Participant) map[string]any {
 	return map[string]any{
 		"id":          p.ID,
 		"displayName": p.DisplayName,
+		"color":       p.Color,
 		"role":        string(p.Role),
 	}
 }

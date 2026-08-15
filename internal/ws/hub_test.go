@@ -292,7 +292,7 @@ func TestServeHTTP_RejectsUnknownRoom(t *testing.T) {
 
 func TestServeHTTP_RejectsInvalidToken(t *testing.T) {
 	ts := newTestServer(t)
-	room, _, err := ts.store.CreateRoom("Room", "GM", "password")
+	room, _, err := ts.store.CreateRoom("Room", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -309,7 +309,7 @@ func TestServeHTTP_RejectsInvalidToken(t *testing.T) {
 
 func TestStateSync_IncludesActiveSceneAndMessages(t *testing.T) {
 	ts := newTestServer(t)
-	room, gm, err := ts.store.CreateRoom("Room", "GM", "password")
+	room, gm, err := ts.store.CreateRoom("Room", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -360,11 +360,11 @@ func TestStateSync_IncludesActiveSceneAndMessages(t *testing.T) {
 
 func TestTokenCreate_HiddenTokenOnlyBroadcastToGM(t *testing.T) {
 	ts := newTestServer(t)
-	room, gm, err := ts.store.CreateRoom("Room", "GM", "password")
+	room, gm, err := ts.store.CreateRoom("Room", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
-	player, err := ts.store.JoinRoom(room.ID, "Bob")
+	player, err := ts.store.JoinRoom(room.ID, "Bob", "")
 	if err != nil {
 		t.Fatalf("JoinRoom: %v", err)
 	}
@@ -392,11 +392,11 @@ func TestTokenCreate_HiddenTokenOnlyBroadcastToGM(t *testing.T) {
 
 func TestSceneActivated_FiltersHiddenTokensForPlayers(t *testing.T) {
 	ts := newTestServer(t)
-	room, gm, err := ts.store.CreateRoom("Room", "GM", "password")
+	room, gm, err := ts.store.CreateRoom("Room", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
-	player, err := ts.store.JoinRoom(room.ID, "Bob")
+	player, err := ts.store.JoinRoom(room.ID, "Bob", "")
 	if err != nil {
 		t.Fatalf("JoinRoom: %v", err)
 	}
@@ -431,11 +431,11 @@ func TestSceneActivated_FiltersHiddenTokensForPlayers(t *testing.T) {
 
 func TestTokenMove_RejectsTokenFromAnotherRoom(t *testing.T) {
 	ts := newTestServer(t)
-	roomA, _, err := ts.store.CreateRoom("Room A", "GM", "password")
+	roomA, _, err := ts.store.CreateRoom("Room A", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
-	roomB, gmB, err := ts.store.CreateRoom("Room B", "GM", "password")
+	roomB, gmB, err := ts.store.CreateRoom("Room B", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -468,7 +468,7 @@ func TestTokenMove_RejectsTokenFromAnotherRoom(t *testing.T) {
 
 func TestChatSend_SlashRollPersistsRollMessage(t *testing.T) {
 	ts := newTestServer(t)
-	room, gm, err := ts.store.CreateRoom("Room", "GM", "password")
+	room, gm, err := ts.store.CreateRoom("Room", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -503,7 +503,7 @@ func TestChatSend_SlashRollPersistsRollMessage(t *testing.T) {
 
 func TestChatSend_UnknownSlashCommandNotPersisted(t *testing.T) {
 	ts := newTestServer(t)
-	room, gm, err := ts.store.CreateRoom("Room", "GM", "password")
+	room, gm, err := ts.store.CreateRoom("Room", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -530,7 +530,7 @@ func TestChatSend_UnknownSlashCommandNotPersisted(t *testing.T) {
 
 func TestHandleMessage_UnknownEnvelopeTypeReturnsError(t *testing.T) {
 	ts := newTestServer(t)
-	room, gm, err := ts.store.CreateRoom("Room", "GM", "password")
+	room, gm, err := ts.store.CreateRoom("Room", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}

@@ -66,11 +66,11 @@ func TestCreateAsset_DuplicateHashRejected(t *testing.T) {
 func TestRoomLibrary_ScopedPerRoomOverOneSharedAsset(t *testing.T) {
 	s := newTestStore(t)
 
-	roomA, _, err := s.CreateRoom("Room A", "GM", "pw")
+	roomA, _, err := s.CreateRoom("Room A", "GM", "", "pw")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
-	roomB, _, err := s.CreateRoom("Room B", "GM", "pw")
+	roomB, _, err := s.CreateRoom("Room B", "GM", "", "pw")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -152,7 +152,7 @@ func TestRoomLibrary_ScopedPerRoomOverOneSharedAsset(t *testing.T) {
 func TestAddAssetToRoom_IsIdempotent(t *testing.T) {
 	s := newTestStore(t)
 
-	room, _, err := s.CreateRoom("Room", "GM", "pw")
+	room, _, err := s.CreateRoom("Room", "GM", "", "pw")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -183,7 +183,7 @@ func TestAddAssetToRoom_IsIdempotent(t *testing.T) {
 func TestAddAssetToRoom_KeepsExistingAttributionWhenNoneGiven(t *testing.T) {
 	s := newTestStore(t)
 
-	room, _, err := s.CreateRoom("Room", "GM", "pw")
+	room, _, err := s.CreateRoom("Room", "GM", "", "pw")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -223,7 +223,7 @@ func TestAddAssetToRoom_KeepsExistingAttributionWhenNoneGiven(t *testing.T) {
 func TestListRoomAssets_NewestFirst(t *testing.T) {
 	s := newTestStore(t)
 
-	room, _, err := s.CreateRoom("Room", "GM", "pw")
+	room, _, err := s.CreateRoom("Room", "GM", "", "pw")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}

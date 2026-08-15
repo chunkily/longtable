@@ -26,11 +26,11 @@ func newMeasureTestRoom(t *testing.T) *measureTestRoom {
 	t.Helper()
 
 	ts := newTestServer(t)
-	room, gm, err := ts.store.CreateRoom("Room", "GM", "password")
+	room, gm, err := ts.store.CreateRoom("Room", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
-	player, err := ts.store.JoinRoom(room.ID, "Bob")
+	player, err := ts.store.JoinRoom(room.ID, "Bob", "")
 	if err != nil {
 		t.Fatalf("JoinRoom: %v", err)
 	}
@@ -227,11 +227,11 @@ func TestMeasure_DisconnectEndsTheMeasurement(t *testing.T) {
 
 func TestMeasureUpdate_RejectsSceneFromAnotherRoom(t *testing.T) {
 	ts := newTestServer(t)
-	roomA, _, err := ts.store.CreateRoom("Room A", "GM", "password")
+	roomA, _, err := ts.store.CreateRoom("Room A", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
-	roomB, gmB, err := ts.store.CreateRoom("Room B", "GM", "password")
+	roomB, gmB, err := ts.store.CreateRoom("Room B", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}

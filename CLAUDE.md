@@ -32,6 +32,7 @@ architecture and current state live here instead**, and keeping them true is par
 | `web/src/lib/tool-family.ts` | the `Tool` union, and the rules grouping it into the toolbar's five families |
 | `web/src/lib/components/map-toolbar.svelte`, `tool-strip.svelte` | the floating tool row, and the active family's contextual strip |
 | `web/src/lib/components/room-menu.svelte` | the menu behind the side panel's third icon: Scenes, Assets, Manage room, Leave room |
+| `web/src/lib/identity-color.ts` | the six colours a seat can be, and the only place their hex lives. A seat stores the *key*; `store.IdentityColors` in Go is the same list and validates it, since the value reaches a `style` attribute. `TestIdentityColors_MatchTheClientPalette` fails if the two drift |
 | `web/src/lib/components/ui/popover/` | the bits-ui popover, wrapped the way `ui/dialog` is. Every popup in the room is on it — the room menu and the draw strip's stroke width — and anything new that pops up over the map should be too, for the focus handling rather than the placement |
 | `web/src/lib/host-notice.svelte.ts`, `components/host-notice.svelte` | the Host's `-banner` message: fetched once, dismissable, and the height everything else moves down by |
 | `web/src/lib/components/theme-toggle.svelte` | System/Light/Dark as three icon buttons, in two shapes: a labelled row for the room menu and a floating pill for the home page's corner. The scheme itself is `mode-watcher`, wired up in `+layout.svelte`, plus the boot script in `app.html` that beats the flash of light |
@@ -147,6 +148,12 @@ landed**, with the full date on hover and the date above the first entry of each
 message kind the hub writes itself, holding the event (`joined`/`left`) rather than a sentence, so
 the wording stays a `longtable-copy` decision. Those lines are the room talking — no bold name, no
 delete button — and they persist, so a refresh and a late arrival read the same history.
+**Everyone at the table has a colour**, picked from six presets on the same form as their name —
+on the seat picker before joining, where the swatch beside each chair says which colours the room
+is already wearing (taken ones are marked, never blocked: two people may match, and the room
+doesn't argue). It belongs to the *seat*, so it survives a cleared browser and comes back when that
+seat is taken on another device, and it shows up in two places that answer "who": the name in chat,
+and the colour a ping pulses in. A seat from before colours has none and renders exactly as it did.
 And a live list of who's connected
 (distinct from the room's roster of everyone who has ever joined, which `state.sync` also
 carries).

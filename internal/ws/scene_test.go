@@ -26,11 +26,11 @@ func newSceneTestRoom(t *testing.T) *sceneTestRoom {
 	t.Helper()
 
 	ts := newTestServer(t)
-	room, gm, err := ts.store.CreateRoom("Room", "GM", "password")
+	room, gm, err := ts.store.CreateRoom("Room", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
-	player, err := ts.store.JoinRoom(room.ID, "Bob")
+	player, err := ts.store.JoinRoom(room.ID, "Bob", "")
 	if err != nil {
 		t.Fatalf("JoinRoom: %v", err)
 	}
@@ -186,7 +186,7 @@ func TestStateSync_CarriesEverySceneInTheRoom(t *testing.T) {
 	s.createScene(t, "Dungeon")
 
 	// A fresh connection is what the picker actually renders from.
-	joiner, err := s.ts.store.JoinRoom(s.room.ID, "Carol")
+	joiner, err := s.ts.store.JoinRoom(s.room.ID, "Carol", "")
 	if err != nil {
 		t.Fatalf("JoinRoom: %v", err)
 	}
@@ -271,7 +271,7 @@ func TestSceneDelete_SceneFromAnotherRoomFailsLikeAMissingOne(t *testing.T) {
 	s := newSceneTestRoom(t)
 	s.createScene(t, "Tavern")
 
-	otherRoom, _, err := s.ts.store.CreateRoom("Other", "GM", "password")
+	otherRoom, _, err := s.ts.store.CreateRoom("Other", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -354,7 +354,7 @@ func TestSceneSetMap_RejectsAssetFromAnotherRoom(t *testing.T) {
 	s := newSceneTestRoom(t)
 	sceneID := s.createScene(t, "Tavern")
 
-	otherRoom, _, err := s.ts.store.CreateRoom("Other", "GM", "password")
+	otherRoom, _, err := s.ts.store.CreateRoom("Other", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}

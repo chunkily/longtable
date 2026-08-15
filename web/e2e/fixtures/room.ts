@@ -81,10 +81,19 @@ export async function takeSeat(page: Page, seatName: string) {
 }
 
 /** Joins as someone the room has never seen: Player → I'm new here. */
-export async function joinAsNewPlayer(page: Page, name: string) {
+export async function joinAsNewPlayer(page: Page, name: string, color?: string) {
 	await openSeatPicker(page);
 	await page.getByRole('button', { name: "I'm new here" }).click();
 	await page.getByLabel('Your name').fill(name);
+	// Left alone unless a test cares: the form already suggests a colour
+	// nobody at the table is using, so every arrival gets one either way.
+	//
+	// Matched loosely on purpose. A colour somebody already has is
+	// announced as "Pink, taken", so `exact` finds the swatch for the
+	// first person to pick it and then silently stops finding it — which
+	// costs a full test timeout rather than a clear failure. No palette
+	// name is a substring of another, so loose is unambiguous here.
+	if (color) await page.getByRole('radio', { name: color }).click();
 	await page.getByRole('button', { name: 'Join', exact: true }).click();
 	await expect(page.getByRole('button', { name: 'Join', exact: true })).toBeHidden();
 }

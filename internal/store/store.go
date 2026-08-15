@@ -68,6 +68,7 @@ func New(db *sql.DB) (*Store, error) {
 var addedColumns = []struct{ table, column, definition string }{
 	{"drawing", "filled", "INTEGER NOT NULL DEFAULT 0"},
 	{"drawing", "stroke_width", "REAL NOT NULL DEFAULT 3"},
+	{"participant", "color", "TEXT NOT NULL DEFAULT ''"},
 }
 
 func (s *Store) addMissingColumns() error {
@@ -148,6 +149,11 @@ func (s *Store) createTables() error {
 			id             TEXT PRIMARY KEY,
 			room_id        TEXT NOT NULL REFERENCES room(id) ON DELETE CASCADE,
 			display_name   TEXT NOT NULL,
+			-- One of store.IdentityColors, or empty for a seat made before
+			-- colours existed. A key like 'violet' rather than a colour: what
+			-- goes in here ends up in a style attribute on everyone else's
+			-- screen. ValidIdentityColor is the authority.
+			color          TEXT NOT NULL DEFAULT '',
 			-- 'gm' or 'player' today. No CHECK — see the note above
 			-- createTables; the set is enforced in Go, where it can change.
 			-- Nothing writes this from a payload: createSeat takes a

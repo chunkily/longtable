@@ -19,6 +19,8 @@
 	import { RoomClient, type Token } from '$lib/room.svelte';
 	import { DRAWING_STROKE_WIDTH } from '$lib/drawing-hit';
 	import { dayLabel, fullTimestamp, sameDay, timeOfDay } from '$lib/chat-time';
+	import { IDENTITY_COLORS, identityHex, suggestedColor } from '$lib/identity-color';
+	import IdentityColorPicker from '$lib/components/identity-color-picker.svelte';
 	import { DEFAULT_LINE_WIDTH_FEET, type SnapMode } from '$lib/aoe';
 	import { familyHasStrip, familyOf, type Tool } from '$lib/tool-family';
 	import { Button } from '$lib/components/ui/button';
@@ -84,6 +86,27 @@
 	// failure that merely might mean that. See the catch in onMount.
 	let roomMissing = $state(false);
 	const playerSeats = $derived(seats.filter((s) => s.role !== 'gm'));
+
+	// The colour this arrival is taking. Set by startSeatForm below, which
+	// suggests one the room isn't already wearing — a suggestion, not a
+	// rule: taking a colour someone else has is allowed, and the swatches
+	// say which those are so a clash is a choice rather than an accident.
+	let chosenColor = $state(IDENTITY_COLORS[0].key);
+
+	/**
+	 * Opens a form that makes a seat, with a colour nobody at the table is
+	 * using already suggested.
+	 *
+	 * Suggested here rather than in an effect on the seat list, which is
+	 * the version this replaced: an effect re-runs whenever the seats
+	 * reload, and would quietly overwrite a colour somebody had just
+	 * chosen on the very form it was meant to be helping with. Nothing
+	 * touches the choice once the form is open.
+	 */
+	function startSeatForm(next: 'gm' | 'name') {
+		chosenColor = suggestedColor(seats.map((seat) => seat.color));
+		step = next;
+	}
 
 	let chatText = $state('');
 	// Which message has been tapped to show its delete button. Touch has
@@ -235,8 +258,8 @@
 		try {
 			const s =
 				step === 'gm'
-					? await gmLogin(slug, displayName, password)
-					: await joinRoom(slug, { displayName });
+					? await gmLogin(slug, displayName, chosenColor, password)
+					: await joinRoom(slug, { displayName, color: chosenColor });
 			saveSession(s);
 			startSession(s);
 		} catch (err) {
@@ -390,7 +413,12 @@
 							<!-- The GM seat is the one exception to open-claim: it's a
 						     role boundary, so it goes through the room password
 						     rather than being a chair anyone can sit in. -->
-							<Button type="button" variant="outline" class="flex-1" onclick={() => (step = 'gm')}>
+							<Button
+								type="button"
+								variant="outline"
+								class="flex-1"
+								onclick={() => startSeatForm('gm')}
+							>
 								I'm the GM
 							</Button>
 						</div>
@@ -424,7 +452,20 @@
 										disabled={joining}
 										onclick={() => handleClaimSeat(seat)}
 									>
-										<span class="truncate">{seat.displayName}</span>
+										<span class="flex min-w-0 items-center gap-2">
+											<!-- The seat's colour, which is the "see what everyone
+										     else picked" half of this: it has to be readable
+										     *before* joining, and the picker is the only
+										     screen that exists then. A seat from before
+										     colours shows nothing rather than a guess. -->
+											{#if identityHex(seat.color)}
+												<span
+													class="h-3 w-3 shrink-0 rounded-full"
+													style="background-color: {identityHex(seat.color)}"
+												></span>
+											{/if}
+											<span class="truncate">{seat.displayName}</span>
+										</span>
 										{#if seat.connected}
 											<!-- Someone is on it right now. Still claimable — two
 										     devices on one seat is one person, which is the
@@ -448,7 +489,7 @@
 									variant="outline"
 									class="justify-start border-dashed"
 									disabled={joining}
-									onclick={() => (step = 'name')}
+									onclick={() => startSeatForm('name')}
 								>
 									I'm new here
 								</Button>
@@ -460,6 +501,13 @@
 							<div class="flex flex-col gap-2">
 								<Label for="display-name">Your name</Label>
 								<Input id="display-name" bind:value={displayName} required />
+							</div>
+							<div class="flex flex-col gap-2">
+								<Label>Your colour</Label>
+								<IdentityColorPicker
+									bind:value={chosenColor}
+									taken={seats.map((seat) => seat.color)}
+								/>
 							</div>
 							{#if step === 'gm'}
 								<div class="flex flex-col gap-2">
@@ -570,7 +618,20 @@
 									<span class="text-muted-foreground italic">This message has been deleted.</span>
 								{:else}
 									<span class={msg.deleted ? 'line-through opacity-60' : undefined}>
-										<strong>{msg.participantName}:</strong>
+										<!-- The name in the sender's own colour, which is half
+									     of what the colour is for. Only the name: colouring
+									     the message text too would make a wall of chat
+									     harder to read, not easier, and the question being
+									     answered is "who said this" rather than "what does
+									     this say". A seat with no colour keeps the plain
+									     bold it always had. -->
+										{#if identityHex(room.colorOf(msg.participantId))}
+											<strong style="color: {identityHex(room.colorOf(msg.participantId))}"
+												>{msg.participantName}:</strong
+											>
+										{:else}
+											<strong>{msg.participantName}:</strong>
+										{/if}
 										{#if msg.kind === 'roll'}
 											{msg.body} → <strong>{msg.rollResult}</strong>
 											<span class="text-xs text-muted-foreground">({msg.rollBreakdown})</span>

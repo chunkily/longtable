@@ -10,7 +10,7 @@ import (
 func TestCreateRoom(t *testing.T) {
 	s := newTestStore(t)
 
-	room, gm, err := s.CreateRoom("Curse of Strahd", "Alice", "hunter2")
+	room, gm, err := s.CreateRoom("Curse of Strahd", "Alice", "", "hunter2")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -38,7 +38,7 @@ func TestCreateRoom_UniqueSlugs(t *testing.T) {
 
 	seen := map[string]bool{}
 	for i := 0; i < 10; i++ {
-		room, _, err := s.CreateRoom("Room", "GM", "password")
+		room, _, err := s.CreateRoom("Room", "GM", "", "password")
 		if err != nil {
 			t.Fatalf("CreateRoom: %v", err)
 		}
@@ -60,10 +60,10 @@ func TestGetRoomBySlug_NotFound(t *testing.T) {
 func TestListRooms(t *testing.T) {
 	s := newTestStore(t)
 
-	if _, _, err := s.CreateRoom("Room A", "GM", "password"); err != nil {
+	if _, _, err := s.CreateRoom("Room A", "GM", "", "password"); err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
-	if _, _, err := s.CreateRoom("Room B", "GM", "password"); err != nil {
+	if _, _, err := s.CreateRoom("Room B", "GM", "", "password"); err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
 
@@ -79,7 +79,7 @@ func TestListRooms(t *testing.T) {
 func TestSetActiveScene(t *testing.T) {
 	s := newTestStore(t)
 
-	room, _, err := s.CreateRoom("Room", "GM", "password")
+	room, _, err := s.CreateRoom("Room", "GM", "", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestSetActiveScene(t *testing.T) {
 func TestSetGMPassword(t *testing.T) {
 	s := newTestStore(t)
 
-	room, _, err := s.CreateRoom("Room", "GM", "oldpassword")
+	room, _, err := s.CreateRoom("Room", "GM", "", "oldpassword")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
