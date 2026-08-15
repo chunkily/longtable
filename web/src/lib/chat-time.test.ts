@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fullTimestamp, timeOfDay } from './chat-time';
+import { dayLabel, fullTimestamp, sameDay, timeOfDay } from './chat-time';
 
 // Built from local components and read back as an ISO string, so these
 // assert the round trip rather than the machine's timezone: the server
@@ -48,5 +48,63 @@ describe('fullTimestamp', () => {
 
 	it('says nothing about a timestamp it cannot read', () => {
 		expect(fullTimestamp('nonsense')).toBe('');
+	});
+});
+
+describe('sameDay', () => {
+	it('groups two entries from the same day', () => {
+		expect(sameDay(isoAt(9, 15), isoAt(23, 58))).toBe(true);
+	});
+
+	// The pair the log is really about: last thing said last night, first
+	// thing said this morning. Nothing about the clock times says they are
+	// different days, which is the whole reason a date goes between them.
+	it('separates entries either side of midnight', () => {
+		const lastNight = new Date(2026, 7, 15, 23, 58).toISOString();
+		const thisMorning = new Date(2026, 7, 16, 9, 12).toISOString();
+		expect(sameDay(lastNight, thisMorning)).toBe(false);
+	});
+
+	it('separates the same date a year apart', () => {
+		const then = new Date(2025, 7, 15, 12, 0).toISOString();
+		expect(sameDay(then, isoAt(12, 0))).toBe(false);
+	});
+
+	// Never the same day as anything, so a broken entry can't swallow the
+	// heading of the day it landed in.
+	it('treats an unreadable timestamp as its own day', () => {
+		expect(sameDay('nonsense', isoAt(12, 0))).toBe(false);
+		expect(sameDay('nonsense', 'nonsense')).toBe(false);
+	});
+});
+
+describe('dayLabel', () => {
+	const now = new Date(2026, 7, 15, 18, 0);
+
+	it('says Today rather than making the reader work out the date', () => {
+		expect(dayLabel(isoAt(9, 15), now)).toBe('Today');
+	});
+
+	it('says Yesterday for the day before', () => {
+		const yesterday = new Date(2026, 7, 14, 21, 30).toISOString();
+		expect(dayLabel(yesterday, now)).toBe('Yesterday');
+	});
+
+	// Crossing a month boundary backwards, where "the day before" is not
+	// "one less than the date".
+	it('says Yesterday on the first of the month too', () => {
+		const endOfLastMonth = new Date(2026, 6, 31, 20, 0).toISOString();
+		expect(dayLabel(endOfLastMonth, new Date(2026, 7, 1, 10, 0))).toBe('Yesterday');
+	});
+
+	it('gives the date for anything older', () => {
+		const label = dayLabel(new Date(2026, 7, 9, 20, 0).toISOString(), now);
+		expect(label).not.toBe('Today');
+		expect(label).not.toBe('Yesterday');
+		expect(label).toContain('2026');
+	});
+
+	it('says nothing about a timestamp it cannot read', () => {
+		expect(dayLabel('nonsense', now)).toBe('');
 	});
 });

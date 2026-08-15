@@ -36,6 +36,54 @@ export function fullTimestamp(createdAt: string): string {
 }
 
 /**
+ * Whether two entries belong to the same day, which is what decides
+ * where a date goes in the log.
+ *
+ * Compared on the reader's own calendar rather than on the ISO strings:
+ * two messages either side of midnight UTC are the same evening in
+ * Sydney, and the log is read by whoever is looking at it. An unreadable
+ * timestamp is never the same day as anything, so a broken entry can't
+ * swallow the heading of the day it landed in.
+ */
+export function sameDay(a: string, b: string): boolean {
+	const first = parse(a);
+	const second = parse(b);
+	if (!first || !second) return false;
+	return (
+		first.getFullYear() === second.getFullYear() &&
+		first.getMonth() === second.getMonth() &&
+		first.getDate() === second.getDate()
+	);
+}
+
+/**
+ * The heading above the first entry of a day: `Today`, `Yesterday`, or
+ * the date itself.
+ *
+ * `now` is a parameter so this is testable without pretending to control
+ * the clock — the panel passes nothing and gets the real one.
+ */
+export function dayLabel(createdAt: string, now: Date = new Date()): string {
+	const at = parse(createdAt);
+	if (!at) return '';
+
+	const yesterday = new Date(now);
+	yesterday.setDate(yesterday.getDate() - 1);
+
+	if (sameDayAs(at, now)) return 'Today';
+	if (sameDayAs(at, yesterday)) return 'Yesterday';
+	return at.toLocaleDateString(undefined, { dateStyle: 'long' });
+}
+
+function sameDayAs(a: Date, b: Date): boolean {
+	return (
+		a.getFullYear() === b.getFullYear() &&
+		a.getMonth() === b.getMonth() &&
+		a.getDate() === b.getDate()
+	);
+}
+
+/**
  * A message with no usable timestamp renders no timestamp, rather than
  * `Invalid Date` or `NaN:NaN`.
  *

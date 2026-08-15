@@ -138,8 +138,12 @@ map mid-fight keeps the encounter,
 chat with `/roll` and a two-stage delete (a GM may delete or purge any message, everyone else
 only their own — the first delete leaves the room seeing "this message has been deleted", while
 the author and whoever just deleted it still see the original text struck through; a second
-delete on that same message purges it outright for everyone). **Every entry carries the time it
-landed**, with the full date on hover, and the log also records **who came and went**: a `system`
+delete on that same message purges it outright for everyone — that bin is invisible and
+click-through until the message is hovered, focused or tapped, since a transparent button that
+still takes clicks lets a first tap on a phone delete something never seen). **Every entry carries
+the time it
+landed**, with the full date on hover and the date above the first entry of each day (`Today`,
+`Yesterday`, else the date), and the log also records **who came and went**: a `system`
 message kind the hub writes itself, holding the event (`joined`/`left`) rather than a sentence, so
 the wording stays a `longtable-copy` decision. Those lines are the room talking — no bold name, no
 delete button — and they persist, so a refresh and a late arrival read the same history.

@@ -36,7 +36,7 @@ change without a migration or a log full of two different phrasings.
 
 ## What shipped
 
-Timestamps beside every entry (`14:32`, full date and seconds in the `title`), and durable
+Timestamps on every entry (`14:32`, full date and seconds in the `title`), and durable
 `joined`/`left` lines rendered as the room talking — centred, muted, no bold name, no delete
 button. `web/src/lib/chat-time.ts` holds the formatting with unit tests; the panel is
 `+page.svelte`'s `chatPanel` snippet.
@@ -61,3 +61,15 @@ Decisions worth not rediscovering:
   that now include the room's own lines.
 - The arrival's own line reaches them: their `state.sync` was built before it existed, so without
   the echo they'd see everyone else's arrivals and never their own.
+
+**Correction, later the same day.** The timestamp shipped at the _end_ of each row and has moved to
+a fixed gutter at the start of it. The right-hand edge belongs to the delete button, which is only
+rendered for a message the reader may delete — so the time sat in one place on your own messages
+and another on everyone else's, and the eye had to find it twice. A message you may not delete carries a spacer where the button
+would be, so the text column is one width down the whole log.
+
+The room's own lines lead with their time as well, but stay **centred as a pair** rather than
+joining that gutter. Both were tried: a shared column lines every time up, and it costs these lines
+the thing that makes them skippable, which is sitting at a different x from everything else. The GM
+chose centring, twice. `chat-log.spec.ts` measures the message column against itself and only
+checks the ordering on a system line.
