@@ -231,3 +231,28 @@ test('leaving a room leaves the seat behind to come back to', async ({ browser }
 	await gm.context.close();
 	await bob.context.close();
 });
+
+// Leave room arms before it fires, so a menu that reopens still armed
+// would take a session on the next stray tap. That reset used to hang
+// off the menu's own close(); it hangs off the popover's open state now,
+// which Escape and a click outside both go through.
+test('a half-confirmed Leave room is disarmed by the time the menu comes back', async ({
+	browser
+}) => {
+	const gm = await openRoomAsGM(browser, 'Seat Disarm');
+
+	await openRoomMenu(gm.page);
+	await gm.page.getByRole('button', { name: 'Leave room' }).click();
+	await expect(gm.page.getByRole('button', { name: 'Confirm leaving the room' })).toBeVisible();
+
+	await gm.page.keyboard.press('Escape');
+	await expect(gm.page.getByRole('button', { name: 'Leave room' })).toBeHidden();
+	// Closing hands focus back to the button the menu was opened from,
+	// which is the whole reason this menu is on the popover primitive.
+	await expect(gm.page.getByRole('button', { name: 'Menu', exact: true })).toBeFocused();
+
+	await openRoomMenu(gm.page);
+	await expect(gm.page.getByRole('button', { name: 'Confirm leaving the room' })).toHaveCount(0);
+
+	await gm.context.close();
+});

@@ -222,6 +222,12 @@ Two things that quietly make a pixel assertion measure nothing:
   re-hide, and an exact zero after a reveal-all.
 - **The freehand tool always has ink on the preview layer**, because it paints a cursor ring
   sized to the stroke width that tracks the pointer whether or not a stroke is in progress.
+- **`toBeVisible()` says nothing about opacity**, so a popup whose enter animation never finishes
+  passes every locator assertion in the suite while being invisible to a person. Worth knowing
+  before reading a hand-inspection of one: a page in a browser pane that isn't being displayed
+  doesn't composite, so its CSS animations sit frozen at time 0 and every measurement taken there
+  is of the *first frame*. Both popovers measured 0.95 scale and opacity 0 that way and are fine
+  under Playwright, which composites.
 
 Both of those produced passing tests that asserted nothing. Pair a "this must not happen"
 assertion with a positive control on the *same* probe — the gesture that *should* work, checked

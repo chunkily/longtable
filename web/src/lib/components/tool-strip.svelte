@@ -13,7 +13,9 @@
 	import type { RoomClient } from '$lib/room.svelte';
 	import { LINE_WIDTH_CHOICES_FEET, type SnapMode } from '$lib/aoe';
 	import { MAX_FOG_OPACITY, MIN_FOG_OPACITY } from '$lib/fog-opacity';
+	import { DRAWING_STROKE_WIDTH } from '$lib/drawing-hit';
 	import { familyOf, type Tool } from '$lib/tool-family';
+	import StrokeWidthPicker from '$lib/components/stroke-width-picker.svelte';
 	import Pen from '@lucide/svelte/icons/pen';
 	import Slash from '@lucide/svelte/icons/slash';
 	import RectangleHorizontal from '@lucide/svelte/icons/rectangle-horizontal';
@@ -33,6 +35,7 @@
 		sceneId,
 		activeTool = $bindable('none'),
 		strokeColor = $bindable('#000000'),
+		strokeWidth = $bindable(DRAWING_STROKE_WIDTH),
 		shapeFilled = $bindable(false),
 		snapMode = $bindable('intersections'),
 		lineWidthFeet = $bindable(),
@@ -43,6 +46,7 @@
 		sceneId: string;
 		activeTool?: Tool;
 		strokeColor?: string;
+		strokeWidth?: number;
 		shapeFilled?: boolean;
 		snapMode?: SnapMode;
 		lineWidthFeet?: number;
@@ -146,6 +150,15 @@
 		>
 			<Eraser class="h-4 w-4" />
 		</Button>
+		<!-- Every shape has a width, so this only drops out for the eraser,
+		     which takes whole strokes rather than making one. One button
+		     that opens the three, rather than the three themselves — see
+		     stroke-width-picker.svelte for why it costs a click. -->
+		{#if activeTool !== 'eraser'}
+			<div class="flex items-center gap-1 border-l pl-2">
+				<StrokeWidthPicker bind:strokeWidth />
+			</div>
+		{/if}
 		<!-- Only the two kinds that enclose an area, so it appears when one
 		     is chosen rather than sitting inert beside the pen — the same
 		     way the measure strip only offers a line's width once the line

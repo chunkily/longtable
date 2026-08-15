@@ -32,6 +32,7 @@ architecture and current state live here instead**, and keeping them true is par
 | `web/src/lib/tool-family.ts` | the `Tool` union, and the rules grouping it into the toolbar's five families |
 | `web/src/lib/components/map-toolbar.svelte`, `tool-strip.svelte` | the floating tool row, and the active family's contextual strip |
 | `web/src/lib/components/room-menu.svelte` | the menu behind the side panel's third icon: Scenes, Assets, Manage room, Leave room |
+| `web/src/lib/components/ui/popover/` | the bits-ui popover, wrapped the way `ui/dialog` is. Every popup in the room is on it — the room menu and the draw strip's stroke width — and anything new that pops up over the map should be too, for the focus handling rather than the placement |
 | `web/src/lib/host-notice.svelte.ts`, `components/host-notice.svelte` | the Host's `-banner` message: fetched once, dismissable, and the height everything else moves down by |
 | `web/src/lib/components/theme-toggle.svelte` | System/Light/Dark as three icon buttons, in two shapes: a labelled row for the room menu and a floating pill for the home page's corner. The scheme itself is `mode-watcher`, wired up in `+layout.svelte`, plus the boot script in `app.html` that beats the flash of light |
 | `web/src/lib/components/initiative-panel.svelte` | the turn order in the rail's second panel — one component for both roles, with the GM's controls left off for everyone else |
@@ -117,8 +118,13 @@ anywhere,
 drawings (freehand/line/rect/ellipse) with an eraser — a rect or an ellipse can be **shaded inside**
 as well as outlined, from a paint-bucket toggle (`Fill shape`) that appears on the draw strip only for those two, and the
 shading is translucent so the map still reads through it while the outline stays solid; every
-drawing also carries its own stroke width, stored and rendered, though nothing offers a choice of
-one yet — and per-session undo/redo covering
+drawing also carries its own **stroke width**, picked from three named sizes (Thin/Medium/Thick,
+each shown as a bar of the weight it makes) behind one button on the same strip, which shows the
+width it is on and opens the three on a click — offered to every drawing tool but the eraser. The
+widths live in `web/src/lib/stroke-width.ts` and the popup in
+`web/src/lib/components/stroke-width-picker.svelte`; a range input was ruled against in favour of
+the strip's own discrete-button idiom, and the three were put behind a button to keep the strip
+short — and per-session undo/redo covering
 drawing, erasing, token creation, token deletion, token edits and token moves (an undo passes over
 a token someone else has changed since, rather than dragging it back out from under them),
 pings, distance measuring, area-of-effect templates (circle/cone/line/cube, origin on a snap
@@ -208,9 +214,9 @@ the number and `/roll 1d20+2` in chat is where it comes from; `Manage room` hold
 movement lock, and is still waiting on room privacy, deleting a room, and a switch to turn Player
 token creation off. Nothing caps how many tokens one Player may have standing. Fog has no automatic vision from tokens, no prebuilt releases, no way for a Host
 to remove a moderated asset server-wide or cap upload sizes per room (a room removing something
-from its own library is a different, smaller thing, and does exist). The drawing tools have a fill
-now but **no stroke-width control** — the width is stored, sent and rendered per drawing, so what
-is left of that item is the control itself and a decision about what widths to offer. The
+from its own library is a different, smaller thing, and does exist). The stroke palette is still
+the one picked against light maps, so a black line on a dark battle map is nearly invisible
+(`planning/backlog/dark-map-stroke-palette.md`). The
 theme control isn't on the pre-join screen or the assets page — both are passed through rather
 than sat in, and both are one step from somewhere that has it.
 

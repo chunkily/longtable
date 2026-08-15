@@ -53,6 +53,7 @@
 		room,
 		activeTool = 'none',
 		strokeColor = '#000000',
+		strokeWidth = DRAWING_STROKE_WIDTH,
 		shapeFilled = false,
 		snapMode = 'intersections',
 		lineWidthFeet = DEFAULT_LINE_WIDTH_FEET,
@@ -62,6 +63,12 @@
 		room: RoomClient;
 		activeTool?: Tool;
 		strokeColor?: string;
+		/**
+		 * How wide a new drawing's stroke is, in world pixels — so it keeps
+		 * its weight relative to the map rather than to the screen, the same
+		 * as the drawing itself. Picked on the draw strip.
+		 */
+		strokeWidth?: number;
 		/**
 		 * Whether a new rect or ellipse is shaded inside. Only those two
 		 * kinds can be, so the toolbar only offers it for those two and the
@@ -780,8 +787,12 @@
 	// re-resolved whenever the set of drawings changes — otherwise it
 	// hangs over the empty space where a stroke used to be (including
 	// one someone else just erased) until the pointer next moves.
+	//
+	// strokeWidth is tracked for the other half of the overlay: the
+	// freehand ring is a picture of how wide the line will be, so picking
+	// a new width has to resize it under a pointer that hasn't moved.
 	$effect(() => {
-		track(room.drawings, room.you, activeTool);
+		track(room.drawings, room.you, activeTool, strokeWidth);
 		refreshCursorOverlay();
 	});
 
@@ -961,7 +972,7 @@
 		if (activeTool === 'eraser') {
 			updateEraserCursor();
 		} else if (activeTool === 'freehand') {
-			updateCursorRing(DRAWING_STROKE_WIDTH / 2);
+			updateCursorRing(strokeWidth / 2);
 			previewLayer.batchDraw();
 		}
 	}
@@ -1186,10 +1197,10 @@
 				previewShape = new Konva.Line({
 					points: [pos.x, pos.y],
 					stroke: strokeColor,
-					strokeWidth: DRAWING_STROKE_WIDTH,
+					strokeWidth,
 					lineCap: 'round',
 					lineJoin: 'round',
-					dash: [6, 4],
+					dash: previewDash(strokeWidth),
 					listening: false
 				});
 				previewLayer.add(previewShape);
@@ -1197,7 +1208,7 @@
 			stage.on('mousemove.tool touchmove.tool', () => {
 				// The ring tracks the pointer whether or not a stroke is in
 				// progress: it's showing how wide the line will be.
-				updateCursorRing(DRAWING_STROKE_WIDTH / 2);
+				updateCursorRing(strokeWidth / 2);
 				previewLayer.batchDraw();
 
 				if (!previewShape) return;
@@ -1214,7 +1225,7 @@
 				// part-way through a left-button stroke doesn't commit it early.
 				if (!isPrimaryPointer(e)) return;
 				if (freehandPoints.length >= 2) {
-					room.createDrawing(sceneId, 'freehand', freehandPoints, strokeColor);
+					room.createDrawing(sceneId, 'freehand', freehandPoints, strokeColor, { strokeWidth });
 				}
 				clearPreview();
 			});
@@ -1254,7 +1265,8 @@
 				const pos = stage!.getRelativePointerPosition() ?? drawStart;
 				if (pos.x !== drawStart.x || pos.y !== drawStart.y) {
 					room.createDrawing(sceneId, kind, [drawStart, pos], strokeColor, {
-						filled: shapeFilled
+						filled: shapeFilled,
+						strokeWidth
 					});
 				}
 			}
@@ -1262,12 +1274,29 @@
 		});
 	}
 
+	// Dashes proportional to the stroke, not a fixed [6, 4]: at 16 world
+	// pixels wide that pattern is a row of blobs rather than a dashed
+	// outline, because a dash shorter than the line is thick reads as a
+	// square. At the default width this is what it always was.
+	function previewDash(width: number): number[] {
+		return [width * 2, width * 1.5];
+	}
+
 	function buildPreviewShape(
 		kind: 'line' | 'rect' | 'ellipse',
 		a: DrawingPoint,
 		b: DrawingPoint
 	): Konva.Shape {
-		const strokeProps = { stroke: strokeColor, strokeWidth: 2, dash: [6, 4], listening: false };
+		// Drawn at the width it will land at, for the same reason the fill
+		// below is drawn at all. This used to be a flat 2, which was
+		// indistinguishable from the default width and a lie about any
+		// other.
+		const strokeProps = {
+			stroke: strokeColor,
+			strokeWidth,
+			dash: previewDash(strokeWidth),
+			listening: false
+		};
 		// The preview carries the fill as well, so what is being dragged
 		// out looks like what will land. The dashed outline is what still
 		// says "not committed yet".

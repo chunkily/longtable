@@ -415,6 +415,35 @@ measure strip only offers a line template's width once that template is picked.
   the prop getter at event time and are always current. There's an e2e case that toggles Fill
   without reselecting the tool, which is what would break if this were ever changed to a snapshot.
 
+## Stroke width
+
+Three named widths — Thin, Medium, Thick, listed in `web/src/lib/stroke-width.ts` — behind one
+button on the draw strip, offered to every draw tool but the eraser. `strokeWidth` is threaded
+exactly like `shapeFilled` (page state → canvas prop → `room.createDrawing`'s options) and read
+through the prop getter at event time for the same reason.
+
+`components/stroke-width-picker.svelte` is the button and its popup, on `ui/popover` (bits-ui),
+as `room-menu.svelte` now is too — **anything that pops up over the map goes on that primitive**,
+and neither of these hand-rolls a backdrop any more. What it carries: focus into the panel and
+back onto the trigger on close, floating-ui placement with a flip when the trigger is near the
+bottom edge, and a portal to the body.
+
+The portal matters for this strip specifically. Below `lg` it docks into the sheet's
+`overflow-x-auto` bar, and `overflow-x: auto` computes the other axis to `auto` as well. A panel
+anchored to a `relative` wrapper *inside* that bar is clipped by it — measured at 375px, the panel
+had a box above the strip and `elementFromPoint` at its centre returned the canvas. A panel with
+no positioned ancestor inside the bar escapes, because its containing block resolves to the sheet
+wrapper outside; that's a property nobody would know to preserve, and it is why the e2e case for
+this passes with the portal switched off.
+
+- **Both commit paths need it.** Freehand commits from its own `mouseup` handler and the
+  rubber-banded shapes from theirs, so a width added to one and not the other previews at one
+  weight and lands at another.
+- **The preview is drawn at the real width**, and `previewDash` scales the dash with it — a fixed
+  `[6, 4]` on a 16px stroke is a row of squares rather than a dashed line.
+- The freehand cursor ring is a picture of the width, so the effect that refreshes the overlay
+  tracks `strokeWidth` as well: the ring has to resize under a pointer that hasn't moved.
+
 ## Hit-testing
 
 The eraser doesn't ask Konva what was clicked — the drawings layer is inert (`listening: false`)

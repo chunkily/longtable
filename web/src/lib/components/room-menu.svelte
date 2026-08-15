@@ -4,11 +4,17 @@
 	// bottom edge of the screen on a phone — there is nothing below it to
 	// open into.
 	//
-	// Hand-rolled rather than a dropdown-menu primitive: `ui/` has no
-	// menu component, and this needs four items, an upward anchor and a
-	// destructive action that arms in place. A full menu primitive would
-	// be more machinery than the thing it holds.
+	// On the popover primitive, where this used to hand-roll a
+	// transparent full-screen backdrop, its own Escape handler and an
+	// absolutely positioned panel. All three worked. What none of them
+	// did was move focus into a menu of eight controls, or put it back on
+	// this button afterwards — which is the half you can't retrofit and
+	// the half a keyboard notices. `ui/popover` wraps the bits-ui that
+	// was already behind the dialog and the slider, so this costs no
+	// dependency; stroke-width-picker.svelte is where the argument was
+	// had.
 	import { resolve } from '$app/paths';
+	import * as Popover from '$lib/components/ui/popover';
 	import { Button } from '$lib/components/ui/button';
 	import ThemeToggle from '$lib/components/theme-toggle.svelte';
 	import type { RoomClient } from '$lib/room.svelte';
@@ -50,7 +56,6 @@
 
 	function close() {
 		open = false;
-		confirmingLeave = false;
 	}
 
 	function handleLeave() {
@@ -63,27 +68,37 @@
 	}
 </script>
 
-<svelte:window
-	onkeydown={(event) => {
-		if (event.key === 'Escape') close();
+<!-- Disarmed on the way out, however it closes — Escape and a click on
+     the map get here as well as `close()` does, and a menu reopening
+     already asking "Really leave?" is the one state this must never come
+     back in. -->
+<Popover.Root
+	bind:open
+	onOpenChange={(next) => {
+		if (!next) confirmingLeave = false;
 	}}
-/>
-
-<div class="relative">
-	{#if open}
-		<!-- A full-screen backdrop rather than outside-click bookkeeping on
-		     the menu itself: it catches the click anywhere, including over
-		     the canvas, without the menu having to know what else is on
-		     screen. Transparent, so nothing about the map is obscured. -->
-		<button
-			type="button"
-			class="fixed inset-0 z-40 cursor-default"
-			aria-label="Close menu"
-			onclick={close}
-		></button>
-		<div
-			class="absolute right-0 bottom-full z-50 mb-1 flex w-56 flex-col gap-1 rounded-md border bg-popover p-1 shadow-md"
-		>
+>
+	<Popover.Trigger>
+		<!-- The child snippet so the trigger stays the app's own Button:
+		     `props` carries the primitive's own attributes, aria-expanded
+		     and aria-controls among them. -->
+		{#snippet child({ props })}
+			<Button
+				{...props}
+				variant={open ? 'default' : 'ghost'}
+				size="sm"
+				aria-label="Menu"
+				title="Scenes, assets and room settings"
+			>
+				<Menu class="h-4 w-4" />
+			</Button>
+		{/snippet}
+	</Popover.Trigger>
+	<!-- Above the button and aligned to its right-hand edge, which is
+	     where it sat when it placed itself: it is the last icon in a row
+	     pinned to the bottom of the rail. -->
+	<Popover.Content class="w-56 p-1" side="top" align="end">
+		<div class="flex flex-col gap-1">
 			<!-- The code sits at the top of the menu and shows itself, so the
 			     answer to "what's the code?" is one tap away and readable
 			     without opening anything. Monospace because it gets read out
@@ -198,16 +213,5 @@
 				</Button>
 			</div>
 		</div>
-	{/if}
-
-	<Button
-		variant={open ? 'default' : 'ghost'}
-		size="sm"
-		aria-label="Menu"
-		aria-expanded={open}
-		title="Scenes, assets and room settings"
-		onclick={() => (open ? close() : (open = true))}
-	>
-		<Menu class="h-4 w-4" />
-	</Button>
-</div>
+	</Popover.Content>
+</Popover.Root>

@@ -17,6 +17,7 @@
 	import { hostNotice } from '$lib/host-notice.svelte';
 	import { loadFogOpacity, saveFogOpacity } from '$lib/fog-opacity';
 	import { RoomClient, type Token } from '$lib/room.svelte';
+	import { DRAWING_STROKE_WIDTH } from '$lib/drawing-hit';
 	import { DEFAULT_LINE_WIDTH_FEET, type SnapMode } from '$lib/aoe';
 	import { familyHasStrip, familyOf, type Tool } from '$lib/tool-family';
 	import { Button } from '$lib/components/ui/button';
@@ -100,6 +101,10 @@
 	// gives length and direction, never width.
 	let lineWidthFeet = $state(DEFAULT_LINE_WIDTH_FEET);
 	let strokeColor = $state('#000000');
+	// The width every new drawing is made at, in world pixels. Starts at
+	// the default so a browser that never touches the control draws what
+	// it always did.
+	let strokeWidth = $state(DRAWING_STROKE_WIDTH);
 	// Off by default: an outline is the smaller claim, and a filled shape
 	// dropped on someone's map by surprise is the more annoying of the two
 	// to have to erase.
@@ -725,6 +730,7 @@
 					room={client}
 					{activeTool}
 					{strokeColor}
+					{strokeWidth}
 					{shapeFilled}
 					{snapMode}
 					{lineWidthFeet}
@@ -808,6 +814,7 @@
 							{sceneId}
 							bind:activeTool
 							bind:strokeColor
+							bind:strokeWidth
 							bind:shapeFilled
 							bind:snapMode
 							bind:lineWidthFeet
@@ -913,6 +920,7 @@
 					{sceneId}
 					bind:activeTool
 					bind:strokeColor
+					bind:strokeWidth
 					bind:shapeFilled
 					bind:snapMode
 					bind:lineWidthFeet

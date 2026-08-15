@@ -6,7 +6,8 @@ tags: [drawing, ui]
 story: room-member-dark-map-stroke-palette
 ---
 
-The current stroke palette (`STROKE_COLORS` in `+page.svelte`, black/red/green/blue) was picked
+The current stroke palette (`STROKE_COLORS`, black/red/green/blue — in `+page.svelte` when this
+was written, on the draw family's strip in `tool-strip.svelte` since the full-bleed layout) was picked
 against light maps and mostly disappears on a dark one — black most of all, but the saturated
 red/green/blue aren't much better. Add a second row of swatches underneath, for dark-background
 maps: white, bright red, bright green, bright blue.
@@ -32,6 +33,12 @@ unchanged to the new row — no new selection logic, just more swatches.
 
 - [ ] Second swatch row: white, bright red, bright green, bright blue
 - [ ] Same selection/highlight behavior as the existing row
+
+The strip got three width buttons on 2026-08-15
+([stroke-size-range-input](stroke-size-range-input.md)), so it is wider than it was when the rows
+above were costed. A second row is still a row rather than more width, which is the shape that
+suits it — but it is the strip that scrolls first on a phone, and this is the item that would
+notice.
 
 ## Related user stories
 
