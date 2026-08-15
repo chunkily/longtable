@@ -15,7 +15,7 @@ architecture and current state live here instead**, and keeping them true is par
 | `cmd/longtable/` | entrypoint: `serve` (default) plus a `room list` / `room reset-password` admin CLI |
 | `internal/api/` | HTTP routes: create/join room, GM login, asset upload + serving + per-room library listing, health check, the Host's banner (`GET /api/notice`), `GET /ws` upgrade, SPA fallback for the embedded frontend |
 | `internal/ws/` | the real-time hub and the authority on room state — command/event protocol, permission checks, broadcast |
-| `internal/store/` | SQLite schema and every typed query (rooms, participants, scenes, tokens, fog, drawings, chat). `store.go` holds the `CREATE TABLE`s, plus `addMissingColumns` — the only way a column reaches a database that already exists, since `CREATE TABLE IF NOT EXISTS` won't. `fog.go` stores the *hidden* cells packed 32 to an integer — read its doc comment before touching fog anywhere |
+| `internal/store/` | SQLite schema and every typed query (rooms, participants, scenes, tokens, fog, drawings, chat). `store.go` holds the `CREATE TABLE`s, plus `addMissingColumns` — the only way a column reaches a database that already exists, since `CREATE TABLE IF NOT EXISTS` won't. **No `CHECK` constraints**: a value set that can grow has to live in Go, and `TestSchema_HasNoCheckConstraints` enforces it. `fog.go` stores the *hidden* cells packed 32 to an integer — read its doc comment before touching fog anywhere |
 | `internal/imageproc/` | decodes and re-encodes every upload to WebP. Read its doc comment before touching it — the studio-swing trap in there is easy to reintroduce |
 | `internal/blobstore/` | re-encoded images on disk, addressed by content hash so identical uploads share a file |
 | `internal/auth/` | session tokens and bcrypt password hashing. No accounts — identity in a room is a *seat* (a `participant` row), and a device proves it holds one with a `session` token in `localStorage`. See [ADR-0008](planning/decisions/0008-seats-and-sessions.md) |
@@ -300,6 +300,13 @@ Others worth matching:
   bullet to a button is a specific, repeated mistake, not a stylistic difference of opinion.
 - Go errors: `slog.Error` with the internal detail, then a short human message to the client.
   Never leak the internal error over the socket.
+- **No `CHECK` constraint on a column whose set of values could ever grow**, which so far means no
+  `CHECK` anywhere. SQLite can't alter one, so widening it is a table rebuild — and the failure
+  lands on databases created *before* the change, which is every real one and none of the test
+  ones. The five this schema used to carry (role, token visibility, drawing kind, asset kind,
+  message kind) were all duplicating a check Go already does on the way in. Keep the enforcement
+  there, where an error can also say something useful to the client, and name the authority in a
+  comment on the column. `TestSchema_HasNoCheckConstraints` fails if one comes back.
 - Svelte 5 runes only (`$state`/`$derived`/`$effect`), enforced in `vite.config.ts`. Plain
   `Map`/`Set` for imperative bookkeeping nothing reactive reads — with the eslint-disable comment
   the linter wants, and a note saying why it isn't a `SvelteMap`.

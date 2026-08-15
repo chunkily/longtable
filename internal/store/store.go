@@ -38,9 +38,33 @@ func New(db *sql.DB) (*Store, error) {
 // has needed to be. Each entry has to be something SQLite can add in
 // place: ALTER TABLE ADD COLUMN takes no UNIQUE or PRIMARY KEY
 // constraint, and a NOT NULL column needs a default for the rows that
-// are already there. Anything beyond that — a changed CHECK, a dropped
-// column — is a table rebuild and wants a real migration story rather
-// than another row here.
+// are already there. Anything beyond that — a dropped column, a changed
+// constraint — is a table rebuild and wants a real migration story
+// rather than another row here.
+//
+// # No CHECK constraints on a set that can grow
+//
+// This is why the schema below carries none, and it is a rule rather
+// than an accident. SQLite cannot alter a CHECK: widening one means
+// rebuilding the table, which is precisely the migration story this
+// repo has decided it doesn't need yet. A CHECK pinning an enum is
+// therefore a promise that the enum is finished forever, and every one
+// of the five this schema used to have was made about a set that then
+// grew or plainly could — role, visibility, drawing kind, asset kind,
+// message kind.
+//
+// The failure it produces is the nastiest shape available: a new value
+// inserts fine on a database created *after* the change and fails on
+// every database created before it, so it passes every test, passes
+// review, and breaks only for whoever has been running the server
+// longest. Nothing here is a strong enough guarantee to be worth that.
+//
+// Where the values are really policed is Go, on the way in, which is
+// also where an error can say something useful to a client. Each column
+// below names its authority. Add a CHECK only for something that is
+// true by construction for the life of the application — and if you
+// find yourself arguing that a set will never grow, that is the
+// argument this comment exists to lose.
 var addedColumns = []struct{ table, column, definition string }{
 	{"drawing", "filled", "INTEGER NOT NULL DEFAULT 0"},
 	{"drawing", "stroke_width", "REAL NOT NULL DEFAULT 3"},
@@ -124,7 +148,11 @@ func (s *Store) createTables() error {
 			id             TEXT PRIMARY KEY,
 			room_id        TEXT NOT NULL REFERENCES room(id) ON DELETE CASCADE,
 			display_name   TEXT NOT NULL,
-			role           TEXT NOT NULL CHECK (role IN ('gm', 'player')),
+			-- 'gm' or 'player' today. No CHECK — see the note above
+			-- createTables; the set is enforced in Go, where it can change.
+			-- Nothing writes this from a payload: createSeat takes a
+			-- store.Role from a caller that names it as a constant.
+			role           TEXT NOT NULL,
 			created_at     TEXT NOT NULL
 		);
 		CREATE INDEX IF NOT EXISTS idx_participant_room ON participant(room_id);
@@ -174,7 +202,11 @@ func (s *Store) createTables() error {
 			width                  REAL NOT NULL DEFAULT 1,
 			height                 REAL NOT NULL DEFAULT 1,
 			owner_participant_id   TEXT REFERENCES participant(id) ON DELETE SET NULL,
-			visibility             TEXT NOT NULL DEFAULT 'visible' CHECK (visibility IN ('visible', 'hidden')),
+			-- 'visible' or 'hidden' today, checked in handleTokenCreate and
+			-- handleTokenUpdate rather than here. Defaulted so a row written
+			-- by a path that forgets it is visible, which is the direction
+			-- that fails safely for a Player.
+			visibility             TEXT NOT NULL DEFAULT 'visible',
 			trackers               TEXT NOT NULL DEFAULT '[]',
 			conditions             TEXT NOT NULL DEFAULT '[]'
 		);
@@ -202,7 +234,9 @@ func (s *Store) createTables() error {
 		CREATE TABLE IF NOT EXISTS drawing (
 			id                        TEXT PRIMARY KEY,
 			scene_id                  TEXT NOT NULL REFERENCES scene(id) ON DELETE CASCADE,
-			kind                      TEXT NOT NULL CHECK (kind IN ('freehand', 'line', 'rect', 'ellipse')),
+			-- The drawingKinds map in hub.go is the authority on this set, and
+			-- refuses an unknown kind before it ever reaches here.
+			kind                      TEXT NOT NULL,
 			points                    TEXT NOT NULL,
 			color                     TEXT NOT NULL,
 			-- Shaded inside as well as outlined, for the two kinds that
@@ -262,7 +296,9 @@ func (s *Store) createTables() error {
 			-- or a map that goes under one. Per-room for the same reason the
 			-- name is — one group's boss portrait is another group's battle
 			-- map, and the shared asset row can't hold both answers.
-			kind         TEXT NOT NULL DEFAULT 'token' CHECK (kind IN ('token', 'map')),
+			-- AssetKind.Valid in asset.go is the authority on this set; the
+			-- upload handler rejects anything else before the insert.
+			kind         TEXT NOT NULL DEFAULT 'token',
 			added_at     TEXT NOT NULL,
 			PRIMARY KEY (room_id, asset_id)
 		);
@@ -273,7 +309,9 @@ func (s *Store) createTables() error {
 			room_id            TEXT NOT NULL REFERENCES room(id) ON DELETE CASCADE,
 			participant_id     TEXT REFERENCES participant(id) ON DELETE SET NULL,
 			participant_name   TEXT NOT NULL,
-			kind               TEXT NOT NULL CHECK (kind IN ('text', 'roll')),
+			-- 'text' or 'roll' today. Never taken from a payload: the hub
+			-- picks the constant itself, in handleChatSend and the /roll path.
+			kind               TEXT NOT NULL,
 			body               TEXT NOT NULL,
 			roll_expression    TEXT,
 			roll_result        INTEGER,

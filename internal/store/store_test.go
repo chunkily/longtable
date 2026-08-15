@@ -2,6 +2,8 @@ package store
 
 import (
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"longtable/internal/db"
@@ -106,4 +108,58 @@ func TestHasColumn_SaysNoForOneThatIsNotThere(t *testing.T) {
 	if has {
 		t.Error("hasColumn found a column that does not exist")
 	}
+}
+
+// A CHECK constraint is a promise that a set of values is finished for
+// good, and SQLite offers no way to take that promise back: widening one
+// means rebuilding the table, which is the migration story this repo has
+// decided it doesn't need. The failure mode is the worst shape going —
+// the new value inserts fine on a database created after the change and
+// fails on every older one, so it passes the whole suite and breaks for
+// whoever has been running the server longest.
+//
+// So the rule is that the value sets live in Go, and this test is what
+// keeps the rule from decaying into a comment. If a column genuinely
+// cannot change for the life of the application, add it to
+// checkConstraintsAllowedOn with the argument written out — having to
+// name it is the point.
+func TestSchema_HasNoCheckConstraints(t *testing.T) {
+	var checkConstraintsAllowedOn []string
+
+	s := newTestStore(t)
+
+	rows, err := s.db.Query(`SELECT name, sql FROM sqlite_master WHERE type = 'table' AND sql IS NOT NULL`)
+	if err != nil {
+		t.Fatalf("read schema: %v", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var name, ddl string
+		if err := rows.Scan(&name, &ddl); err != nil {
+			t.Fatalf("scan schema row: %v", err)
+		}
+		if !strings.Contains(strings.ToUpper(withoutSQLComments(ddl)), "CHECK") || slices.Contains(checkConstraintsAllowedOn, name) {
+			continue
+		}
+		t.Errorf("table %q has a CHECK constraint:\n%s", name, ddl)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate schema: %v", err)
+	}
+}
+
+// SQLite hands back the CREATE TABLE text exactly as it was written,
+// comments and all, so a schema as commented as this one is full of
+// prose that mentions the very thing the test above is scanning for —
+// including the comments explaining why there is no CHECK. Strip them
+// first or the guard trips over its own documentation.
+func withoutSQLComments(ddl string) string {
+	lines := strings.Split(ddl, "\n")
+	for i, line := range lines {
+		if start := strings.Index(line, "--"); start >= 0 {
+			lines[i] = line[:start]
+		}
+	}
+	return strings.Join(lines, "\n")
 }
