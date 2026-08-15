@@ -6,11 +6,11 @@ import { openSeatPicker } from './fixtures/room';
 // Bob's colour where *Alice* is looking.
 
 /** The hex for a palette key, from web/src/lib/identity-color.ts. */
-const HEX = { teal: 'rgb(20, 184, 166)', pink: 'rgb(236, 72, 153)' };
+const HEX = { teal: 'rgb(45, 212, 191)', pink: 'rgb(236, 72, 153)' };
 
 test('a name in chat wears the colour its owner picked', async ({ table }) => {
 	const gm = table.gm;
-	const bob = await table.join('Bob', 'Teal');
+	const bob = await table.join('Bob', 'Lagoon Teal');
 
 	await bob.page.getByPlaceholder('Say something, or /roll 2d6+3').fill('over here');
 	await bob.page.getByRole('button', { name: 'Send' }).click();
@@ -31,7 +31,7 @@ test('a name in chat wears the colour its owner picked', async ({ table }) => {
 // seat picker is the only screen that exists at that moment, so it is
 // the only place this can be answered.
 test('the seat picker shows the colours already at the table', async ({ table, browser }) => {
-	await table.join('Bob', 'Teal');
+	await table.join('Bob', 'Lagoon Teal');
 
 	// A third device, no session, looking at the room cold — its own
 	// context rather than a tab, since a tab shares localStorage and
@@ -54,8 +54,8 @@ test('the seat picker shows the colours already at the table', async ({ table, b
 // Two people may be the same colour: the swatches say which are taken so
 // a clash can be a choice, and nothing refuses one.
 test('two people may take the same colour', async ({ table }) => {
-	await table.join('Bob', 'Pink');
-	const carol = await table.join('Carol', 'Pink');
+	await table.join('Bob', 'Rose Pink');
+	const carol = await table.join('Carol', 'Rose Pink');
 
 	await carol.page.getByPlaceholder('Say something, or /roll 2d6+3').fill('same as Bob');
 	await carol.page.getByRole('button', { name: 'Send' }).click();
@@ -73,7 +73,7 @@ test('two people may take the same colour', async ({ table }) => {
 // arrives wearing it — the criterion that was unsatisfiable before seats
 // and sessions were separated.
 test('a colour comes back with the seat on a new device', async ({ table, browser }) => {
-	const bob = await table.join('Bob', 'Teal');
+	const bob = await table.join('Bob', 'Lagoon Teal');
 	await bob.context.close();
 
 	const context = await browser.newContext();
@@ -95,4 +95,44 @@ test('a colour comes back with the seat on a new device', async ({ table, browse
 	await expect(name).toHaveCSS('color', HEX.teal);
 
 	await context.close();
+});
+
+// Changing a colour after the fact. The swatch in the rail is the
+// control; the assertion is on the *other* browser, since a colour only
+// means anything on somebody else's screen.
+test('changing your colour recolours your name for everyone', async ({ table }) => {
+	const gm = table.gm;
+	const bob = await table.join('Bob', 'Lagoon Teal');
+
+	await bob.page.getByPlaceholder('Say something, or /roll 2d6+3').fill('watch this');
+	await bob.page.getByRole('button', { name: 'Send' }).click();
+
+	const nameOnGMsScreen = gm.page
+		.getByRole('list')
+		.first()
+		.locator('li')
+		.filter({ hasText: 'watch this' })
+		.locator('strong');
+	await expect(nameOnGMsScreen).toHaveCSS('color', HEX.teal);
+
+	await bob.page.getByRole('button', { name: 'Your colour' }).first().click();
+
+	// Sixteen swatches have to fit the rail they open in — the panel is
+	// 368px wide, and a palette that reflowed to one long row would push
+	// the popover off the side of it.
+	const palette = bob.page.getByRole('radiogroup', { name: 'Your colour' });
+	const box = await palette.boundingBox();
+	expect(box!.width).toBeLessThan(340);
+
+	await bob.page.getByRole('radio', { name: 'Rose Pink' }).click();
+
+	// The message Bob already sent recolours too: the colour is looked up
+	// per render from the roster, so it is a property of who they are
+	// rather than of what they said.
+	await expect(nameOnGMsScreen).toHaveCSS('color', HEX.pink);
+
+	// And it survives a reload, which is the half that proves it was
+	// stored rather than only broadcast.
+	await gm.page.reload();
+	await expect(nameOnGMsScreen).toHaveCSS('color', HEX.pink);
 });

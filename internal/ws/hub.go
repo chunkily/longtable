@@ -405,6 +405,8 @@ func (h *Hub) handleMessage(ctx context.Context, c *client, data []byte) {
 	}
 
 	switch env.Type {
+	case "participant.setColor":
+		h.handleParticipantSetColor(ctx, c, env.Payload)
 	case "token.move":
 		h.handleTokenMove(ctx, c, env.Payload)
 	case "token.create":
@@ -664,6 +666,49 @@ type roomOwnerOnlyMovementRequest struct {
 // and takes effect immediately for everyone: the broadcast is what makes
 // a Player's tokens stop being draggable mid-session rather than at their
 // next reload.
+type participantSetColorRequest struct {
+	Color string `json:"color"`
+}
+
+// handleParticipantSetColor changes the caller's own identity colour.
+//
+// Its own, and no argument about whose: the seat updated is
+// c.participant.ID, taken from the connection, so there is no
+// participantId in the payload to get wrong or to forge. That is the
+// same rule every handler here follows and the reason this needs no
+// permission check — a Player changing a colour is changing theirs by
+// construction.
+//
+// Broadcast to everyone including the sender. Chat names and pings
+// resolve colour from the roster, so a client that updated its own copy
+// optimistically and one that waited would disagree until the next sync;
+// one event, one source, and the sender's own log recolours with
+// everybody else's.
+func (h *Hub) handleParticipantSetColor(ctx context.Context, c *client, raw json.RawMessage) {
+	var req participantSetColorRequest
+	if err := decodePayload(raw, &req); err != nil {
+		h.sendError(ctx, c, "invalid participant.setColor payload")
+		return
+	}
+	if !store.ValidIdentityColor(req.Color) {
+		// The set lives in Go rather than in a CHECK constraint, and this
+		// value reaches a style attribute on every other client's screen.
+		h.sendError(ctx, c, "unknown colour")
+		return
+	}
+
+	if err := h.store.SetParticipantColor(c.roomID, c.participant.ID, req.Color); err != nil {
+		slog.Error("ws: set participant colour failed", "error", err)
+		h.sendError(ctx, c, "failed to change your colour")
+		return
+	}
+
+	// The connection's own copy, so anything later in this session that
+	// reads c.participant sees the new colour too.
+	c.participant.Color = req.Color
+	h.broadcast(ctx, c.roomID, "participant.updated", participantPayload(c.participant))
+}
+
 func (h *Hub) handleRoomSetOwnerOnlyMovement(ctx context.Context, c *client, raw json.RawMessage) {
 	if !h.requireGM(ctx, c) {
 		return

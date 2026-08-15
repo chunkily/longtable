@@ -122,14 +122,14 @@ func TestIdentityColor_BelongsToTheSeatRatherThanTheDevice(t *testing.T) {
 // people at the table.
 func TestIdentityColor_TwoSeatsMayShareOne(t *testing.T) {
 	s := newTestStore(t)
-	room, _, err := s.CreateRoom("Room", "GM", "lime", "password")
+	room, _, err := s.CreateRoom("Room", "GM", "green", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
-	if _, err := s.JoinRoom(room.ID, "Bob", "lime"); err != nil {
+	if _, err := s.JoinRoom(room.ID, "Bob", "green"); err != nil {
 		t.Fatalf("JoinRoom: %v", err)
 	}
-	if _, err := s.JoinRoom(room.ID, "Carol", "lime"); err != nil {
+	if _, err := s.JoinRoom(room.ID, "Carol", "green"); err != nil {
 		t.Fatalf("second JoinRoom with the same colour: %v", err)
 	}
 }
@@ -142,6 +142,12 @@ func TestIdentityColor_EmptyIsValidAndMeansUnchosen(t *testing.T) {
 	}
 	if !ValidIdentityColor("violet") {
 		t.Error("violet is in the palette and should be valid")
+	}
+	// A key the palette used to carry. Retiring one has to be refused on
+	// the way in, or a seat could be written into a colour nothing can
+	// render.
+	if ValidIdentityColor("lime") {
+		t.Error("lime was retired from the palette and should no longer be accepted")
 	}
 	if ValidIdentityColor("rgb(1,2,3)") || ValidIdentityColor("crimson") {
 		t.Error("anything outside the palette must be refused — this value reaches a style attribute")
@@ -160,7 +166,11 @@ func TestIdentityColors_MatchTheClientPalette(t *testing.T) {
 		t.Fatalf("read the client palette: %v", err)
 	}
 
-	found := regexp.MustCompile(`key:\s*'([a-z]+)'`).FindAllStringSubmatch(string(source), -1)
+	// The hyphen in the class is deliberate slack. Keys are single words
+	// today (`red`, for a swatch called Blood Red), and a pattern that
+	// stopped at a hyphen would silently truncate the first one that
+	// isn't — reporting a mismatch that was really this regex's fault.
+	found := regexp.MustCompile(`key:\s*'([a-z-]+)'`).FindAllStringSubmatch(string(source), -1)
 	client := make([]string, 0, len(found))
 	for _, m := range found {
 		client = append(client, m[1])

@@ -802,6 +802,20 @@ export class RoomClient {
 	}
 
 	/**
+	 * Changes your own colour. There is no participant id to send: the
+	 * hub takes the seat from the connection, so this can only ever be
+	 * yours.
+	 *
+	 * Not optimistic, unlike a drawing. There is no preview shape to
+	 * blink — the change shows up when the echo lands, a round trip
+	 * later, and painting it early would only mean this client and every
+	 * other one disagreed for that long about what colour a name is.
+	 */
+	setColor(color: string) {
+		this.send('participant.setColor', { color });
+	}
+
+	/**
 	 * The identity colour key for whoever owns participantId, or '' when
 	 * there is nobody to ask about — a system chat line, a seat from
 	 * before colours, or an id the roster hasn't got.
@@ -1325,6 +1339,21 @@ export class RoomClient {
 			// Only the connected list. They stay on the roster, which is
 			// everyone who has ever joined — what changed is whether they're
 			// at the table, not whether they exist.
+			// A colour change, which is the roster's only mutable field.
+			// Upserted like an arrival rather than assumed present: the
+			// change can land on a client whose roster predates the seat,
+			// and dropping it there would leave one person the old colour
+			// until the next sync.
+			case 'participant.updated': {
+				const participant = env.payload as Participant;
+				const existing = this.participants.findIndex((p) => p.id === participant.id);
+				this.participants =
+					existing === -1
+						? [...this.participants, participant]
+						: this.participants.map((p) => (p.id === participant.id ? participant : p));
+				break;
+			}
+
 			case 'participant.disconnected': {
 				const payload = env.payload as ParticipantDisconnectedPayload;
 				this.connectedParticipantIds = this.connectedParticipantIds.filter(

@@ -49,19 +49,33 @@ type execer interface {
 
 // IdentityColors are the colours a seat may be, and the authority on
 // that set — mirrored by IDENTITY_COLORS in web/src/lib/identity-color.ts,
-// which holds the hex each one is actually painted in.
+// which holds the hex and the name each one wears. A key is the *base*
+// colour — `red`, for a swatch called Blood Red — so the half of a name
+// most likely to be reworded is the half that was never stored.
 //
 // Keys rather than colours, deliberately. What is stored ends up in a
 // `style` attribute on everyone else's screen, and a column that accepts
 // any string is a CSS injection waiting for someone to try it — the
 // table is trusted for the things ADR-0007 lists, not for arbitrary
 // values reaching another person's stylesheet. Keys also mean retuning a
-// shade is a client-side edit rather than a migration.
+// shade, or renaming one, is a client-side edit rather than a migration.
 //
-// The set dodges the colours the canvas already speaks with: amber is
-// the erase highlight, sky blue the measuring tool, red the fog-hide
-// preview. Anything added here has to clear those too.
-var IdentityColors = []string{"violet", "indigo", "teal", "emerald", "lime", "pink"}
+// Sixteen of them, spanning the wheel. An earlier six dodged the colours
+// the canvas already speaks with (amber for the erase highlight, sky
+// blue for measuring, red for the fog preview) and that constraint was
+// dropped on purpose: six colours means two people match by the fourth
+// arrival, and none of those clashes is genuinely ambiguous on screen.
+// The client file has the longer version of that reasoning.
+//
+// A key retired from this list doesn't break the seats holding it. They
+// read as having no colour and render the way a seat from before this
+// feature does, until whoever holds one picks again.
+var IdentityColors = []string{
+	"red", "orange", "gold", "yellow",
+	"olive", "green", "teal", "cyan",
+	"blue", "indigo", "violet", "magenta",
+	"pink", "brown", "grey", "white",
+}
 
 // ValidIdentityColor reports whether c is one of IdentityColors. Empty
 // is valid and means unchosen: every seat made before this existed has
@@ -197,6 +211,32 @@ func (s *Store) ClaimSeat(roomID, participantID string) (Participant, error) {
 // anyone arrives. Nobody is signed into it until someone claims it.
 func (s *Store) CreateSeat(roomID, displayName, color string) (Participant, error) {
 	return createSeat(s.db, roomID, displayName, color, RolePlayer)
+}
+
+// SetParticipantColor changes a seat's identity colour. Scoped by room
+// as well as by id, like every other lookup here: an id from one room
+// must never reach a row in another, and a caller passing the wrong pair
+// gets ErrNotFound rather than a silent no-op it could probe with.
+//
+// Nothing checks *whose* seat this is, deliberately — that is the hub's
+// job, where identity comes from the connection rather than from
+// anything a client sent.
+func (s *Store) SetParticipantColor(roomID, participantID, color string) error {
+	result, err := s.db.Exec(
+		`UPDATE participant SET color = ? WHERE room_id = ? AND id = ?`,
+		color, roomID, participantID,
+	)
+	if err != nil {
+		return err
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if changed == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // DeleteSeat removes a seat and, by cascade, every session on it.

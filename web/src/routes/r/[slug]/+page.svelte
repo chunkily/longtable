@@ -21,6 +21,7 @@
 	import { dayLabel, fullTimestamp, sameDay, timeOfDay } from '$lib/chat-time';
 	import { IDENTITY_COLORS, identityHex, suggestedColor } from '$lib/identity-color';
 	import IdentityColorPicker from '$lib/components/identity-color-picker.svelte';
+	import * as Popover from '$lib/components/ui/popover';
 	import { DEFAULT_LINE_WIDTH_FEET, type SnapMode } from '$lib/aoe';
 	import { familyHasStrip, familyOf, type Tool } from '$lib/tool-family';
 	import { Button } from '$lib/components/ui/button';
@@ -107,6 +108,11 @@
 		chosenColor = suggestedColor(seats.map((seat) => seat.color));
 		step = next;
 	}
+
+	// The colour swatch in the rail opens onto the palette. Closed on a
+	// pick rather than left open: changing colour is a thing you do once,
+	// and the swatch behind it has already changed to say it worked.
+	let colorPickerOpen = $state(false);
 
 	let chatText = $state('');
 	// Which message has been tapped to show its delete button. Touch has
@@ -720,7 +726,42 @@
 				<h1 class="min-w-0 flex-1 truncate text-sm font-semibold">{room.roomName || slug}</h1>
 				<Badge variant={statusVariant}>{room.status}</Badge>
 			</div>
-			<p class="text-xs text-muted-foreground">
+			<p class="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+				<!-- The swatch is the control. It sits on the one line that is
+				     already about who you are in this room, which is where
+				     somebody looking at their own name in chat and wanting a
+				     different colour goes looking — and it is deliberately not
+				     in the room menu beside the theme control, since that
+				     section is the things that change this browser rather than
+				     the room. -->
+				<Popover.Root bind:open={colorPickerOpen}>
+					<Popover.Trigger>
+						{#snippet child({ props })}
+							<button
+								{...props}
+								type="button"
+								aria-label="Your colour"
+								title="Change your colour"
+								class="h-3.5 w-3.5 shrink-0 rounded-full border border-border"
+								style={identityHex(room.colorOf(room.you?.participantId))
+									? `background-color: ${identityHex(room.colorOf(room.you?.participantId))}`
+									: undefined}
+							></button>
+						{/snippet}
+					</Popover.Trigger>
+					<Popover.Content class="w-auto p-3" align="start">
+						<IdentityColorPicker
+							value={room.colorOf(room.you?.participantId)}
+							taken={room.participants
+								.filter((p) => p.id !== room.you?.participantId)
+								.map((p) => p.color)}
+							onpick={(color) => {
+								room.setColor(color);
+								colorPickerOpen = false;
+							}}
+						/>
+					</Popover.Content>
+				</Popover.Root>
 				playing as <strong>{room.you?.displayName}</strong>
 				<Badge variant="outline" class="ml-1">{room.you?.role}</Badge>
 			</p>

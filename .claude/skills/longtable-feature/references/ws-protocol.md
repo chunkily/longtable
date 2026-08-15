@@ -27,6 +27,7 @@ Envelope both ways:
 
 | Command | Who | Persists | Broadcast |
 | --- | --- | --- | --- |
+| `participant.setColor` | anyone, for their own seat | yes | `participant.updated` |
 | `chat.send` | anyone | yes | `chat.posted` |
 | `chat.delete` | author, or any GM | yes | `chat.deleted` (first call) or `chat.purged` (second) |
 | `token.create` | anyone; a non-GM's is theirs and visible | yes | one `token.created` per token (GM-only if hidden) |
@@ -394,6 +395,11 @@ Three more things worth knowing before touching it:
   echoes back because the sender has something optimistic to reconcile; here the arriving client's
   `state.sync` already lists it among the connected, so an echo would be a second copy of
   something it acted on a moment ago.
+- **`participant.setColor` carries no participant id**, and that is the permission model rather
+  than an omission: the seat updated is `c.participant.ID`, off the connection, so it can only ever
+  be the caller's own and needs no check. `participant.updated` goes to everyone including the
+  sender — chat names and pings resolve colour from the roster, so a sender that painted its own
+  copy early would be the one client disagreeing with the room until the next sync.
 - **A participant carries an identity colour**, as a palette *key* (`violet`) rather than a colour.
   The hex lives only on the client (`web/src/lib/identity-color.ts`); the server validates the key
   against `store.IdentityColors` on the way in, because the value ends up in a `style` attribute on

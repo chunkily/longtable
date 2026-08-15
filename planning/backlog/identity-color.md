@@ -90,3 +90,30 @@ Decisions worth not rediscovering:
 - The e2e helper matches a swatch loosely, because a colour someone already has is announced as
   "Pink, taken" — matching exactly finds it for the first taker and then silently stops, costing a
   full test timeout instead of a clear failure.
+
+## Correction, same day: sixteen colours, and names worth saying
+
+The palette above shipped as six, chosen to dodge the colours the canvas already speaks with and
+to stay legible on any map. **Both constraints were dropped on the GM's call**, and the palette is
+now sixteen: Blood Red, Sunset Orange, Honey Gold, Lantern Yellow, Swamp Olive, Forest Green,
+Lagoon Teal, Frost Cyan, Royal Blue, Midnight Indigo, Arcane Violet, Dusk Magenta, Rose Pink, Rust
+Brown, Storm Grey, Bone White.
+
+The reasoning that replaced it: six colours means two people match by the fourth arrival, and
+neither clash the old rule was avoiding is actually ambiguous on screen — a ping is a pulsing ring
+where the erase halo is a static outline, and the fog preview only ever appears under the GM's own
+cursor mid-drag. Contrast against a particular map is the chooser's problem now, the same trade the
+drawing palette makes. The unit test that enforced the old rule was deleted rather than adjusted,
+with a comment where it stood saying why, since it would otherwise have been enforcing a decision
+nobody holds.
+
+**A key is the base colour alone** — `red` for a swatch called Blood Red — rather than the whole
+name. The modifier is the half most likely to be reworded, and keying on the base means rewording
+it touches no stored data at all. It also forced one naming decision: Swamp Olive is an olive
+rather than a second green, because two greens would have collided on one key, and a key collision
+is the one thing this scheme can't absorb.
+
+Seats holding a key from the first six still read correctly where the key survived (`violet`,
+`indigo`, `teal`, `pink` — in a new shade), and read as unchosen where it didn't (`emerald`,
+`lime`). That is `identityHex` returning null for an unknown key, which is the behaviour that makes
+changing a palette safe at all.

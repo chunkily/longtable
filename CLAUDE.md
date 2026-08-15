@@ -148,12 +148,15 @@ landed**, with the full date on hover and the date above the first entry of each
 message kind the hub writes itself, holding the event (`joined`/`left`) rather than a sentence, so
 the wording stays a `longtable-copy` decision. Those lines are the room talking — no bold name, no
 delete button — and they persist, so a refresh and a late arrival read the same history.
-**Everyone at the table has a colour**, picked from six presets on the same form as their name —
+**Everyone at the table has a colour**, picked from sixteen presets on the same form as their name —
 on the seat picker before joining, where the swatch beside each chair says which colours the room
 is already wearing (taken ones are marked, never blocked: two people may match, and the room
 doesn't argue). It belongs to the *seat*, so it survives a cleared browser and comes back when that
 seat is taken on another device, and it shows up in two places that answer "who": the name in chat,
-and the colour a ping pulses in. A seat from before colours has none and renders exactly as it did.
+and the colour a ping pulses in. It can be changed later from the swatch beside `playing as` in the
+rail — `participant.setColor` names no seat, so it can only be your own — and the change recolours
+what you already said, since a name's colour is looked up per render rather than stamped on a
+message. A seat from before colours has none and renders exactly as it did.
 And a live list of who's connected
 (distinct from the room's roster of everyone who has ever joined, which `state.sync` also
 carries).

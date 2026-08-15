@@ -235,3 +235,103 @@ func TestPing_CarriesTheSenderSoItCanBePaintedInTheirColour(t *testing.T) {
 		return
 	}
 }
+
+// Changing your colour reaches the room live, and reaches the person who
+// changed it — chat names and pings resolve colour from the roster, so a
+// sender left to update its own copy would be the one client whose log
+// disagreed with everyone else's until the next sync.
+func TestParticipantSetColor_ReachesTheWholeRoomIncludingTheSender(t *testing.T) {
+	r := newTokenTestRoom(t)
+
+	gmClient := r.ts.connect(t, r.room.Slug, r.gm.SessionToken)
+	gmClient.readEnvelope(t) // state.sync
+
+	playerClient := r.ts.connect(t, r.room.Slug, r.player.SessionToken)
+	playerClient.readEnvelope(t) // state.sync
+
+	playerClient.send(t, "participant.setColor", map[string]any{"color": "pink"})
+
+	for _, client := range []*testClient{playerClient, gmClient} {
+		env := readUpdatedParticipant(t, client)
+		var payload struct {
+			ID    string `json:"id"`
+			Color string `json:"color"`
+		}
+		if err := json.Unmarshal(env.Payload, &payload); err != nil {
+			t.Fatalf("unmarshal participant.updated payload: %v", err)
+		}
+		if payload.ID != r.player.ID || payload.Color != "pink" {
+			t.Fatalf("participant.updated = %+v, want the player in pink", payload)
+		}
+	}
+
+	// Stored, so a reload and a late arrival read the same thing.
+	participants, err := r.ts.store.ListParticipantsForRoom(r.room.ID)
+	if err != nil {
+		t.Fatalf("ListParticipantsForRoom: %v", err)
+	}
+	for _, p := range participants {
+		if p.ID == r.player.ID && p.Color != "pink" {
+			t.Fatalf("stored colour = %q, want pink", p.Color)
+		}
+	}
+}
+
+// The payload names no participant, so there is nothing to forge: the
+// seat changed is the one on the connection. This pins that the *only*
+// row touched is the caller's.
+func TestParticipantSetColor_ChangesOnlyTheCallersOwnSeat(t *testing.T) {
+	r := newTokenTestRoom(t)
+
+	playerClient := r.ts.connect(t, r.room.Slug, r.player.SessionToken)
+	playerClient.readEnvelope(t) // state.sync
+	// A participantId in the payload is ignored rather than honoured —
+	// there is no field for it, and adding one to the JSON changes
+	// nothing.
+	playerClient.send(t, "participant.setColor", map[string]any{
+		"color":         "green",
+		"participantId": r.gm.ID,
+	})
+	readUpdatedParticipant(t, playerClient)
+
+	participants, err := r.ts.store.ListParticipantsForRoom(r.room.ID)
+	if err != nil {
+		t.Fatalf("ListParticipantsForRoom: %v", err)
+	}
+	for _, p := range participants {
+		switch p.ID {
+		case r.player.ID:
+			if p.Color != "green" {
+				t.Errorf("the caller's colour = %q, want green", p.Color)
+			}
+		case r.gm.ID:
+			if p.Color == "green" {
+				t.Error("the GM's colour changed — the payload's participantId must be ignored")
+			}
+		}
+	}
+}
+
+func TestParticipantSetColor_RefusesOneOutsideThePalette(t *testing.T) {
+	r := newTokenTestRoom(t)
+
+	client := r.ts.connect(t, r.room.Slug, r.player.SessionToken)
+	client.readEnvelope(t) // state.sync
+
+	client.send(t, "participant.setColor", map[string]any{"color": "#000; content: 'x'"})
+	if env := client.readEnvelope(t); env.Type != "error" {
+		t.Fatalf("type = %q, want error for a colour outside the palette", env.Type)
+	}
+}
+
+// readUpdatedParticipant reads up to the next participant.updated,
+// skipping the presence chatter every connection in these tests makes.
+func readUpdatedParticipant(t *testing.T, c *testClient) envelope {
+	t.Helper()
+
+	for {
+		if env := c.readAnyEnvelope(t); env.Type == "participant.updated" {
+			return env
+		}
+	}
+}

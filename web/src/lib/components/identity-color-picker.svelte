@@ -14,14 +14,30 @@
 	// argue about it. Knowing is the whole ask.
 	import { IDENTITY_COLORS } from '$lib/identity-color';
 
+	// `onpick` is for the callers that aren't a form — the swatch in the
+	// rail changes a colour that already exists, so it sends a command
+	// rather than holding a value until a submit button. Both routes fire:
+	// a form binds `value` and ignores the callback.
 	let {
 		value = $bindable(''),
 		taken = [],
-		label = 'Your colour'
-	}: { value?: string; taken?: readonly string[]; label?: string } = $props();
+		label = 'Your colour',
+		onpick
+	}: {
+		value?: string;
+		taken?: readonly string[];
+		label?: string;
+		onpick?: (color: string) => void;
+	} = $props();
 </script>
 
-<div role="radiogroup" aria-label={label} class="flex flex-wrap items-center gap-2">
+<!-- A grid rather than a wrapping row: sixteen swatches at eight to a
+     line is a block about 280px wide, which fits the join form and the
+     rail's popover alike. Wrapping instead would make each caller's
+     width decide how many rows there are, and the palette is ordered
+     around the colour wheel — a spectrum that reflows is just a bag of
+     swatches again. -->
+<div role="radiogroup" aria-label={label} class="grid w-max grid-cols-8 gap-2">
 	{#each IDENTITY_COLORS as colour (colour.key)}
 		{@const isTaken = taken.includes(colour.key)}
 		<button
@@ -35,7 +51,10 @@
 				value === colour.key && 'outline-2 outline-offset-2 outline-sky-400'
 			]}
 			style="background-color: {colour.hex}"
-			onclick={() => (value = colour.key)}
+			onclick={() => {
+				value = colour.key;
+				onpick?.(colour.key);
+			}}
 		>
 			<!-- A hole in the middle for one that's spoken for. Not a tick and
 			     not a cross: both read as a verdict on the click, and this is
