@@ -284,8 +284,10 @@ func TestStateSync_IncludesActiveSceneAndMessages(t *testing.T) {
 	}
 
 	var payload struct {
-		Scene    *struct{ ID string `json:"id"` } `json:"scene"`
-		Messages []json.RawMessage                `json:"messages"`
+		Scene *struct {
+			ID string `json:"id"`
+		} `json:"scene"`
+		Messages []json.RawMessage `json:"messages"`
 	}
 	if err := json.Unmarshal(env.Payload, &payload); err != nil {
 		t.Fatalf("unmarshal state.sync payload: %v", err)

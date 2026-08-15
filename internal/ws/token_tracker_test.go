@@ -222,7 +222,7 @@ func TestTokenUpdate_HiddenTokenIsRefusedToItsOwnerLikeAMissingOne(t *testing.T)
 	fromHidden := errorMessage(t, client.readEnvelope(t))
 
 	client.send(t, "token.update", map[string]any{
-		"tokenId": "00000000-0000-4000-8000-000000000000",
+		"tokenId":  "00000000-0000-4000-8000-000000000000",
 		"trackers": []map[string]any{{"label": "HP", "value": 1}},
 	})
 	fromMissing := errorMessage(t, client.readEnvelope(t))

@@ -308,8 +308,8 @@ func TestTokenUpdate_RejectsMalformedPayloadAndBadVisibility(t *testing.T) {
 	client.readEnvelope(t) // state.sync
 
 	for _, payload := range []map[string]any{
-		{},                                     // no token, no name
-		{"tokenId": token.ID},                  // a token can't be left nameless
+		{},                    // no token, no name
+		{"tokenId": token.ID}, // a token can't be left nameless
 		{"tokenId": token.ID, "name": "Goblin", // and not every string is a visibility
 			"visibility": "invisible"},
 	} {

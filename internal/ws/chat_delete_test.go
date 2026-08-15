@@ -140,7 +140,7 @@ func TestChatDelete_GMDeletingSomeoneElsesMessage_BothSeeContentBystanderDoesNot
 		t.Fatalf("JoinRoom: %v", err)
 	}
 	eveClient := r.ts.connect(t, r.room, eve.SessionToken)
-	eveClient.readEnvelope(t) // state.sync
+	eveClient.readEnvelope(t)                   // state.sync
 	bobClient := r.ts.connect(t, r.room, r.bob) // the author
 	bobClient.readEnvelope(t)                   // state.sync
 	gmClient := r.ts.connect(t, r.room, r.gm)   // the deleter

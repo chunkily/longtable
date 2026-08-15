@@ -165,7 +165,7 @@ func TestTokenCreate_PlayerCannotHideOrGiveAway(t *testing.T) {
 	gmClient := r.ts.connect(t, r.room.Slug, r.gm.SessionToken)
 	gmClient.readEnvelope(t) // state.sync
 	client := r.ts.connect(t, r.room.Slug, r.player.SessionToken)
-	client.readEnvelope(t) // state.sync
+	client.readEnvelope(t)   // state.sync
 	gmClient.readPresence(t) // the player arriving
 
 	client.send(t, "token.create", map[string]any{
