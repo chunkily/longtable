@@ -31,8 +31,9 @@ architecture and current state live here instead**, and keeping them true is par
 | `web/src/lib/components/game-canvas.svelte` | the whole Konva map: layers, tools, rendering |
 | `web/src/lib/tool-family.ts` | the `Tool` union, and the rules grouping it into the toolbar's five families |
 | `web/src/lib/components/map-toolbar.svelte`, `tool-strip.svelte` | the floating tool row, and the active family's contextual strip |
+| `web/src/lib/stroke-colors.ts`, `components/stroke-color-picker.svelte` | the eight colours a drawing can be — light-map hues above, their bright counterparts for dark maps below — and the only place their hex lives, including the default every browser starts on; plus the one strip button they open from |
 | `web/src/lib/components/room-menu.svelte` | the menu behind the side panel's third icon: Scenes, Assets, Manage room, Leave room |
-| `web/src/lib/identity-color.ts` | the six colours a seat can be, and the only place their hex lives. A seat stores the *key*; `store.IdentityColors` in Go is the same list and validates it, since the value reaches a `style` attribute. `TestIdentityColors_MatchTheClientPalette` fails if the two drift |
+| `web/src/lib/identity-color.ts` | the sixteen colours a seat can be, and the only place their hex lives. A seat stores the *key*; `store.IdentityColors` in Go is the same list and validates it, since the value reaches a `style` attribute. `TestIdentityColors_MatchTheClientPalette` fails if the two drift |
 | `web/src/lib/components/ui/popover/` | the bits-ui popover, wrapped the way `ui/dialog` is. Every popup in the room is on it — the room menu and the draw strip's stroke width — and anything new that pops up over the map should be too, for the focus handling rather than the placement |
 | `web/src/lib/host-notice.svelte.ts`, `components/host-notice.svelte` | the Host's `-banner` message: fetched once, dismissable, and the height everything else moves down by |
 | `web/src/lib/components/theme-toggle.svelte` | System/Light/Dark as three icon buttons, in two shapes: a labelled row for the room menu and a floating pill for the home page's corner. The scheme itself is `mode-watcher`, wired up in `+layout.svelte`, plus the boot script in `app.html` that beats the flash of light |
@@ -125,7 +126,17 @@ width it is on and opens the three on a click — offered to every drawing tool 
 widths live in `web/src/lib/stroke-width.ts` and the popup in
 `web/src/lib/components/stroke-width-picker.svelte`; a range input was ruled against in favour of
 the strip's own discrete-button idiom, and the three were put behind a button to keep the strip
-short — and per-session undo/redo covering
+short. **The colour is a second button of the same shape and the same rule** — it wears the colour
+it will draw in, drops out for the eraser beside the width, and opens **eight swatches in two
+rows**: black/red/green/blue for light map art, white/bright
+red/bright green/bright blue underneath for dark, in columns so each sits under the one it answers
+to. Both rows are always shown and nothing reads the theme: the scheme says what the *page* is
+wearing, and a dark battle map under a light UI is the case the second row exists for. The colours
+live in `web/src/lib/stroke-colors.ts` and the popup in
+`web/src/lib/components/stroke-color-picker.svelte`; the swatches sat on the strip itself until
+the second row made it 66px tall, which is a band of map the strip covers in the corner the art
+usually starts in. The border on every swatch is what keeps white off a light panel and black off
+a dark one — and per-session undo/redo covering
 drawing, erasing, token creation, token deletion, token edits and token moves (an undo passes over
 a token someone else has changed since, rather than dragging it back out from under them),
 pings, distance measuring, area-of-effect templates (circle/cone/line/cube, origin on a snap
@@ -245,9 +256,7 @@ the number and `/roll 1d20+2` in chat is where it comes from; `Manage room` hold
 movement lock, and is still waiting on room privacy, deleting a room, and a switch to turn Player
 token creation off. Nothing caps how many tokens one Player may have standing. Fog has no automatic vision from tokens, no prebuilt releases, no way for a Host
 to remove a moderated asset server-wide or cap upload sizes per room (a room removing something
-from its own library is a different, smaller thing, and does exist). The stroke palette is still
-the one picked against light maps, so a black line on a dark battle map is nearly invisible
-(`planning/backlog/dark-map-stroke-palette.md`). The
+from its own library is a different, smaller thing, and does exist). The
 theme control isn't on the pre-join screen or the assets page — both are passed through rather
 than sat in, and both are one step from somewhere that has it.
 

@@ -18,6 +18,7 @@
 	import { loadFogOpacity, saveFogOpacity } from '$lib/fog-opacity';
 	import { RoomClient, type Token } from '$lib/room.svelte';
 	import { DRAWING_STROKE_WIDTH } from '$lib/drawing-hit';
+	import { DEFAULT_STROKE_COLOR } from '$lib/stroke-colors';
 	import { dayLabel, fullTimestamp, sameDay, timeOfDay } from '$lib/chat-time';
 	import { IDENTITY_COLORS, identityHex, suggestedColor } from '$lib/identity-color';
 	import IdentityColorPicker from '$lib/components/identity-color-picker.svelte';
@@ -136,7 +137,9 @@
 	// A Line is the one shape a single drag can't describe: the drag
 	// gives length and direction, never width.
 	let lineWidthFeet = $state(DEFAULT_LINE_WIDTH_FEET);
-	let strokeColor = $state('#000000');
+	// The colour every new drawing is made in. The two rows of swatches
+	// that change it are on the draw strip; see $lib/stroke-colors.
+	let strokeColor = $state(DEFAULT_STROKE_COLOR);
 	// The width every new drawing is made at, in world pixels. Starts at
 	// the default so a browser that never touches the control draws what
 	// it always did.

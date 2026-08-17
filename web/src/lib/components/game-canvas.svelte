@@ -24,6 +24,7 @@
 	import { PING_PULSES, PING_PULSE_INTERVAL_MS, PING_PULSE_SECONDS } from '$lib/ping';
 	import { fogRuns } from '$lib/fog';
 	import { DEFAULT_FOG_OPACITY } from '$lib/fog-opacity';
+	import { DEFAULT_STROKE_COLOR } from '$lib/stroke-colors';
 	import { setTrackers, trackerText } from '$lib/room.svelte';
 	import type {
 		Drawing,
@@ -53,7 +54,7 @@
 	let {
 		room,
 		activeTool = 'none',
-		strokeColor = '#000000',
+		strokeColor = DEFAULT_STROKE_COLOR,
 		strokeWidth = DRAWING_STROKE_WIDTH,
 		shapeFilled = false,
 		snapMode = 'intersections',

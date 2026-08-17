@@ -14,7 +14,9 @@
 	import { LINE_WIDTH_CHOICES_FEET, type SnapMode } from '$lib/aoe';
 	import { MAX_FOG_OPACITY, MIN_FOG_OPACITY } from '$lib/fog-opacity';
 	import { DRAWING_STROKE_WIDTH } from '$lib/drawing-hit';
+	import { DEFAULT_STROKE_COLOR } from '$lib/stroke-colors';
 	import { familyOf, type Tool } from '$lib/tool-family';
+	import StrokeColorPicker from '$lib/components/stroke-color-picker.svelte';
 	import StrokeWidthPicker from '$lib/components/stroke-width-picker.svelte';
 	import Pen from '@lucide/svelte/icons/pen';
 	import Slash from '@lucide/svelte/icons/slash';
@@ -34,7 +36,7 @@
 		room,
 		sceneId,
 		activeTool = $bindable('none'),
-		strokeColor = $bindable('#000000'),
+		strokeColor = $bindable(DEFAULT_STROKE_COLOR),
 		strokeWidth = $bindable(DRAWING_STROKE_WIDTH),
 		shapeFilled = $bindable(false),
 		snapMode = $bindable('intersections'),
@@ -107,13 +109,6 @@
 		{ value: 'centres', label: 'Centres' },
 		{ value: 'free', label: 'Free' }
 	];
-
-	const STROKE_COLORS = [
-		{ label: 'Black', value: '#000000' },
-		{ label: 'Red', value: '#cc0000' },
-		{ label: 'Green', value: '#008000' },
-		{ label: 'Blue', value: '#0033cc' }
-	];
 </script>
 
 {#snippet variant(v: { value: Tool; label: string; title: string; icon: typeof Pen })}
@@ -150,13 +145,16 @@
 		>
 			<Eraser class="h-4 w-4" />
 		</Button>
-		<!-- Every shape has a width, so this only drops out for the eraser,
-		     which takes whole strokes rather than making one. One button
-		     that opens the three, rather than the three themselves — see
-		     stroke-width-picker.svelte for why it costs a click. -->
+		<!-- What a new stroke will look like, and so both drop out for the
+		     eraser, which takes whole strokes rather than making one. Two
+		     buttons that open their choices rather than the choices
+		     themselves — see stroke-width-picker.svelte for why that is
+		     worth a click, and stroke-color-picker.svelte for the eight
+		     swatches that made the strip too thick to leave out here. -->
 		{#if activeTool !== 'eraser'}
 			<div class="flex items-center gap-1 border-l pl-2">
 				<StrokeWidthPicker bind:strokeWidth />
+				<StrokeColorPicker bind:strokeColor />
 			</div>
 		{/if}
 		<!-- Only the two kinds that enclose an area, so it appears when one
@@ -182,27 +180,6 @@
 				</Button>
 			</div>
 		{/if}
-		<!-- The selected swatch is ringed rather than bordered: an outline
-		     is drawn outside the element, so it never covers the colour it
-		     is marking and can't sit between the swatch and the pointer.
-		     Light blue reads against every colour in the palette, black
-		     included, and against the strip. -->
-		<div class="flex items-center gap-2 border-l pl-2">
-			{#each STROKE_COLORS as opt (opt.value)}
-				<button
-					type="button"
-					aria-label={opt.label}
-					aria-pressed={strokeColor === opt.value}
-					title={opt.label}
-					class={[
-						'h-6 w-6 rounded-full',
-						strokeColor === opt.value && 'outline-2 outline-offset-2 outline-sky-400'
-					]}
-					style="background-color: {opt.value}"
-					onclick={() => (strokeColor = opt.value)}
-				></button>
-			{/each}
-		</div>
 	</div>
 {:else if family === 'measure'}
 	<div
