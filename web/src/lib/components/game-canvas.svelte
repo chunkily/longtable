@@ -60,6 +60,7 @@
 		snapMode = 'intersections',
 		lineWidthFeet = DEFAULT_LINE_WIDTH_FEET,
 		fogOpacity = DEFAULT_FOG_OPACITY,
+		highContrastGrid = false,
 		selectedTokenId = $bindable(null)
 	}: {
 		room: RoomClient;
@@ -82,6 +83,8 @@
 		lineWidthFeet?: number;
 		/** The GM's own preference for how dark fog looks on their screen. */
 		fogOpacity?: number;
+		/** This browser's own choice — see $lib/grid-contrast. */
+		highContrastGrid?: boolean;
 		/**
 		 * The token this client has selected, or null. Bound rather than
 		 * owned here because the room page draws the details section that
@@ -124,6 +127,26 @@
 	// and has never heard of `var()`.
 	const MAP_PLACEHOLDER = { light: '#e4e4e7', dark: '#3f3f46' };
 	const GRID_LINE = { light: '#00000022', dark: '#ffffff26' };
+	// The high-contrast grid, and the one colour pair here that does *not*
+	// come in a light and a dark: what this has to stand out against is
+	// the map art, which has no idea what scheme the page is wearing. A
+	// dark line over a pale casing is the cartographer's answer to that —
+	// on light art the line carries it, on dark art the casing does, and
+	// neither has to know which it is sitting on. A single fixed colour
+	// cannot do both, which is the whole reason the faint grid needs a
+	// pair in the first place.
+	const GRID_LINE_BOLD = { line: '#18181be6', casing: '#ffffffd9' };
+	// Screen pixels, both of them, like the 1px the faint grid is ruled
+	// at. Two rather than one for the line is what makes it *bold* rather
+	// than merely dark: a grid line sits exactly on a pixel boundary, so a
+	// 1px stroke covers half of the column either side of it, and each of
+	// those halves then blends with the pale casing underneath — measured,
+	// that came out as a mid-grey core at rgba(142,142,143), which is not
+	// high contrast against anything. Two pixels fill both columns
+	// outright at any zoom, and the casing widens to match so it still
+	// shows on both flanks.
+	const GRID_BOLD_LINE_WIDTH = 2;
+	const GRID_BOLD_CASING_WIDTH = 4;
 	// A map that failed to load is a different thing from a scene with no
 	// map at all, and the two have to stay apart in both schemes. This
 	// used to be the dark placeholder's exact value, which was fine while
@@ -728,6 +751,15 @@
 	$effect(() => {
 		track(room.drawings);
 		if (stage) renderDrawings();
+	});
+
+	// Its own effect rather than a dependency of render(), same trade as
+	// fog opacity below: this changes the colour of the grid and nothing
+	// else, and a full render would rebuild the map image, every fog cell
+	// and every token to do it.
+	$effect(() => {
+		track(highContrastGrid, room.scene);
+		if (stage) renderGrid();
 	});
 
 	// Its own effect for the same reason drawings and tokens have theirs
@@ -1496,23 +1528,37 @@
 		const startY = Math.floor(viewTop / gridSize) * gridSize;
 		// Constant on-screen thickness regardless of zoom level.
 		const strokeWidth = 1 / scale;
-		const stroke = GRID_LINE[stageScheme];
+		const stroke = highContrastGrid ? GRID_LINE_BOLD.line : GRID_LINE[stageScheme];
 
+		const lines: number[][] = [];
 		for (let x = startX; x <= viewRight; x += gridSize) {
-			gridLayer.add(
-				new Konva.Line({
-					points: [x, viewTop, x, viewBottom],
-					stroke,
-					strokeWidth
-				})
-			);
+			lines.push([x, viewTop, x, viewBottom]);
 		}
 		for (let y = startY; y <= viewBottom; y += gridSize) {
+			lines.push([viewLeft, y, viewRight, y]);
+		}
+
+		// Every casing before every line, rather than a casing-and-line
+		// pair at a time: they share the one layer, so a casing added after
+		// its neighbour's line would be painted over the crossing and leave
+		// a pale notch at every intersection.
+		if (highContrastGrid) {
+			for (const points of lines) {
+				gridLayer.add(
+					new Konva.Line({
+						points,
+						stroke: GRID_LINE_BOLD.casing,
+						strokeWidth: GRID_BOLD_CASING_WIDTH / scale
+					})
+				);
+			}
+		}
+		for (const points of lines) {
 			gridLayer.add(
 				new Konva.Line({
-					points: [viewLeft, y, viewRight, y],
+					points,
 					stroke,
-					strokeWidth
+					strokeWidth: highContrastGrid ? GRID_BOLD_LINE_WIDTH / scale : strokeWidth
 				})
 			);
 		}

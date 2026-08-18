@@ -39,6 +39,7 @@ architecture and current state live here instead**, and keeping them true is par
 | `web/src/lib/identity-color.ts` | the sixteen colours a seat can be, and the only place their hex lives. A seat stores the *key*; `store.IdentityColors` in Go is the same list and validates it, since the value reaches a `style` attribute. `TestIdentityColors_MatchTheClientPalette` fails if the two drift |
 | `web/src/lib/components/ui/popover/` | the bits-ui popover, wrapped the way `ui/dialog` is. Every popup in the room is on it — the room menu and the draw strip's stroke width — and anything new that pops up over the map should be too, for the focus handling rather than the placement. **Not inside a dialog**, where it comes out unpositioned, transparent and under the overlay while still reading as present — see `seats-dialog.svelte` |
 | `web/src/lib/host-notice.svelte.ts`, `components/host-notice.svelte` | the Host's `banner` message: fetched once, dismissable, and the height everything else moves down by |
+| `web/src/lib/grid-contrast.ts` | whether this browser rules the grid in its bold style, stored per browser like the theme and the GM's fog opacity. The colours themselves are `GRID_LINE_BOLD` in `game-canvas.svelte`, and are deliberately *not* a light/dark pair |
 | `web/src/lib/components/theme-toggle.svelte` | System/Light/Dark as three icon buttons, in two shapes: a labelled row for the room menu and a floating pill for the home page's corner. The scheme itself is `mode-watcher`, wired up in `+layout.svelte`, plus the boot script in `app.html` that beats the flash of light |
 | `web/src/lib/components/initiative-panel.svelte` | the turn order in the rail's second panel — one component for both roles, with the GM's controls left off for everyone else |
 | `internal/ws/initiative.go` | the tracker's six commands and its one event, split out of `hub.go` |
@@ -133,7 +134,15 @@ packed 32 to an integer** (`internal/store/fog.go` and `web/src/lib/fog.ts` are 
 that format), which is why a new scene comes up revealed without anything having to materialise
 it, and why a fully covered map costs 1,400 rows rather than 40,000. The GM's own cover opacity is
 a slider on the fog family's strip, persisted per browser like the theme control rather than sent
-anywhere,
+anywhere. **The grid can be switched to a bold, high-contrast ruling** from `Bold grid` on the
+toolbar's second cluster — everyone's, stored per browser and never synced, since whether the
+faint default is too faint is a question about this screen and this map's art. It is a dark line
+over a pale casing rather than a colour picked per scheme: what it has to stand out against is the
+art, which has no idea what the page is wearing, so on light art the line carries it and on dark
+art the casing does. Two screen pixels rather than one, because a grid line sits exactly on a
+pixel boundary and a 1px stroke ends up half-covering the column either side of it and blending
+with its own casing — measured, that came out mid-grey.
+Then there are
 drawings (freehand/line/rect/ellipse) with an eraser — a rect or an ellipse can be **shaded inside**
 as well as outlined, from a paint-bucket toggle (`Fill shape`) that appears on the draw strip only for those two, and the
 shading is translucent so the map still reads through it while the outline stays solid; every
@@ -260,8 +269,9 @@ reaches the served HTML, so the scheme has to be applied before the app exists. 
 `mode.current` is read in exactly **one** effect, which assigns a plain `stageScheme` the render
 functions read — a reactive read inside a render function gives every effect that calls one a
 dependency on the theme, which is the same trap `resetView` carries a comment about. Only two
-things Konva paints follow the scheme: the grid, and the slab shown where a scene has no map.
-Strokes, pings and the rest are map content and stay put.
+things Konva paints follow the scheme: the grid, and the slab shown where a scene has no map — and
+the grid only while it is faint, since the bold ruling is one fixed pair of colours for the reason
+above. Strokes, pings and the rest are map content and stay put.
 
 On startup the server prints the LAN addresses players can use, one line per interface with the
 interface's name — a Host binding `-addr` to one interface is answered with that address alone,

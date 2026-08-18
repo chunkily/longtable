@@ -10,7 +10,7 @@ Added in this order, so this is also the `document.querySelectorAll('canvas')` i
 | Index | Layer | Listening | Holds |
 | --- | --- | --- | --- |
 | 0 | map | yes | the map image, or a flat rect when there's no image |
-| 1 | grid | no | grid lines, recomputed for the visible region on every pan/zoom/resize |
+| 1 | grid | no | grid lines, recomputed for the visible region on every pan/zoom/resize. Twice as many shapes when `highContrastGrid` is on: every casing is laid down before any line, since one layer means a casing added after its neighbour's line paints over the crossing |
 | 2 | fog | yes | one compound-path shape covering the hidden cells (see below) |
 | 3 | drawings | no | committed strokes |
 | 4 | tokens | yes | one `Group` per token, draggable in `'none'` mode and only if `room.canMoveToken` |

@@ -15,17 +15,20 @@
 	import Undo from '@lucide/svelte/icons/undo';
 	import Redo from '@lucide/svelte/icons/redo';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+	import Grid3x3 from '@lucide/svelte/icons/grid-3x3';
 
 	let {
 		room,
 		activeTool = $bindable('none'),
 		isGM,
+		highContrastGrid = $bindable(false),
 		onResetView,
 		newToken
 	}: {
 		room: RoomClient;
 		activeTool?: Tool;
 		isGM: boolean;
+		highContrastGrid?: boolean;
 		onResetView: () => void;
 		newToken?: Snippet;
 	} = $props();
@@ -121,6 +124,22 @@
 			onclick={onResetView}
 		>
 			<RefreshCw class="h-4 w-4" />
+		</Button>
+		<!-- On this cluster rather than in a family, because it isn't a
+		     tool: it changes how the map is *shown*, which is what undo and
+		     reset view beside it do too. It keeps its place on a phone
+		     while redo and reset view drop off — those two have the room
+		     menu to fall back on and this has nowhere, and a small screen
+		     is where a faint grid is hardest to see anyway. -->
+		<Button
+			variant={highContrastGrid ? 'default' : 'ghost'}
+			size="sm"
+			aria-label="Bold grid"
+			aria-pressed={highContrastGrid}
+			title="Bolder grid lines"
+			onclick={() => (highContrastGrid = !highContrastGrid)}
+		>
+			<Grid3x3 class="h-4 w-4" />
 		</Button>
 	</div>
 </div>

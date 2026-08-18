@@ -16,6 +16,7 @@
 	import { clearSession, loadSession, saveSession, touchSession } from '$lib/session';
 	import { hostNotice } from '$lib/host-notice.svelte';
 	import { loadFogOpacity, saveFogOpacity } from '$lib/fog-opacity';
+	import { loadHighContrastGrid, saveHighContrastGrid } from '$lib/grid-contrast';
 	import { RoomClient, type Token } from '$lib/room.svelte';
 	import { DRAWING_STROKE_WIDTH } from '$lib/drawing-hit';
 	import { DEFAULT_STROKE_COLOR } from '$lib/stroke-colors';
@@ -149,6 +150,12 @@
 	// carried on the wire.
 	let fogOpacity = $state(loadFogOpacity());
 	$effect(() => saveFogOpacity(fogOpacity));
+	// The same shape, and everyone's rather than the GM's: the default
+	// grid is faint on purpose, and whether that is too faint is a
+	// question about this screen and this map's art. See
+	// $lib/grid-contrast.
+	let highContrastGrid = $state(loadHighContrastGrid());
+	$effect(() => saveHighContrastGrid(highContrastGrid));
 
 	// Which of the two switchable panels the side rail is showing. The
 	// menu is the third foot icon but isn't a panel — it opens over
@@ -969,6 +976,7 @@
 					{snapMode}
 					{lineWidthFeet}
 					{fogOpacity}
+					{highContrastGrid}
 					bind:selectedTokenId
 					bind:this={canvasRef}
 				/>
@@ -1023,7 +1031,13 @@
 						showConnectionBanner ? 'top-16' : 'top-2'
 					]}
 				>
-					<MapToolbar {room} bind:activeTool {isGM} onResetView={() => canvasRef?.resetView()}>
+					<MapToolbar
+						{room}
+						bind:activeTool
+						{isGM}
+						bind:highContrastGrid
+						onResetView={() => canvasRef?.resetView()}
+					>
 						{#snippet newToken()}
 							<!-- Everyone's, not just the GM's: a Player's summons and
 							     familiars were the GM's paperwork mid-fight. The dialog
