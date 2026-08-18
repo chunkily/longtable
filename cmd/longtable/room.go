@@ -15,6 +15,12 @@ import (
 // administrative escape hatch the server host runs directly against
 // the SQLite file, for cases the web UI can't cover (e.g. a GM who
 // lost their password).
+//
+// It finds the database the same way the server does — through the
+// config file — rather than taking a path of its own. Two ways of
+// naming one database is how a Host ends up resetting a password in a
+// file the running server has never opened, and being told the room
+// doesn't exist.
 func runRoomCommand(args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("usage: longtable room <list|reset-password> [flags]")
@@ -23,20 +29,28 @@ func runRoomCommand(args []string) error {
 	switch args[0] {
 	case "list":
 		fset := flag.NewFlagSet("room list", flag.ExitOnError)
-		dbPath := fset.String("db", "longtable.db", "path to the SQLite database file")
+		configPath := addConfigFlag(fset)
 		fset.Parse(args[1:])
-		return roomList(*dbPath)
+		cfg, err := loadConfig(*configPath)
+		if err != nil {
+			return err
+		}
+		return roomList(cfg.Database)
 
 	case "reset-password":
 		fset := flag.NewFlagSet("room reset-password", flag.ExitOnError)
-		dbPath := fset.String("db", "longtable.db", "path to the SQLite database file")
+		configPath := addConfigFlag(fset)
 		fset.Parse(args[1:])
 		if fset.NArg() != 1 {
-			// flags must come before the room code: `-db path` is parsed as
-			// a flag only if it precedes the positional argument.
-			return fmt.Errorf("usage: longtable room reset-password [-db path] <room-code>")
+			// The flag must come before the room code: `-config path` is
+			// parsed as a flag only if it precedes the positional argument.
+			return fmt.Errorf("usage: longtable room reset-password [-config path] <room-code>")
 		}
-		return roomResetPassword(*dbPath, fset.Arg(0))
+		cfg, err := loadConfig(*configPath)
+		if err != nil {
+			return err
+		}
+		return roomResetPassword(cfg.Database, fset.Arg(0))
 
 	default:
 		return fmt.Errorf("unknown room subcommand %q (want \"list\" or \"reset-password\")", args[0])

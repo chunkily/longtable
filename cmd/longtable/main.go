@@ -4,9 +4,13 @@
 //
 // Usage:
 //
-//	longtable [serve] [-addr :8080] [-db longtable.db] [-assets longtable-assets]
-//	longtable room list [-db longtable.db]
-//	longtable room reset-password [-db longtable.db] <room-code>
+//	longtable [serve] [-config longtable.toml]
+//	longtable room list [-config longtable.toml]
+//	longtable room reset-password [-config longtable.toml] <room-code>
+//
+// Every setting lives in the config file, which the server writes for
+// itself the first time it runs. `-config` is the only flag there is:
+// see internal/config for why.
 package main
 
 import (
@@ -21,6 +25,7 @@ import (
 	assets "longtable"
 	"longtable/internal/api"
 	"longtable/internal/blobstore"
+	"longtable/internal/config"
 	"longtable/internal/db"
 	"longtable/internal/lanurl"
 	"longtable/internal/store"
@@ -41,42 +46,37 @@ func main() {
 	}
 
 	if err != nil {
-		slog.Error("longtable: fatal error", "error", err)
+		// Plain text on stderr rather than slog, which quotes a message
+		// onto one line: the config parser answers a typo by drawing the
+		// offending line with the key underlined, and slog turns that into
+		// a string full of escaped newlines. This is the last thing a Host
+		// sees before the process goes, so it is the one place worth
+		// printing rather than logging.
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
 func runServe(args []string) error {
 	fset := flag.NewFlagSet("serve", flag.ExitOnError)
-	addr := fset.String("addr", ":8080", "address to listen on")
-	dbPath := fset.String("db", "longtable.db", "path to the SQLite database file")
-	assetsDir := fset.String("assets", "longtable-assets", "directory for uploaded map/token images")
-	// A Host's own announcement — "back up at 9", "new server address
-	// next week". Shown to everyone on this server, in every room, and
-	// dismissable by each of them; changing the text brings it back for
-	// people who dismissed the last one. A flag rather than a screen
-	// because a Host runs the server and needn't be at any table on it.
-	banner := fset.String("banner", "", "a message shown to everyone on this server until they dismiss it")
-	// How long a dropped connection has to come back before the room is
-	// told somebody left. A flag because the right answer is the table's
-	// wifi, not ours: a hall with one bad access point wants longer, and
-	// the e2e suite wants it in seconds so a test can watch someone
-	// leave. See ws.departureGrace for what it costs to get wrong.
-	departureGrace := fset.Duration("departure-grace", ws.DefaultDepartureGrace,
-		"how long someone may be disconnected before the room is told they left")
+	configPath := addConfigFlag(fset)
 	fset.Parse(args)
 
-	return serve(*addr, *dbPath, *assetsDir, *banner, *departureGrace)
+	cfg, err := loadConfig(*configPath)
+	if err != nil {
+		return err
+	}
+	return serve(cfg)
 }
 
-func serve(addr, dbPath, assetsDir, banner string, departureGrace time.Duration) error {
-	s, closeDB, err := openStore(dbPath)
+func serve(cfg config.Config) error {
+	s, closeDB, err := openStore(cfg.Database)
 	if err != nil {
 		return err
 	}
 	defer closeDB()
 
-	blobs, err := blobstore.New(assetsDir)
+	blobs, err := blobstore.New(cfg.Assets)
 	if err != nil {
 		return fmt.Errorf("open asset storage: %w", err)
 	}
@@ -86,12 +86,33 @@ func serve(addr, dbPath, assetsDir, banner string, departureGrace time.Duration)
 		return fmt.Errorf("load embedded frontend: %w", err)
 	}
 
-	hub := ws.NewHub(s, departureGrace)
-	router := api.NewRouter(s, hub, blobs, frontend, banner)
+	hub := ws.NewHub(s, time.Duration(cfg.DepartureGrace))
+	router := api.NewRouter(s, hub, blobs, frontend, cfg.Banner)
 
-	slog.Info("longtable: listening", "addr", addr, "db", dbPath, "assets", assetsDir)
-	logReachableURLs(addr)
-	return http.ListenAndServe(addr, router)
+	slog.Info("longtable: listening", "addr", cfg.Addr, "db", cfg.Database, "assets", cfg.Assets)
+	logReachableURLs(cfg.Addr)
+	return http.ListenAndServe(cfg.Addr, router)
+}
+
+// addConfigFlag registers the one flag every subcommand has. There are
+// no others: settings live in the file, and this says which file.
+func addConfigFlag(fset *flag.FlagSet) *string {
+	return fset.String("config", config.DefaultPath, "path to the settings file")
+}
+
+// loadConfig reads the settings, creating them only at the default
+// location.
+//
+// A Host who typed a path has a file in mind; writing a fresh default
+// one there would start a server that ignores everything they
+// configured and says nothing about it. A missing file at the default
+// location means a server nobody has configured yet, which is the case
+// the auto-created file exists for.
+func loadConfig(path string) (config.Config, error) {
+	if path == config.DefaultPath {
+		return config.LoadOrCreate(path)
+	}
+	return config.Load(path)
 }
 
 // logReachableURLs prints the addresses the rest of the table can use.

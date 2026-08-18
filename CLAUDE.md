@@ -12,13 +12,14 @@ architecture and current state live here instead**, and keeping them true is par
 
 | Path | What lives there |
 | --- | --- |
-| `cmd/longtable/` | entrypoint: `serve` (default) plus a `room list` / `room reset-password` admin CLI |
+| `cmd/longtable/` | entrypoint: `serve` (default) plus a `room list` / `room reset-password` admin CLI. Every subcommand takes `-config` and nothing else — settings live in the file, including the database path the room CLI uses to find the same database the server has open |
 | `internal/api/` | HTTP routes: create/join room, GM login, asset upload + serving + per-room library listing, health check, the Host's banner (`GET /api/notice`), `GET /ws` upgrade, SPA fallback for the embedded frontend |
 | `internal/ws/` | the real-time hub and the authority on room state — command/event protocol, permission checks, broadcast |
 | `internal/store/` | SQLite schema and every typed query (rooms, participants, scenes, tokens, fog, drawings, chat). `store.go` holds the `CREATE TABLE`s, plus `addMissingColumns` — the only way a column reaches a database that already exists, since `CREATE TABLE IF NOT EXISTS` won't. **No `CHECK` constraints**: a value set that can grow has to live in Go, and `TestSchema_HasNoCheckConstraints` enforces it. `fog.go` stores the *hidden* cells packed 32 to an integer — read its doc comment before touching fog anywhere |
 | `internal/imageproc/` | decodes and re-encodes every upload to WebP. Read its doc comment before touching it — the studio-swing trap in there is easy to reintroduce |
 | `internal/blobstore/` | re-encoded images on disk, addressed by content hash so identical uploads share a file |
 | `internal/auth/` | session tokens and bcrypt password hashing. No accounts — identity in a room is a *seat* (a `participant` row), and a device proves it holds one with a `session` token in `localStorage`. See [ADR-0008](planning/decisions/0008-seats-and-sessions.md) |
+| `internal/config/` | the Host's `longtable.toml`: every setting there is, the defaults, and the commented file the server writes for itself when there isn't one. Written from a template rather than marshalled, because comments are the whole reason it's TOML ([ADR-0006](planning/decisions/0006-config-file-format.md)) — and written once, never rewritten |
 | `internal/dice/` | `/roll 2d6+3` expression parser |
 | `internal/lanurl/` | which of the machine's addresses a Host can hand to their players, printed at startup. Takes the interface list as an argument, so the rules are testable on machines nobody has |
 | `internal/db/` | SQLite wiring (`modernc.org/sqlite`, no CGO) |
@@ -35,7 +36,7 @@ architecture and current state live here instead**, and keeping them true is par
 | `web/src/lib/components/room-menu.svelte` | the menu behind the side panel's third icon: Scenes, Assets, Manage room, Leave room |
 | `web/src/lib/identity-color.ts` | the sixteen colours a seat can be, and the only place their hex lives. A seat stores the *key*; `store.IdentityColors` in Go is the same list and validates it, since the value reaches a `style` attribute. `TestIdentityColors_MatchTheClientPalette` fails if the two drift |
 | `web/src/lib/components/ui/popover/` | the bits-ui popover, wrapped the way `ui/dialog` is. Every popup in the room is on it — the room menu and the draw strip's stroke width — and anything new that pops up over the map should be too, for the focus handling rather than the placement |
-| `web/src/lib/host-notice.svelte.ts`, `components/host-notice.svelte` | the Host's `-banner` message: fetched once, dismissable, and the height everything else moves down by |
+| `web/src/lib/host-notice.svelte.ts`, `components/host-notice.svelte` | the Host's `banner` message: fetched once, dismissable, and the height everything else moves down by |
 | `web/src/lib/components/theme-toggle.svelte` | System/Light/Dark as three icon buttons, in two shapes: a labelled row for the room menu and a floating pill for the home page's corner. The scheme itself is `mode-watcher`, wired up in `+layout.svelte`, plus the boot script in `app.html` that beats the flash of light |
 | `web/src/lib/components/initiative-panel.svelte` | the turn order in the rail's second panel — one component for both roles, with the GM's controls left off for everyone else |
 | `internal/ws/initiative.go` | the tracker's six commands and its one event, split out of `hub.go` |
@@ -183,7 +184,7 @@ And a live list of who's connected
 carries).
 
 **Presence is the hub's, and leaving is on a timer.** A participant whose last connection closes
-stays present for `-departure-grace` (30 seconds by default); coming back inside that window
+stays present for `departure_grace` (30 seconds by default); coming back inside that window
 cancels it and broadcasts *nothing at all*, since the room was never told they left. Only when it
 expires do `participant.disconnected` and the chat log's `left` line go out. That is what stopped
 the badges flickering every time a phone locked its screen — the reconnect backoff starts at half a
@@ -253,13 +254,23 @@ On startup the server prints the LAN addresses players can use, one line per int
 interface's name — a Host binding `-addr` to one interface is answered with that address alone,
 since enumerating the rest would be a lie about where the server is.
 
-**The Host has one thing in the UI**, and it isn't in a room: `longtable serve -banner "…"`
-puts a message across the top of every page for everyone on the server, dismissable per browser
-and keyed by its own text, so changing the message brings it back for people who dismissed the
-last one. A Host runs the server and needn't be at any table on it (`planning/roles.md`), which is
-why it is a flag rather than a screen. `-departure-grace` is the second one and the same shape of
-decision: how long a dropped connection has to come back before the room is told, where the right
-answer is the hall's wifi rather than ours.
+**A Host configures the server by editing one file.** `longtable.toml`, in the working directory
+beside the database and assets it names, written with defaults and a comment per setting the first
+time the server runs and never rewritten after that — so a Host's own notes survive. `-config`
+points at another one and is the only flag any subcommand takes; there are no environment
+variables and no setting flags. A key the server doesn't recognise stops it starting and prints
+the line the typo is on, because the failure a config file invents is an edit that silently does
+nothing. A key that's simply absent takes its default, which is what lets a later version add one
+without breaking every file already out there.
+
+**The Host's two settings that reach a room** are `banner` and `departure_grace`. The banner puts
+a message across the top of every page for everyone on the server, dismissable per browser and
+keyed by its own text, so changing it brings it back for people who dismissed the last one. A Host
+runs the server and needn't be at any table on it (`planning/roles.md`), which is why it's a
+setting rather than a screen. `departure_grace` is the same shape of decision: how long a dropped
+connection has to come back before the room is told, where the right answer is the hall's wifi
+rather than ours. Neither is re-read while the server is up — changing either means a restart, and
+`planning/backlog/host-config-file.md` records why live reload was left out.
 
 Known gaps, which is also roughly the queue: nothing rolls initiative for you — the tracker takes
 the number and `/roll 1d20+2` in chat is where it comes from; `Manage room` holds seats, the
@@ -411,6 +422,10 @@ after the fact has already misled someone. The triggers, all cheap:
   comments in `web/e2e/*.spec.ts`, which index layers by number.
 - Added a test helper or changed how a suite runs → `testing.md`, and the README if the command
   a human types changed.
+- Added a Host-configurable setting → `internal/config`'s struct and template **and** the table in
+  `docs/hosting.md`. The generated file and that table are the only two places a Host learns a
+  setting exists, and the story behind them (`host-config-documentation`) asks for both to stay
+  current.
 - Shipped a feature or closed a gap → "Where things stand" above, plus flipping the backlog item's
   `status:`, its "What shipped" note, and flipping the linked user story's `status:` to `done`
   once every acceptance criterion actually holds (see `longtable-backlog`).

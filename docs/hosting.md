@@ -35,10 +35,47 @@ Then other players may be able to get to the main page at
 Note that if nothing is printed, the machine may have no network address to
 share: check it's actually on the network.
 
-## Advanced Configuration
+## Settings
 
-This section will document the server's config file — its location, every
-available setting, and their defaults — once that feature is implemented.
+The first time you run Longtable it writes a file called `longtable.toml` next
+to itself, filled with its defaults and a comment explaining each one. Edit that
+file and restart the server to change a setting. Nothing else configures the
+server: there are no options on the command line.
+
+Longtable writes that file once. It never rewrites it, so your own comments and
+layout stay as you left them.
+
+| Setting           | Default              | What it does                                                                   |
+| ----------------- | -------------------- | ------------------------------------------------------------------------------ |
+| `addr`            | `":8080"`            | The address to listen on. `"127.0.0.1:8080"` keeps the server to this machine. |
+| `database`        | `"longtable.db"`     | Where every room and everything in it is stored. This is the file to back up.  |
+| `assets`          | `"longtable-assets"` | The directory uploaded maps and token art go in.                               |
+| `banner`          | `""`                 | A message shown to everyone on this server. See below.                         |
+| `departure_grace` | `"30s"`              | How long someone may be disconnected before the room is told they left.        |
+
+Run a second server on the same machine by giving it its own file:
+
+```sh
+longtable -config table-two.toml
+```
+
+That file has to exist. Longtable creates one for you only at the default
+location, so a mistyped path is refused rather than answered with a fresh set of
+defaults.
+
+A setting Longtable doesn't recognise stops it starting, and it prints the line
+your typo is on. A setting you leave out takes its default.
+
+### A message for everyone on the server
+
+`banner` puts a line across the top of every page, in every room, until each
+person dismisses it. Use it for your own announcements:
+
+```toml
+banner = "Server going down for backup at 9pm"
+```
+
+Change the text and it comes back for the people who dismissed the last one.
 
 ### Players dropping in and out
 
@@ -48,8 +85,8 @@ puts nothing in the chat log.
 
 On a bad network, give it longer:
 
-```sh
-longtable serve -departure-grace 2m
+```toml
+departure_grace = "2m"
 ```
 
 A player who closes their laptop still shows as connected until the wait is up.
@@ -64,6 +101,10 @@ access.
 Two recovery scenarios are documented here for hosts to help GMs that don't have
 access to the hosting machine, and each should take less than a minute to do.
 You will need to run the commands in a terminal!
+
+Run them from the folder holding your `longtable.toml`, or add `-config
+path/to/longtable.toml`. That file is how these commands find the same database
+the server is using.
 
 ### They've lost the room code
 

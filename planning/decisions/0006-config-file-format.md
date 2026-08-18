@@ -115,7 +115,17 @@ to move away from.
 
 ## Action Items
 
-1. [ ] Add a TOML library dependency (e.g. `BurntSushi/toml` or `pelletier/go-toml`) for reading
+1. [x] Add a TOML library dependency (e.g. `BurntSushi/toml` or `pelletier/go-toml`) for reading
    and writing the config file
-2. [ ] Ensure the auto-generated default config file includes explanatory comments for each
+2. [x] Ensure the auto-generated default config file includes explanatory comments for each
    setting, not just bare key/value pairs
+
+Both done in `internal/config` (2026-08-18). The library is `pelletier/go-toml/v2`, chosen over
+`BurntSushi/toml` for its strict decoding: it names an unrecognised key *and* draws the line it
+sits on, which is most of the "malformed config fails with a clear error" criterion for free.
+
+Writing turned out not to need the library at all. A marshaller emits key/value pairs and drops
+comments, which is the one thing this ADR chose TOML for — so the generated file is a template
+string with the defaults interpolated, and the library only ever reads. The consequence is worth
+knowing: Longtable writes that file once and never rewrites it, because a rewrite would take a
+Host's own comments away.

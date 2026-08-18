@@ -50,3 +50,8 @@ Not done: changing the message without restarting. It is a flag, so it is fixed 
 the process. [host-config-file](host-config-file.md) is where that belongs — **this is one of the
 settings that item must absorb**, and a config file it can reload is what would make the message
 editable in place.
+
+**Update, 2026-08-18.** `host-config-file` shipped and absorbed it: the banner is now `banner` in
+`longtable.toml` and the flag is gone. The second half of this paragraph is still true, though —
+the file is read once at startup, so changing the message still means a restart. Live reload was
+deliberately left out of that item and is the note at the foot of it.

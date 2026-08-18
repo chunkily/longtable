@@ -249,7 +249,8 @@ Two things that quietly make a pixel assertion measure nothing:
 - **A departure is announced by a timer**, half a minute after the socket closed. `hurryDepartures`
   shortens it for the tests that want to watch someone leave; everything else should leave the
   production value alone, since a timer firing mid-test turns unrelated assertions into a race.
-  The e2e harness passes `-departure-grace 2s` — long enough that a spec reloading a page doesn't
+  The e2e harness writes a `longtable.toml` holding `departure_grace = "2s"` and starts the
+  server with `-config` pointing at it — long enough that a spec reloading a page doesn't
   trip a spurious departure, short enough for a presence assertion to outlast it.
 - **`toBeVisible()` says nothing about opacity**, so a popup whose enter animation never finishes
   passes every locator assertion in the suite while being invisible to a person. Worth knowing

@@ -34,7 +34,7 @@
 // Windows firewall/trust prompt only needs approving once, not on
 // every test run.
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdirSync, rmSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -109,15 +109,23 @@ if (build.status !== 0) {
 	process.exit(build.status ?? 1);
 }
 
-const server = spawn(
-	binPath,
+// The server has one flag and everything else comes from this file, so
+// the harness writes one rather than passing settings. Written every run
+// rather than only when missing: it is generated output, and a stale
+// copy left by an older harness is exactly the kind of thing nobody
+// thinks to look at.
+//
+// `-config` is passed explicitly, which also means the server refuses to
+// start if this file somehow isn't there rather than quietly creating a
+// default one that points at the developer's own database.
+const configPath = path.join(dataDir, 'longtable.toml');
+writeFileSync(
+	configPath,
 	[
-		'-addr',
-		':8080',
-		'-db',
-		path.join(dataDir, 'longtable.db'),
-		'-assets',
-		path.join(dataDir, 'assets'),
+		'# Written by web/e2e/run-app.mjs on every run. Edits here are lost.',
+		'addr = ":8080"',
+		`database = ${JSON.stringify(path.join(dataDir, 'longtable.db'))}`,
+		`assets = ${JSON.stringify(path.join(dataDir, 'assets'))}`,
 		// Someone closing a browser context has to leave the room while a
 		// spec is still watching, and the real half-minute would mean
 		// every presence assertion outliving Playwright's timeout.
@@ -126,9 +134,10 @@ const server = spawn(
 		// longer than a page reload, or the reconnect lands outside the
 		// grace and the specs that reload would see spurious departures —
 		// including in the chat log, which keeps them.
-		'-departure-grace',
-		'2s'
-	],
-	{ stdio: 'inherit' }
+		'departure_grace = "2s"',
+		''
+	].join('\n')
 );
+
+const server = spawn(binPath, ['-config', configPath], { stdio: 'inherit' });
 server.on('exit', (code) => process.exit(code ?? 0));

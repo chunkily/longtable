@@ -374,7 +374,7 @@ Folding them into one "online" flag per row would make the offline half unrepres
 exactly the half a GM prepping tokens needs.
 
 **The hub owns presence, and a departure is on a timer.** A participant whose last connection
-closes is still present for `-departure-grace` (30s by default): `unregister` starts a
+closes is still present for `departure_grace` (30s by default): `unregister` starts a
 `time.AfterFunc` and announces nothing, and a connection arriving inside that window cancels it and
 broadcasts *nothing at all* — the room was never told they left, so telling it they arrived would
 announce a change that never happened. Only when the timer runs out does `participant.disconnected`
