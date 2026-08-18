@@ -104,4 +104,5 @@ and an add.
 
 - [token-recent-interaction-stacking](token-recent-interaction-stacking.md) was waiting on this
   shipping so a tracker click could bump a token up the canvas stack. That click now exists and
-  sets `selectedTokenId`.
+  sets `selectedTokenId` — and stacking has since shipped on the back of it, hanging its raise off
+  an `$effect` on that id so the tracker and the canvas share one path.

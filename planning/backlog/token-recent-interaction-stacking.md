@@ -1,7 +1,7 @@
 ---
 title: Stack recently-interacted tokens on top
 created: 2026-07-31
-status: open
+status: done
 tags: [tokens, ui]
 story: room-member-token-stacking-order
 ---
@@ -48,3 +48,34 @@ case where not being able to get at what's underneath starts to hurt.
 ## Related user stories
 
 - [room-member-token-stacking-order](../user-stories/room-member-token-stacking-order.md)
+
+## What shipped
+
+Clicking a token, starting to drag one, or clicking its entry in the initiative tracker brings it
+to the top of the stack on that screen. Nothing else moves, so a token nobody has touched keeps
+the place creation order gave it. Not sent anywhere, not stored, and gone on a reload — which puts
+the whole map back in creation order.
+
+`raisedTokenIds` in `game-canvas.svelte` is the whole of the state: token ids, oldest touched
+first, a plain array because nothing reactive reads it and making it `$state` would give every
+effect that touched it a dependency on which token was last poked.
+
+Two things that are easy to get wrong here:
+
+- **`moveToTop()` alone doesn't hold.** `renderTokens` destroys and rebuilds every group in
+  `room.tokens` order, and that happens whenever anyone changes any token anywhere in the room —
+  so a raise made on click is gone the moment someone across the table edits a hit point. The list
+  is re-applied at the end of every rebuild, which is what makes it stick. There is a spec for
+  exactly this (`a raised token stays raised when the tokens are rebuilt`) because it passes
+  without it as long as nothing else happens to be moving.
+- **The tracker's click never reaches the canvas.** It sets the bound `selectedTokenId` from
+  outside the component, so the raise hangs off an `$effect` on that id rather than off the
+  stage's click handler — one path for both, as this item asked. That effect is deliberately its
+  own rather than a line in the selection-ring effect beside it: that one also tracks
+  `room.tokens`, so any token change would re-raise the selected token over one dragged since.
+
+The spec proves the order by clicking where two tokens overlap and asking which one answers, since
+Konva has no DOM to inspect. The overlap is a Large token with a Medium one on its top-left
+square: both cover that square and the big one still has three squares of its own to be clicked
+on. Two tokens the same size can't be used — the second lands on the same square as the first and
+covers it completely, which leaves no way to click the buried one at all.

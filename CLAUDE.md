@@ -98,7 +98,11 @@ ring;
 anyone can click one to select it, which rings it on the map and shows its
 details above chat, whose token it is included, with a pen and a bin beside them for a GM or for
 whoever owns it — the
-selection is local to that browser, never synced; each token also carries three numeric trackers,
+selection is local to that browser, never synced. **Touching a token also brings it to the top of
+the stack** — a click, the start of a drag, or its entry in the initiative tracker — so an
+overlapping pile can be worked through rather than leaving whatever was made last permanently on
+top. That order is this screen's alone too: never sent, never stored, and gone on a reload, which
+puts everything back in creation order. Each token also carries three numeric trackers,
 labelled per token (hit points, armour class, a resource), and any number of condition tags — all
 three slots shown in that details panel as large boxes whose values are typed straight into them,
 a focused box floating a −/+ control that steps by 1 or by whatever it's told, plus a card when

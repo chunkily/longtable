@@ -781,6 +781,20 @@
 		if (stage) renderSelection();
 	});
 
+	// Selecting a token raises it, wherever the selection came from — the
+	// stage's own click handler, or a linked entry in the initiative
+	// tracker, which sets the same bound id from outside this component.
+	// One effect for both, rather than a call at each site, because the
+	// tracker's click never reaches the canvas at all.
+	//
+	// Deliberately its own effect rather than a line in the one above:
+	// that one also tracks room.tokens, so anyone changing any token would
+	// re-raise the selected one — over a token dragged since, which was
+	// the more recent interaction.
+	$effect(() => {
+		if (stage && selectedTokenId) raiseToken(selectedTokenId);
+	});
+
 	// room.tokens is tracked so the card follows the numbers it's showing:
 	// someone else changing a hovered token's hit points has to reach the
 	// card, and a token that leaves the scene has to take its card with it.
@@ -2196,6 +2210,49 @@
 		previewLayer?.batchDraw();
 	}
 
+	// --- recency stacking. Which tokens have been touched on this screen,
+	// oldest first, so the last one interacted with is drawn on top. ---
+	//
+	// Purely local and never sent anywhere: two people at the same table
+	// have been handling different tokens, and each of them wants their
+	// own on top. It isn't persisted either — a reload is a fresh screen
+	// with nothing touched yet, which is creation order again.
+	//
+	// A plain array rather than $state: nothing reactive reads it, the
+	// Konva layer is the thing it changes, and making it reactive would
+	// give every effect that reads it a dependency on which token was last
+	// poked.
+	let raisedTokenIds: string[] = [];
+
+	// Finds a token's group on the layer, or null while the layer is
+	// between rebuilds. Matches on the same `.token` name and `tokenId`
+	// attr the click handler walks up to.
+	function tokenGroup(tokenId: string): Konva.Group | null {
+		for (const node of tokenLayer.find<Konva.Group>('.token')) {
+			if (node.getAttr('tokenId') === tokenId) return node;
+		}
+		return null;
+	}
+
+	// Brings a token to the top of the stack, and remembers that it is
+	// there. Both halves matter: `moveToTop` alone is undone by the next
+	// rebuild of the layer (someone else moving any token is enough), and
+	// the list alone wouldn't move anything until that rebuild came.
+	//
+	// Called for a click and for the start of a drag, which are the two
+	// pointer gestures a token has — Konva suppresses the click after a
+	// real drag, so neither covers the other.
+	function raiseToken(tokenId: string) {
+		const at = raisedTokenIds.indexOf(tokenId);
+		if (at !== -1) raisedTokenIds.splice(at, 1);
+		raisedTokenIds.push(tokenId);
+
+		const group = tokenGroup(tokenId);
+		if (!group) return; // not rendered yet; the next rebuild lays it out
+		group.moveToTop();
+		tokenLayer.batchDraw();
+	}
+
 	function renderTokens(gridSize: number) {
 		// Where each group has actually got to, for any slide still in
 		// flight. A re-render mid-slide — someone else moving a different
@@ -2289,6 +2346,10 @@
 			// stored square doesn't change until the drop.
 			group.on('dragstart', () => {
 				hoveredTokenId = null;
+				// Raised as the drag starts rather than when it lands: a token
+				// dragged out from under two others should be visible for the
+				// whole journey, not only once it stops.
+				raiseToken(token.id);
 				startTokenDragPreview(group, token, gridSize);
 			});
 
@@ -2378,6 +2439,15 @@
 		for (const id of [...renderedPositions.keys()]) {
 			if (!present.has(id)) renderedPositions.delete(id);
 		}
+
+		// The rebuild above put every group back in `room.tokens` order, so
+		// the recency order has to be laid on again — oldest touched first,
+		// each one lifted over the last, which leaves the most recent on
+		// top. Doing it here rather than sorting the loop above keeps this a
+		// handful of `moveToTop` calls on the tokens anyone has actually
+		// touched, and leaves everything else in the order it was created.
+		raisedTokenIds = raisedTokenIds.filter((id) => present.has(id));
+		for (const id of raisedTokenIds) tokenGroup(id)?.moveToTop();
 
 		tokenLayer.batchDraw();
 

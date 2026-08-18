@@ -357,6 +357,12 @@ things that fall out of it, all already handled:
 - A scene change clears the memory, or every token slides in from wherever some unrelated token
   stood on the previous map.
 
+**Stacking order survives the same way.** A token clicked or dragged is raised with `moveToTop()`,
+and the id is kept in `raisedTokenIds` — oldest first. The rebuild puts every group back in
+`room.tokens` order, so that list is re-applied at the end of `renderTokens`; the call alone would
+last only until the next token changed anywhere in the room. It is local to one screen and never
+sent or stored, like the selection it shares an effect trigger with.
+
 These tweens are transient, unlike the selection ring's `Konva.Animation`, which is why they can
 live on the token layer rather than earning one of their own. `prefers-reduced-motion` turns them
 off.
@@ -367,8 +373,9 @@ Two things Konva paints follow the app's colour scheme, and only two: `MAP_PLACE
 shown where a scene has no map image, and `GRID_LINE`. Both sit against the container's
 `bg-muted`, which flips with the theme, so a black 13%-opacity grid disappears entirely on a dark
 background. Everything else painted here — strokes, pings, measurements, the eraser's halo, the
-selection ring — is *map content* and stays put in both schemes; the dark-map drawing palette is a
-separate problem with its own backlog item.
+selection ring — is *map content* and stays put in both schemes. That is also why the drawing
+palette carries a second row of bright colours for dark maps rather than reading the scheme: what
+a stroke has to be legible against is the *art*, not the page.
 
 They're explicit `{ light, dark }` pairs rather than reads of the CSS custom properties, because a
 canvas takes colour strings and has never heard of `var()`.
