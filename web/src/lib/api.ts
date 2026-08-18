@@ -196,6 +196,21 @@ export function removeSeat(
 }
 
 /**
+ * Sets the password that signs somebody into this room's GM seat.
+ *
+ * Takes no current password — the session token is the proof, the same
+ * as adding or removing a seat. Signs nobody out, including the device
+ * that calls it.
+ */
+export function setGMPassword(slug: string, sessionToken: string, password: string): Promise<void> {
+	return apiFetch(`/api/rooms/${encodeURIComponent(slug)}/gm-password`, {
+		method: 'PUT',
+		headers: { Authorization: `Bearer ${sessionToken}` },
+		body: JSON.stringify({ password })
+	});
+}
+
+/**
  * Signs this device out of the room, leaving the seat and any other
  * device on it alone. Best-effort: the browser is dropping its own
  * session either way, so a server that can't be reached must not keep

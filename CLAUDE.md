@@ -64,7 +64,10 @@ than an identity, and one person on a phone and a laptop is two sessions and one
 roster. Claiming is open, with no password or approval; the GM's seat is the exception and goes
 through the room password, which also means a second GM login reuses that seat instead of growing
 the roster. A GM can add a seat before anyone arrives and remove a finished one from `Manage
-room`; leaving a room ends that device's session and leaves the seat behind to come back to.
+room`, and **set a new room password** from the same dialog — no current password asked for, since
+the session already proves the seat, and nobody is signed out by the change, including whoever
+made it. `longtable room reset-password` stays the Host's path for a GM who can't get in at all;
+leaving a room ends that device's session and leaves the seat behind to come back to.
 **Rooms are not listed anywhere** — there is no server endpoint that enumerates
 them, and `longtable room list` is the only way to see them all, which is the Host's job and needs
 the database file. The way into one is its **room code**: six characters, and the word used for it
@@ -256,9 +259,9 @@ decision: how long a dropped connection has to come back before the room is told
 answer is the hall's wifi rather than ours.
 
 Known gaps, which is also roughly the queue: nothing rolls initiative for you — the tracker takes
-the number and `/roll 1d20+2` in chat is where it comes from; `Manage room` holds seats and the
-movement lock, and is still waiting on room privacy, deleting a room, and a switch to turn Player
-token creation off. Nothing caps how many tokens one Player may have standing. Fog has no automatic vision from tokens, no prebuilt releases, no way for a Host
+the number and `/roll 1d20+2` in chat is where it comes from; `Manage room` holds seats, the
+movement lock and the room password, and is still waiting on room privacy, deleting a room, and a
+switch to turn Player token creation off. Nothing caps how many tokens one Player may have standing. Fog has no automatic vision from tokens, no prebuilt releases, no way for a Host
 to remove a moderated asset server-wide or cap upload sizes per room (a room removing something
 from its own library is a different, smaller thing, and does exist). The
 theme control isn't on the pre-join screen or the assets page — both are passed through rather

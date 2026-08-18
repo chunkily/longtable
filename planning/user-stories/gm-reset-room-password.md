@@ -1,7 +1,7 @@
 ---
 title: GM resets their room's own GM password
 created: 2026-08-10
-status: incomplete
+status: done
 ---
 
 As a GM
@@ -28,3 +28,10 @@ role boundaries, not identity boundaries, and every other Manage room action (`A
 password here would be a one-off exception to that, and it doesn't defend against the case that
 actually happens — a GM who lost the password already has no way to type it, and that path runs
 through [host-restores-room-access](host-restores-room-access.md) instead.
+
+## Verified
+
+All five hold. The last two are the ones worth naming: `gm-password.spec.ts` changes the password,
+reloads to show the session survived, then leaves and comes back to show the old password is
+refused and the new one works; `TestSetGMPassword_LeavesEverySessionSignedIn` covers the second
+device on the GM seat, which the e2e can't reach on one browser.

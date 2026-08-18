@@ -65,6 +65,10 @@ func NewRouter(
 	mux.HandleFunc("GET /api/rooms/{slug}/seats", srv.listSeats)
 	mux.HandleFunc("POST /api/rooms/{slug}/seats", srv.createSeat)
 	mux.HandleFunc("DELETE /api/rooms/{slug}/seats/{id}", srv.deleteSeat)
+	// Changing the room's own password, for a GM who is signed in. Named
+	// to match the gm-login it governs, and a PUT because it replaces the
+	// one value rather than adding anything.
+	mux.HandleFunc("PUT /api/rooms/{slug}/gm-password", srv.setGMPassword)
 	mux.HandleFunc("GET /api/rooms/{slug}/assets", srv.listRoomAssets)
 	mux.HandleFunc("POST /api/rooms/{slug}/assets", srv.uploadAsset)
 	mux.HandleFunc("PATCH /api/rooms/{slug}/assets/{id}", srv.updateRoomAsset)

@@ -82,6 +82,9 @@ of opening it.
 
 ### They've forgotten the GM password
 
+A GM who can still get into the room changes it themselves, from **Manage room**.
+This command is for the ones who can't.
+
 ```bash
 longtable room reset-password <room-code>
 ```

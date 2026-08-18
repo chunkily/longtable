@@ -1,11 +1,11 @@
 <script lang="ts">
 	// GM-level settings for the room itself, rather than for this scene.
 	//
-	// Seats came first and the movement lock is the second thing here.
-	// Room privacy and deleting the room are each still their own open
-	// backlog item.
+	// Seats came first, then the movement lock, then the room's own
+	// password. Room privacy and deleting the room are each still their
+	// own open backlog item.
 	import { toast } from 'svelte-sonner';
-	import { addSeat, listSeats, removeSeat, type Seat } from '$lib/api';
+	import { addSeat, listSeats, removeSeat, setGMPassword, type Seat } from '$lib/api';
 	import { identityHex, suggestedColor } from '$lib/identity-color';
 	import type { RoomClient } from '$lib/room.svelte';
 	import { Button } from '$lib/components/ui/button';
@@ -25,6 +25,19 @@
 	let seats = $state<Seat[]>([]);
 	let newName = $state('');
 	let busy = $state(false);
+	// Typed twice, because getting it wrong is not recoverable from
+	// inside the room: the next GM login would need the password that was
+	// actually saved, and nobody knows what that was. The Host can reset
+	// it from the command line, which is a worse afternoon than a second
+	// box.
+	let newPassword = $state('');
+	let repeatPassword = $state('');
+	// The server's own rule, mirrored so the button says no before the
+	// round trip does (`minGMPasswordLength` in internal/api/rooms.go).
+	const MIN_PASSWORD = 4;
+	const passwordReady = $derived(
+		newPassword.length >= MIN_PASSWORD && newPassword === repeatPassword
+	);
 	// Removing a seat takes its tokens' owner with it, so it arms in
 	// place rather than firing on one click — the same two-step deleting
 	// a scene uses.
@@ -45,6 +58,10 @@
 	$effect(() => {
 		if (open) {
 			confirmingId = null;
+			// Half a password left in the box from last time is a trap: it
+			// looks like the current one and it is not.
+			newPassword = '';
+			repeatPassword = '';
 			refresh();
 		}
 	});
@@ -63,6 +80,26 @@
 			await refresh();
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : 'failed to add a seat');
+		} finally {
+			busy = false;
+		}
+	}
+
+	async function handlePassword(event: SubmitEvent) {
+		event.preventDefault();
+		if (!passwordReady) return;
+		busy = true;
+		try {
+			await setGMPassword(roomSlug, sessionToken, newPassword);
+			newPassword = '';
+			repeatPassword = '';
+			// The only toast in this dialog that isn't an error, because this
+			// is the only thing in it that changes nothing you can see: a
+			// seat added shows up in the list, the movement buttons swap over,
+			// and a password does neither.
+			toast.success('Password changed');
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : 'failed to change the password');
 		} finally {
 			busy = false;
 		}
@@ -130,6 +167,36 @@
 				{/if}
 			</p>
 		</div>
+
+		<!-- Rotating the room password from inside the room, rather than
+		     asking whoever runs the server to do it. The current one isn't
+		     asked for: the session proves the seat, the same as every other
+		     control in here (ADR-0007). -->
+		<form class="flex flex-col gap-2" onsubmit={handlePassword}>
+			<Label for="new-gm-password">New GM password</Label>
+			<Input
+				id="new-gm-password"
+				type="password"
+				bind:value={newPassword}
+				minlength={MIN_PASSWORD}
+				autocomplete="new-password"
+			/>
+			<Label for="repeat-gm-password">Type it again</Label>
+			<Input
+				id="repeat-gm-password"
+				type="password"
+				bind:value={repeatPassword}
+				minlength={MIN_PASSWORD}
+				autocomplete="new-password"
+			/>
+			{#if repeatPassword && repeatPassword !== newPassword}
+				<p class="text-xs font-medium text-destructive" role="alert">Both boxes have to match.</p>
+			{/if}
+			<p class="text-xs text-muted-foreground">
+				Everyone stays signed in, including you. The next GM login needs the new password.
+			</p>
+			<Button type="submit" class="self-start" disabled={busy || !passwordReady}>Save</Button>
+		</form>
 
 		<form class="flex items-end gap-2" onsubmit={handleAdd}>
 			<div class="flex flex-1 flex-col gap-2">

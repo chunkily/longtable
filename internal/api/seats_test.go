@@ -30,6 +30,28 @@ func postJSONWithToken(t *testing.T, url string, body any, token string) *http.R
 	return resp
 }
 
+// putJSONWithToken is postJSONWithToken for the one endpoint that
+// replaces a value rather than adding one.
+func putJSONWithToken(t *testing.T, url string, body any, token string) *http.Response {
+	t.Helper()
+
+	data, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	req, err := http.NewRequest(http.MethodPut, url, bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PUT %s: %v", url, err)
+	}
+	return resp
+}
+
 func deleteWithToken(t *testing.T, url, token string) int {
 	t.Helper()
 
@@ -398,5 +420,99 @@ func TestJoin_RefusesAColourOutsideThePalette(t *testing.T) {
 		if seat.DisplayName == "Mallory" {
 			t.Fatal("a refused join created a seat anyway")
 		}
+	}
+}
+
+// A GM rotates the room password from inside the room, without going
+// through the Host. The current password is deliberately not asked for
+// — see the handler's comment and ADR-0007.
+func TestSetGMPassword_ChangesWhatGMLoginAccepts(t *testing.T) {
+	srv, _ := newTestServer(t)
+	created := createTestRoom(t, srv)
+
+	resp := putJSONWithToken(t, srv.URL+"/api/rooms/"+created.RoomSlug+"/gm-password",
+		map[string]string{"password": "correct horse"}, created.SessionToken)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", resp.StatusCode)
+	}
+
+	old := postJSON(t, srv.URL+"/api/rooms/"+created.RoomSlug+"/gm-login", map[string]string{
+		"displayName": "Alice", "password": "hunter2",
+	})
+	defer old.Body.Close()
+	if old.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("logging in with the old password: status = %d, want 401", old.StatusCode)
+	}
+
+	fresh := postJSON(t, srv.URL+"/api/rooms/"+created.RoomSlug+"/gm-login", map[string]string{
+		"displayName": "Alice", "password": "correct horse",
+	})
+	defer fresh.Body.Close()
+	if fresh.StatusCode != http.StatusCreated {
+		t.Fatalf("logging in with the new password: status = %d, want 201", fresh.StatusCode)
+	}
+}
+
+// Changing the password must not sign anybody out — including the GM who
+// changed it, who would otherwise be locked out by their own hygiene.
+func TestSetGMPassword_LeavesEverySessionSignedIn(t *testing.T) {
+	srv, _ := newTestServer(t)
+	created := createTestRoom(t, srv)
+
+	// A second device on the same GM seat, signed in with the old
+	// password before the change.
+	var second sessionResponse
+	decodeJSONBody(t, postJSON(t, srv.URL+"/api/rooms/"+created.RoomSlug+"/gm-login",
+		map[string]string{"displayName": "Alice", "password": "hunter2"}), &second)
+
+	resp := putJSONWithToken(t, srv.URL+"/api/rooms/"+created.RoomSlug+"/gm-password",
+		map[string]string{"password": "new password"}, created.SessionToken)
+	resp.Body.Close()
+
+	for name, token := range map[string]string{
+		"the device that changed it": created.SessionToken,
+		"another device on the seat": second.SessionToken,
+	} {
+		check := getSession(t, srv, created.RoomSlug, token)
+		check.Body.Close()
+		if check.StatusCode != http.StatusOK {
+			t.Errorf("%s: session status = %d, want 200", name, check.StatusCode)
+		}
+	}
+}
+
+func TestSetGMPassword_IsGMOnlyAndHasAMinimumLength(t *testing.T) {
+	srv, _ := newTestServer(t)
+	created := createTestRoom(t, srv)
+
+	var bob sessionResponse
+	decodeJSONBody(t, postJSON(t, srv.URL+"/api/rooms/"+created.RoomSlug+"/join", map[string]string{
+		"displayName": "Bob",
+	}), &bob)
+
+	byPlayer := putJSONWithToken(t, srv.URL+"/api/rooms/"+created.RoomSlug+"/gm-password",
+		map[string]string{"password": "player picked this"}, bob.SessionToken)
+	byPlayer.Body.Close()
+	if byPlayer.StatusCode != http.StatusForbidden {
+		t.Errorf("a Player changing it: status = %d, want 403", byPlayer.StatusCode)
+	}
+
+	// The same rule the create-room form is held to, so a room can't end
+	// up with a password the form that made it would have refused.
+	tooShort := putJSONWithToken(t, srv.URL+"/api/rooms/"+created.RoomSlug+"/gm-password",
+		map[string]string{"password": "no"}, created.SessionToken)
+	tooShort.Body.Close()
+	if tooShort.StatusCode != http.StatusBadRequest {
+		t.Errorf("a two-character password: status = %d, want 400", tooShort.StatusCode)
+	}
+
+	// And none of the refusals changed anything.
+	stillWorks := postJSON(t, srv.URL+"/api/rooms/"+created.RoomSlug+"/gm-login", map[string]string{
+		"displayName": "Alice", "password": "hunter2",
+	})
+	stillWorks.Body.Close()
+	if stillWorks.StatusCode != http.StatusCreated {
+		t.Fatalf("the original password after two refusals: status = %d, want 201", stillWorks.StatusCode)
 	}
 }

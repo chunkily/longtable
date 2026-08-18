@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -57,6 +58,24 @@ type createRoomRequest struct {
 	Password string `json:"password"`
 }
 
+// minGMPasswordLength is the whole of the password policy, and it is
+// this short on purpose: the room password is said out loud across a
+// table, not typed by a stranger over the internet. It guards against a
+// slip of the keyboard rather than against an attacker.
+//
+// Enforced everywhere a password is set, so a room can't end up holding
+// one that the form which created it would have refused.
+const minGMPasswordLength = 4
+
+func rejectShortPassword(w http.ResponseWriter, password string) bool {
+	if len(password) < minGMPasswordLength {
+		writeError(w, http.StatusBadRequest,
+			fmt.Sprintf("password must be at least %d characters", minGMPasswordLength))
+		return true
+	}
+	return false
+}
+
 func (srv *Server) createRoom(w http.ResponseWriter, r *http.Request) {
 	var req createRoomRequest
 	if err := decodeJSON(r, &req); err != nil {
@@ -74,8 +93,7 @@ func (srv *Server) createRoom(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "gmName is required")
 		return
 	}
-	if len(req.Password) < 4 {
-		writeError(w, http.StatusBadRequest, "password must be at least 4 characters")
+	if rejectShortPassword(w, req.Password) {
 		return
 	}
 
@@ -341,6 +359,50 @@ func (srv *Server) deleteSeat(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		slog.Error("api: delete seat failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to remove that seat")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type setGMPasswordRequest struct {
+	Password string `json:"password"`
+}
+
+// setGMPassword changes the password that signs somebody into this
+// room's GM seat, for a GM who is already in it.
+//
+// The current password is deliberately not asked for. The session token
+// proves the seat, which is what every other Manage room action goes on
+// (ADR-0007 draws the line at role boundaries, not identity ones), and
+// re-asking wouldn't help the case that actually happens: a GM who has
+// lost the password can't type it either, and that path runs through the
+// Host's `longtable room reset-password`.
+//
+// Existing sessions are untouched — nothing here reads or writes the
+// session table, so nobody is signed out by their password changing
+// under them, including whoever just changed it.
+func (srv *Server) setGMPassword(w http.ResponseWriter, r *http.Request) {
+	room, ok := srv.lookupRoom(w, r.PathValue("slug"))
+	if !ok {
+		return
+	}
+	if !srv.requireGM(w, r, room) {
+		return
+	}
+
+	var req setGMPasswordRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if rejectShortPassword(w, req.Password) {
+		return
+	}
+
+	if err := srv.store.SetGMPassword(room.ID, req.Password); err != nil {
+		slog.Error("api: set gm password failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to change the password")
 		return
 	}
 
