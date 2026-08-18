@@ -142,7 +142,22 @@ func TestSystemMessage_CarriesTheEventAndTheNameRatherThanProse(t *testing.T) {
 	// client's state.sync is sent before its own arrival is written, so
 	// nobody's sync ever contains their own joined line. The player's
 	// carries the GM's, which is the case a late arrival lands in.
-	r.ts.connect(t, r.room.Slug, r.gm.SessionToken)
+	gmClient := r.ts.connect(t, r.room.Slug, r.gm.SessionToken)
+
+	// Wait for the GM's own line to land before connecting the player.
+	// `connect` returns when the handshake does, while the server is
+	// still working through ServeHTTP: state.sync first, the joined line
+	// written after it. Nothing ordered that insert against the player's
+	// sync, which reads the same table — so the player could sync into a
+	// log that was still empty. postSystemMessage inserts and *then*
+	// broadcasts, which is what makes seeing the line here proof that the
+	// row exists.
+	//
+	// It read as solid for months because the insert usually won on a
+	// developer's machine. Under -race on CI it lost every time, and this
+	// was the whole of the red backend job.
+	readSystemLine(t, gmClient)
+
 	client := r.ts.connect(t, r.room.Slug, r.player.SessionToken)
 	env := client.readEnvelope(t) // state.sync
 
