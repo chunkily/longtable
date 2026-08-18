@@ -158,11 +158,16 @@ twenty files.
   way to update a drawing spec wrongly and have it fail with "expected > 0, received 0".
   Canvas-relative pixels still double as world coordinates, because a fresh scene starts at the
   identity transform; don't pan or zoom in a spec that relies on that.
-- `openRoomMenu` / `openNewSceneDialog` / `openScenesDialog` / `openAssetsPage` — Scenes and
-  Assets live in the menu behind the third icon at the foot of the side panel. **New scene is not
-  a menu entry**: it's a mode of the Scenes dialog, so `openNewSceneDialog` goes through
-  `openScenesDialog` first. Creating a scene closes the whole dialog rather than returning to the
-  list, which is what lets a spec click the canvas straight afterwards.
+- `openRoomMenu` / `openNewSceneDialog` / `openScenesDialog` / `openSeatsDialog` / `openAssetsPage`
+  — Scenes, Seats and Assets live in the menu behind the third icon at the foot of the side panel.
+  `openSeatsDialog` works for a Player as well as a GM — that dialog is everyone's, and it waits on
+  the heading rather than a control, since which controls are on it is exactly what the two roles
+  don't share. Scope assertions inside it to `getByRole('dialog')`: the rail behind it carries a
+  swatch with the same accessible name as the palette on the dialog, and the roster is on screen
+  twice while it is open. **New scene is not a menu entry**: it's a mode of the Scenes dialog, so
+  `openNewSceneDialog` goes through `openScenesDialog` first. Creating a scene closes the whole
+  dialog rather than returning to the list, which is what lets a spec click the canvas straight
+  afterwards.
 - `createRoom(page, roomName)` — the home page asks one question at a time, so creating a room is a
   click on `Create a room`, a wait for the form, three fills and a submit. Returns the room code.
   **Never spell this out in a spec.** Two of the steps are waits with reasons: `networkidle` before

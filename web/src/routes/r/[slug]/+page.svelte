@@ -22,7 +22,6 @@
 	import { dayLabel, fullTimestamp, sameDay, timeOfDay } from '$lib/chat-time';
 	import { IDENTITY_COLORS, identityHex, suggestedColor } from '$lib/identity-color';
 	import IdentityColorPicker from '$lib/components/identity-color-picker.svelte';
-	import * as Popover from '$lib/components/ui/popover';
 	import { DEFAULT_LINE_WIDTH_FEET, type SnapMode } from '$lib/aoe';
 	import { familyHasStrip, familyOf, type Tool } from '$lib/tool-family';
 	import { Button } from '$lib/components/ui/button';
@@ -36,6 +35,7 @@
 	import ToolStrip from '$lib/components/tool-strip.svelte';
 	import RoomMenu from '$lib/components/room-menu.svelte';
 	import ManageRoomDialog from '$lib/components/manage-room-dialog.svelte';
+	import SeatsDialog from '$lib/components/seats-dialog.svelte';
 	import RoomCodeDialog from '$lib/components/room-code-dialog.svelte';
 	import SceneManagerDialog from '$lib/components/scene-manager-dialog.svelte';
 	import CreateTokenDialog from '$lib/components/create-token-dialog.svelte';
@@ -110,11 +110,6 @@
 		step = next;
 	}
 
-	// The colour swatch in the rail opens onto the palette. Closed on a
-	// pick rather than left open: changing colour is a thing you do once,
-	// and the swatch behind it has already changed to say it worked.
-	let colorPickerOpen = $state(false);
-
 	let chatText = $state('');
 	// Which message has been tapped to show its delete button. Touch has
 	// no hover to reveal one with, so a tap stands in for it; a second tap
@@ -164,6 +159,10 @@
 	let sheetOpen = $state(false);
 
 	let scenesOpen = $state(false);
+	// Everyone's, unlike the two beside it: the roster is readable by the
+	// whole table, and it holds the one control on it that is a Player's
+	// own — their colour.
+	let seatsOpen = $state(false);
 	let manageRoomOpen = $state(false);
 	let roomCodeOpen = $state(false);
 
@@ -755,41 +754,22 @@
 				<Badge variant={statusVariant}>{room.status}</Badge>
 			</div>
 			<p class="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
-				<!-- The swatch is the control. It sits on the one line that is
-				     already about who you are in this room, which is where
-				     somebody looking at their own name in chat and wanting a
-				     different colour goes looking — and it is deliberately not
-				     in the room menu beside the theme control, since that
-				     section is the things that change this browser rather than
-				     the room. -->
-				<Popover.Root bind:open={colorPickerOpen}>
-					<Popover.Trigger>
-						{#snippet child({ props })}
-							<button
-								{...props}
-								type="button"
-								aria-label="Your colour"
-								title="Change your colour"
-								class="h-3.5 w-3.5 shrink-0 rounded-full border border-border"
-								style={identityHex(room.colorOf(room.you?.participantId))
-									? `background-color: ${identityHex(room.colorOf(room.you?.participantId))}`
-									: undefined}
-							></button>
-						{/snippet}
-					</Popover.Trigger>
-					<Popover.Content class="w-auto p-3" align="start">
-						<IdentityColorPicker
-							value={room.colorOf(room.you?.participantId)}
-							taken={room.participants
-								.filter((p) => p.id !== room.you?.participantId)
-								.map((p) => p.color)}
-							onpick={(color) => {
-								room.setColor(color);
-								colorPickerOpen = false;
-							}}
-						/>
-					</Popover.Content>
-				</Popover.Root>
+				<!-- The swatch stays on the one line that is already about who
+				     you are in this room, but the palette moved into the Seats
+				     dialog — where every colour at the table is on screen at
+				     once, which is the thing you actually want to see while
+				     choosing one. So this is now the way in rather than the
+				     control: it shows your colour and opens the list. -->
+				<button
+					type="button"
+					aria-label="Your colour"
+					title="Change your colour"
+					class="h-3.5 w-3.5 shrink-0 rounded-full border border-border"
+					style={identityHex(room.colorOf(room.you?.participantId))
+						? `background-color: ${identityHex(room.colorOf(room.you?.participantId))}`
+						: undefined}
+					onclick={() => (seatsOpen = true)}
+				></button>
 				playing as <strong>{room.you?.displayName}</strong>
 				<Badge variant="outline" class="ml-1">{room.you?.role}</Badge>
 			</p>
@@ -920,6 +900,7 @@
 				{slug}
 				{isGM}
 				onOpenScenes={() => (scenesOpen = true)}
+				onOpenSeats={() => (seatsOpen = true)}
 				onOpenManageRoom={() => (manageRoomOpen = true)}
 				onOpenRoomCode={() => (roomCodeOpen = true)}
 				onLeave={handleLeave}
@@ -935,6 +916,19 @@
 	<!-- Outside the isGM block below: everyone at the table can hand the
 	     room to someone else, and only a GM can manage it. -->
 	<RoomCodeDialog {slug} bind:open={roomCodeOpen} />
+
+	<!-- Out here for the same reason, and it takes `isGM` rather than
+	     being gated on it: the list is everyone's to read and the form
+	     that changes it is the GM's. -->
+	{#if session}
+		<SeatsDialog
+			room={client}
+			roomSlug={session.roomSlug}
+			sessionToken={session.sessionToken}
+			{isGM}
+			bind:open={seatsOpen}
+		/>
+	{/if}
 
 	{#if isGM && session}
 		<SceneManagerDialog

@@ -22,6 +22,7 @@
 	import Images from '@lucide/svelte/icons/images';
 	import Layers from '@lucide/svelte/icons/layers';
 	import Settings from '@lucide/svelte/icons/settings';
+	import Users from '@lucide/svelte/icons/users';
 	import LogOut from '@lucide/svelte/icons/log-out';
 	import Redo from '@lucide/svelte/icons/redo';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
@@ -31,6 +32,7 @@
 		slug,
 		isGM,
 		onOpenScenes,
+		onOpenSeats,
 		onOpenManageRoom,
 		onOpenRoomCode,
 		onLeave,
@@ -40,6 +42,7 @@
 		slug: string;
 		isGM: boolean;
 		onOpenScenes: () => void;
+		onOpenSeats: () => void;
 		onOpenManageRoom: () => void;
 		onOpenRoomCode: () => void;
 		onLeave: () => void;
@@ -140,6 +143,22 @@
 					Scenes
 				</Button>
 			{/if}
+			<!-- Everyone's, like Assets and unlike the two either side of it.
+			     Reading who is at the table is not a GM power (ADR-0007), and
+			     it is where anyone changes their own colour — so a Player
+			     opening this gets a list plus the one control on it that is
+			     theirs, rather than a screen of things they can't touch. -->
+			<Button
+				variant="ghost"
+				class="justify-start"
+				onclick={() => {
+					close();
+					onOpenSeats();
+				}}
+			>
+				<Users class="h-4 w-4" />
+				Seats
+			</Button>
 			<!-- Anyone in the room, not just the GM: players bring their own
 			     token art, and the library is shared. A link rather than a
 			     dialog — folding the assets page into a 380px rail was

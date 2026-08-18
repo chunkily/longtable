@@ -1,19 +1,18 @@
 <script lang="ts">
 	// GM-level settings for the room itself, rather than for this scene.
 	//
-	// Seats came first, then the movement lock, the room's own password,
-	// and deleting the room. Room privacy is still its own open backlog
-	// item.
+	// Seats used to be the bulk of this and are their own dialog now
+	// (`seats-dialog.svelte`), because reading the roster isn't a GM power
+	// and this dialog is. What's left is what only a GM can do: the
+	// movement lock, the room's own password, and deleting the room. Room
+	// privacy is still its own open backlog item.
 	import { toast } from 'svelte-sonner';
-	import { addSeat, deleteRoom, listSeats, removeSeat, setGMPassword, type Seat } from '$lib/api';
-	import { identityHex, suggestedColor } from '$lib/identity-color';
+	import { deleteRoom, setGMPassword } from '$lib/api';
 	import type { RoomClient } from '$lib/room.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import { Badge } from '$lib/components/ui/badge';
 	import * as Dialog from '$lib/components/ui/dialog';
-	import Trash2 from '@lucide/svelte/icons/trash-2';
 
 	let {
 		room,
@@ -36,8 +35,6 @@
 		open?: boolean;
 	} = $props();
 
-	let seats = $state<Seat[]>([]);
-	let newName = $state('');
 	let busy = $state(false);
 	// Typed twice, because getting it wrong is not recoverable from
 	// inside the room: the next GM login would need the password that was
@@ -52,56 +49,19 @@
 	const passwordReady = $derived(
 		newPassword.length >= MIN_PASSWORD && newPassword === repeatPassword
 	);
-	// Removing a seat takes its tokens' owner with it, so it arms in
-	// place rather than firing on one click — the same two-step deleting
-	// a scene uses.
-	let confirmingId = $state<string | null>(null);
 	// The same arm-then-fire the seat bins use, and the only one in the
 	// app protecting something with no undo at all.
 	let confirmingDelete = $state(false);
 
-	// Seats come from the REST endpoint rather than from the roster in
-	// `state.sync`, because this needs the same *pre-join* view a
-	// returning device gets: whether anyone is sitting in a chair right
-	// now, which the roster deliberately doesn't say.
-	async function refresh() {
-		try {
-			seats = (await listSeats(roomSlug)).seats;
-		} catch (err) {
-			toast.error(err instanceof Error ? err.message : 'failed to load seats');
-		}
-	}
-
 	$effect(() => {
 		if (open) {
-			confirmingId = null;
 			confirmingDelete = false;
 			// Half a password left in the box from last time is a trap: it
 			// looks like the current one and it is not.
 			newPassword = '';
 			repeatPassword = '';
-			refresh();
 		}
 	});
-
-	async function handleAdd(event: SubmitEvent) {
-		event.preventDefault();
-		const name = newName.trim();
-		if (!name) return;
-		busy = true;
-		try {
-			// The GM picks the chair's colour too, so whoever takes it
-			// arrives with one rather than being the only person at the
-			// table with no way to have chosen.
-			await addSeat(roomSlug, sessionToken, name, suggestedColor(seats.map((s) => s.color)));
-			newName = '';
-			await refresh();
-		} catch (err) {
-			toast.error(err instanceof Error ? err.message : 'failed to add a seat');
-		} finally {
-			busy = false;
-		}
-	}
 
 	async function handlePassword(event: SubmitEvent) {
 		event.preventDefault();
@@ -112,8 +72,8 @@
 			newPassword = '';
 			repeatPassword = '';
 			// The only toast in this dialog that isn't an error, because this
-			// is the only thing in it that changes nothing you can see: a
-			// seat added shows up in the list, the movement buttons swap over,
+			// is the only thing in it that changes nothing you can see: the
+			// movement buttons swap over, a deleted room takes you out of it,
 			// and a password does neither.
 			toast.success('Password changed');
 		} catch (err) {
@@ -140,23 +100,6 @@
 			confirmingDelete = false;
 		}
 	}
-
-	async function handleRemove(seat: Seat) {
-		if (confirmingId !== seat.participantId) {
-			confirmingId = seat.participantId;
-			return;
-		}
-		busy = true;
-		try {
-			await removeSeat(roomSlug, sessionToken, seat.participantId);
-			confirmingId = null;
-			await refresh();
-		} catch (err) {
-			toast.error(err instanceof Error ? err.message : 'failed to remove that seat');
-		} finally {
-			busy = false;
-		}
-	}
 </script>
 
 <Dialog.Root bind:open>
@@ -169,10 +112,7 @@
 	<Dialog.Content class="flex max-h-[calc(100dvh-2rem)] flex-col">
 		<Dialog.Header>
 			<Dialog.Title>Manage room</Dialog.Title>
-			<Dialog.Description>
-				Seats are how people are known in this room. A seat outlives a browser, so someone on a new
-				device takes theirs back rather than joining as a stranger.
-			</Dialog.Description>
+			<Dialog.Description>These apply to the whole room, not just this scene.</Dialog.Description>
 		</Dialog.Header>
 
 		<div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
@@ -240,68 +180,6 @@
 				</p>
 				<Button type="submit" class="self-start" disabled={busy || !passwordReady}>Save</Button>
 			</form>
-
-			<form class="flex items-end gap-2" onsubmit={handleAdd}>
-				<div class="flex flex-1 flex-col gap-2">
-					<Label for="new-seat">Add a seat</Label>
-					<!-- A GM can set the table before anyone arrives: a named chair
-				     with nobody signed into it, waiting to be claimed. -->
-					<Input
-						id="new-seat"
-						bind:value={newName}
-						placeholder="Player's name"
-						autocomplete="off"
-					/>
-				</div>
-				<Button type="submit" disabled={busy || !newName.trim()}>Add</Button>
-			</form>
-
-			<ul class="flex flex-col gap-2">
-				{#each seats as seat (seat.participantId)}
-					<li class="flex flex-wrap items-center gap-2 rounded-md border p-2">
-						{#if identityHex(seat.color)}
-							<span
-								class="h-3 w-3 shrink-0 rounded-full"
-								style="background-color: {identityHex(seat.color)}"
-							></span>
-						{/if}
-						<span class="min-w-0 flex-1 truncate text-sm">{seat.displayName}</span>
-						{#if seat.role === 'gm'}
-							<Badge>GM</Badge>
-						{/if}
-						{#if seat.connected}
-							<Badge variant="secondary">here now</Badge>
-						{/if}
-						<!-- The GM's own seat can't go: the room password signs you
-					     into it, so removing it would strand the only role that
-					     could undo the damage. The server refuses it too. -->
-						{#if seat.role !== 'gm'}
-							<Button
-								size="sm"
-								variant={confirmingId === seat.participantId ? 'destructive' : 'outline'}
-								disabled={busy}
-								aria-label={confirmingId === seat.participantId
-									? `Confirm removing ${seat.displayName}`
-									: `Remove ${seat.displayName}`}
-								onclick={() => handleRemove(seat)}
-							>
-								{#if confirmingId === seat.participantId}
-									Really remove?
-								{:else}
-									<Trash2 class="h-4 w-4" />
-								{/if}
-							</Button>
-						{/if}
-					</li>
-				{:else}
-					<li class="text-sm text-muted-foreground">No seats yet.</li>
-				{/each}
-			</ul>
-
-			<p class="text-xs text-muted-foreground">
-				Removing a seat signs out every device on it, and any token it owned goes back to belonging
-				to nobody. {room.roomName || roomSlug} keeps everything else.
-			</p>
 
 			<!-- Last, and set apart, because it is the one thing in this app
 		     that can't be undone. Everything else destructive here is a

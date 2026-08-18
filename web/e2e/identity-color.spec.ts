@@ -115,16 +115,28 @@ test('changing your colour recolours your name for everyone', async ({ table }) 
 		.locator('strong');
 	await expect(nameOnGMsScreen).toHaveCSS('color', HEX.teal);
 
+	// The swatch in the rail is still the way in, but it opens the Seats
+	// dialog now rather than the palette: the colours are picked beside
+	// everyone else's, which is the list you want on screen while
+	// choosing one. The palette itself sits open at the foot of that
+	// dialog — see the note in seats-dialog.svelte for why it is not on a
+	// popover.
 	await bob.page.getByRole('button', { name: 'Your colour' }).first().click();
+	const seats = bob.page.getByRole('dialog');
+	await expect(seats.getByRole('heading', { name: 'Seats' })).toBeVisible();
 
-	// Sixteen swatches have to fit the rail they open in — the panel is
-	// 368px wide, and a palette that reflowed to one long row would push
-	// the popover off the side of it.
-	const palette = bob.page.getByRole('radiogroup', { name: 'Your colour' });
+	// Sixteen swatches have to fit the dialog they sit in, which is 448px
+	// at its widest — a palette that reflowed to one long row would run
+	// off the side of it.
+	const palette = seats.getByRole('radiogroup', { name: 'Your colour' });
 	const box = await palette.boundingBox();
 	expect(box!.width).toBeLessThan(340);
 
-	await bob.page.getByRole('radio', { name: 'Rose Pink' }).click();
+	// Clicked through the dialog, so this fails if the palette is ever
+	// covered again rather than merely present: a locator that only
+	// proves a thing is in the accessibility tree proves nothing about
+	// whether a person could have reached it.
+	await palette.getByRole('radio', { name: 'Rose Pink' }).click();
 
 	// The message Bob already sent recolours too: the colour is looked up
 	// per render from the roster, so it is a property of who they are

@@ -195,6 +195,19 @@ export async function openAssetsPage(page: Page) {
 	await expect(page.getByRole('heading', { name: 'Assets' })).toBeVisible();
 }
 
+/**
+ * Opens the Seats dialog from the room menu. Everyone has this entry —
+ * a Player gets the same dialog without the add form or the bins.
+ *
+ * Waits on the heading rather than a control, since which controls are
+ * there is exactly what differs between the two roles.
+ */
+export async function openSeatsDialog(page: Page) {
+	await openRoomMenu(page);
+	await page.getByRole('button', { name: 'Seats', exact: true }).click();
+	await expect(page.getByRole('heading', { name: 'Seats' })).toBeVisible();
+}
+
 /** Opens the Scenes dialog from the room menu. */
 export async function openScenesDialog(page: Page) {
 	await openRoomMenu(page);

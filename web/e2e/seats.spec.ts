@@ -6,6 +6,7 @@ import {
 	openNewSceneDialog,
 	openRoomMenu,
 	openSeatPicker,
+	openSeatsDialog,
 	takeSeat
 } from './fixtures/room';
 
@@ -182,8 +183,7 @@ test('the GM seat is not offered on the seat picker', async ({ browser }) => {
 test('a GM adds a seat for someone who has not arrived, and removes one', async ({ browser }) => {
 	const gm = await openRoomAsGM(browser, 'Seat Management');
 
-	await openRoomMenu(gm.page);
-	await gm.page.getByRole('button', { name: 'Manage room' }).click();
+	await openSeatsDialog(gm.page);
 	await gm.page.getByLabel('Add a seat').fill('Carol');
 	await gm.page.getByRole('button', { name: 'Add', exact: true }).click();
 	await expect(gm.page.getByRole('button', { name: 'Remove Carol' })).toBeVisible();
@@ -198,8 +198,7 @@ test('a GM adds a seat for someone who has not arrived, and removes one', async 
 
 	// Removing it takes two clicks, like deleting a scene: it signs out
 	// every device on the seat and un-owns anything it owned.
-	await openRoomMenu(gm.page);
-	await gm.page.getByRole('button', { name: 'Manage room' }).click();
+	await openSeatsDialog(gm.page);
 	await gm.page.getByRole('button', { name: 'Remove Carol' }).click();
 	await gm.page.getByRole('button', { name: 'Confirm removing Carol' }).click();
 	await expect(gm.page.getByRole('button', { name: 'Remove Carol' })).toHaveCount(0);
@@ -209,6 +208,49 @@ test('a GM adds a seat for someone who has not arrived, and removes one', async 
 	await expect(gm.page.getByRole('button', { name: 'Remove Alice' })).toHaveCount(0);
 
 	await gm.context.close();
+});
+
+// The split: reading who is at the table is everyone's, changing who is
+// at it is the GM's. A Player gets the same dialog with the controls
+// left off — which is also what the server says, since createSeat and
+// deleteSeat are both requireGM.
+test('a Player reads the seat list without the controls that change it', async ({ browser }) => {
+	const gm = await openRoomAsGM(browser, 'Seat Read Only');
+	const bob = await newPlayerDevice(browser, gm.slug, 'Bob');
+
+	await openSeatsDialog(bob.page);
+	// Scoped to the dialog throughout: the rail behind it carries a
+	// swatch with the same accessible name, and the roster is on screen
+	// twice while this is open.
+	const seats = bob.page.getByRole('dialog');
+	await expect(seats.getByText('Alice')).toBeVisible();
+	await expect(seats.getByText('Bob')).toBeVisible();
+
+	await expect(seats.getByLabel('Add a seat')).toHaveCount(0);
+	await expect(seats.getByRole('button', { name: /^Remove / })).toHaveCount(0);
+
+	// What a Player does have here is the one control that is theirs —
+	// `participant.setColor` names no seat, so it can only ever be their
+	// own. Clicked rather than merely found: it has to be reachable, not
+	// just present.
+	await seats
+		.getByRole('radiogroup', { name: 'Your colour' })
+		.getByRole('radio', {
+			name: 'Storm Grey'
+		})
+		.click();
+	await expect(bob.page.getByRole('button', { name: 'Your colour' })).toHaveCSS(
+		'background-color',
+		'rgb(100, 116, 139)'
+	);
+
+	// And the GM sees the same list with the controls on it.
+	await openSeatsDialog(gm.page);
+	await expect(gm.page.getByRole('dialog').getByLabel('Add a seat')).toBeVisible();
+	await expect(gm.page.getByRole('button', { name: 'Remove Bob' })).toBeVisible();
+
+	await gm.context.close();
+	await bob.context.close();
 });
 
 // Leaving spends a session, not an identity: the seat stays on the

@@ -33,9 +33,11 @@ architecture and current state live here instead**, and keeping them true is par
 | `web/src/lib/tool-family.ts` | the `Tool` union, and the rules grouping it into the toolbar's five families |
 | `web/src/lib/components/map-toolbar.svelte`, `tool-strip.svelte` | the floating tool row, and the active family's contextual strip |
 | `web/src/lib/stroke-colors.ts`, `components/stroke-color-picker.svelte` | the eight colours a drawing can be — light-map hues above, their bright counterparts for dark maps below — and the only place their hex lives, including the default every browser starts on; plus the one strip button they open from |
-| `web/src/lib/components/room-menu.svelte` | the menu behind the side panel's third icon: Scenes, Assets, Manage room, Leave room |
+| `web/src/lib/components/room-menu.svelte` | the menu behind the side panel's third icon: Scenes, Seats, Assets, Manage room, Leave room |
+| `web/src/lib/components/seats-dialog.svelte` | who is at the table — everyone's to open, the GM's to change, and where anyone picks their own colour. Read the note on the palette before putting anything on a popover inside a dialog |
+| `web/src/lib/components/manage-room-dialog.svelte` | the three things that are a GM's alone: the movement lock, the room password and deleting the room |
 | `web/src/lib/identity-color.ts` | the sixteen colours a seat can be, and the only place their hex lives. A seat stores the *key*; `store.IdentityColors` in Go is the same list and validates it, since the value reaches a `style` attribute. `TestIdentityColors_MatchTheClientPalette` fails if the two drift |
-| `web/src/lib/components/ui/popover/` | the bits-ui popover, wrapped the way `ui/dialog` is. Every popup in the room is on it — the room menu and the draw strip's stroke width — and anything new that pops up over the map should be too, for the focus handling rather than the placement |
+| `web/src/lib/components/ui/popover/` | the bits-ui popover, wrapped the way `ui/dialog` is. Every popup in the room is on it — the room menu and the draw strip's stroke width — and anything new that pops up over the map should be too, for the focus handling rather than the placement. **Not inside a dialog**, where it comes out unpositioned, transparent and under the overlay while still reading as present — see `seats-dialog.svelte` |
 | `web/src/lib/host-notice.svelte.ts`, `components/host-notice.svelte` | the Host's `banner` message: fetched once, dismissable, and the height everything else moves down by |
 | `web/src/lib/components/theme-toggle.svelte` | System/Light/Dark as three icon buttons, in two shapes: a labelled row for the room menu and a floating pill for the home page's corner. The scheme itself is `mode-watcher`, wired up in `+layout.svelte`, plus the boot script in `app.html` that beats the flash of light |
 | `web/src/lib/components/initiative-panel.svelte` | the turn order in the rail's second panel — one component for both roles, with the GM's controls left off for everyone else |
@@ -64,10 +66,14 @@ that seat owns and its name — so a cleared browser or a borrowed laptop costs 
 than an identity, and one person on a phone and a laptop is two sessions and one entry in the
 roster. Claiming is open, with no password or approval; the GM's seat is the exception and goes
 through the room password, which also means a second GM login reuses that seat instead of growing
-the roster. A GM can add a seat before anyone arrives and remove a finished one from `Manage
-room`, and **set a new room password** from the same dialog — no current password asked for, since
+the roster. **The roster has its own menu entry, `Seats`, and it is everyone's**: reading who is at
+the table isn't a GM power (ADR-0007), so a Player opens the same dialog and gets the same list —
+names, colours, who is here now — with the add form and the bins simply not rendered, which is the
+same line `createSeat` and `deleteSeat` already draw with `requireGM`. A GM can add a seat before
+anyone arrives and remove a finished one from there. `Manage room` is what was left once seats
+moved out, and all of it is a GM's alone: the movement lock, and **a new room password** — no current password asked for, since
 the session already proves the seat, and nobody is signed out by the change, including whoever
-made it. The same dialog is where a room **ends**: `Delete room` arms and then fires,
+made it. That dialog is also where a room **ends**: `Delete room` arms and then fires,
 takes the scenes, tokens, chat and seats with it, and leaves the uploaded images alone — they are
 shared with any room that uploaded the same bytes. Anyone sitting in it is told over the socket
 (`room.deleted`) and sent home rather than left on a socket that stops answering. `longtable room reset-password` stays the Host's path for a GM who can't get in at all;
@@ -175,8 +181,14 @@ on the seat picker before joining, where the swatch beside each chair says which
 is already wearing (taken ones are marked, never blocked: two people may match, and the room
 doesn't argue). It belongs to the *seat*, so it survives a cleared browser and comes back when that
 seat is taken on another device, and it shows up in two places that answer "who": the name in chat,
-and the colour a ping pulses in. It can be changed later from the swatch beside `playing as` in the
-rail — `participant.setColor` names no seat, so it can only be your own — and the change recolours
+and the colour a ping pulses in. It can be changed later from the `Seats` dialog, where the palette
+sits open at the foot of the roster — beside everyone else's colour, which is the list you want on
+screen while choosing one. The swatch beside `playing as` in the rail is still the way in, but it
+opens that dialog rather than the palette. It is deliberately *not* on a popover: one opened inside
+a dialog comes out unpositioned, transparent and under the dialog's own overlay while staying in
+the accessibility tree, so a spec can pass against a palette nobody could click
+(`planning/backlog/seats-own-menu-entry.md` has the details, and everything that pops up over the
+*map* is unaffected) — `participant.setColor` names no seat, so it can only be your own — and the change recolours
 what you already said, since a name's colour is looked up per render rather than stamped on a
 message. A seat from before colours has none and renders exactly as it did.
 And a live list of who's connected
@@ -205,9 +217,10 @@ between chat, initiative and a menu. That menu opens with **the room code**, sho
 under a muted label and readable without going further; clicking it opens a dialog holding the code
 and this browser's address as readonly fields, one click to select either. There is no copy button
 anywhere, and that's a decision, not a gap — see
-`planning/backlog/share-room-code-from-room.md`. Under it the menu holds Scenes, Assets, Manage
+`planning/backlog/share-room-code-from-room.md`. Under it the menu holds Scenes, Seats, Assets, Manage
 room and Leave room (making a scene is a mode of the Scenes dialog rather than a menu entry of its
-own), and above Leave room a **System/Light/Dark** control — grouped with it because those two are
+own; Seats and Assets are the two everyone gets, Scenes and Manage room the two the GM does), and
+above Leave room a **System/Light/Dark** control — grouped with it because those two are
 the only things in the menu that change this browser rather than the room. Below `lg` the rail becomes a bottom sheet with those icons pinned to the bottom edge, the
 contextual strip docks into it rather than floating, the selected token becomes a bar above the
 icons shown only when something is selected, and redo and reset view move from the toolbar into
@@ -273,7 +286,7 @@ rather than ours. Neither is re-read while the server is up — changing either 
 `planning/backlog/host-config-file.md` records why live reload was left out.
 
 Known gaps, which is also roughly the queue: nothing rolls initiative for you — the tracker takes
-the number and `/roll 1d20+2` in chat is where it comes from; `Manage room` holds seats, the
+the number and `/roll 1d20+2` in chat is where it comes from; `Manage room` holds the
 movement lock, the room password and deleting the room, and is still waiting on room privacy and
 a switch to turn Player token creation off. Nothing caps how many tokens one Player may have standing. Fog has no automatic vision from tokens, no prebuilt releases, no way for a Host
 to remove a moderated asset server-wide or cap upload sizes per room (a room removing something
