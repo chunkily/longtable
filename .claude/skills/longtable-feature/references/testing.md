@@ -8,6 +8,13 @@ new harness.
 `newTestServer(t)` wires a real `Store` on a temp SQLite file to a `Hub` behind `httptest`, so
 these exercise the actual protocol over a real socket rather than calling handlers directly.
 
+Its cleanup runs in three steps and the order is load-bearing: the server closes, then
+`hub.Stop()`, then the database. A hub keeps working for `departureGrace` after its last socket
+closed, and what it does when that timer fires is write to the store — so without the middle step
+every test that disconnected a client left a timer to insert into a database that test had already
+closed. On CI that was 193 `sql: database is closed` errors in one run, which is what a real
+failure was hiding in. Anything else that gives the hub background work needs the same treatment.
+
 ```go
 ts := newTestServer(t)
 room, gm, _ := ts.store.CreateRoom("Room", "GM", "password")

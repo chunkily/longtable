@@ -54,6 +54,15 @@ func newTestServer(t *testing.T) *testServer {
 	}
 
 	hub := NewHub(s, DefaultDepartureGrace)
+	// Registered between the database's cleanup and the server's, because
+	// cleanups run last-registered-first and this has to happen in the
+	// middle: the server closes (its handlers return and each leaves a
+	// departure timer), then the hub stops (those timers are cancelled),
+	// then the database closes. Without the middle step every test that
+	// disconnected a client left a timer to fire half a minute later,
+	// into a database that had gone — see Hub.Stop.
+	t.Cleanup(hub.Stop)
+
 	srv := httptest.NewServer(http.HandlerFunc(hub.ServeHTTP))
 	t.Cleanup(srv.Close)
 

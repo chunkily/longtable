@@ -350,3 +350,40 @@ func readUpdatedParticipant(t *testing.T, c *testClient) envelope {
 		}
 	}
 }
+
+// A stopped hub writes nothing. Its departure timers are the only thing
+// it does on its own clock, and they fire long after the test that
+// created them has finished — which used to mean an insert into a
+// database that test's own cleanup had already closed, logged as an
+// ERROR per participant. Hundreds of those in a package run buried the
+// one real failure in the backend job.
+func TestStop_CancelsTheDeparturesThatWouldOutliveTheHub(t *testing.T) {
+	r := newTokenTestRoom(t)
+	grace := r.ts.hurryDepartures(50 * time.Millisecond)
+
+	client := r.ts.connect(t, r.room.Slug, r.player.SessionToken)
+	client.readEnvelope(t) // state.sync
+	client.conn.CloseNow() // the grace period starts here
+
+	r.ts.hub.Stop()
+	time.Sleep(grace * 4)
+
+	// No `left` line: the timer that would have written one was cancelled
+	// rather than left to fire. The joined lines are still there, since
+	// those were written while the hub was running.
+	for _, line := range systemLines(t, r.ts, r.room.ID) {
+		if line[0] == string(store.SystemEventLeft) {
+			t.Fatalf("log = %v, want nothing about leaving from a stopped hub", systemLines(t, r.ts, r.room.ID))
+		}
+	}
+
+	// And it stays stopped: a connection closing after Stop schedules
+	// nothing either, which is the case the test harness actually hits —
+	// the server closes its handlers *before* the hub is stopped.
+	r.ts.hub.mu.Lock()
+	pending := len(r.ts.hub.departing)
+	r.ts.hub.mu.Unlock()
+	if pending != 0 {
+		t.Fatalf("departing = %d rooms, want none pending on a stopped hub", pending)
+	}
+}

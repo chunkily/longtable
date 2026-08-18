@@ -62,6 +62,9 @@ type Hub struct {
 	// is: every read here is already inside the lock that the socket map
 	// needs anyway.
 	departing map[string]map[string]*time.Timer
+	// Set by Stop. A hub that has been stopped schedules no more
+	// departures, and the ones already pending have been cancelled.
+	stopped bool
 	// Set from -departure-grace, and shortened by tests that would
 	// otherwise spend half a minute proving a timer fired.
 	departureGrace time.Duration
@@ -221,6 +224,13 @@ func (h *Hub) unregister(c *client) {
 		return
 	}
 
+	// A stopped hub has nowhere to announce this and, more to the point,
+	// nothing left to announce it *to* — see Stop.
+	if h.stopped {
+		h.pruneRoomLocked(c.roomID)
+		return
+	}
+
 	roomID, participant := c.roomID, c.participant
 	if h.departing[roomID] == nil {
 		h.departing[roomID] = make(map[string]*time.Timer)
@@ -250,6 +260,39 @@ func (h *Hub) finishDeparture(roomID string, participant store.Participant) {
 	h.mu.Unlock()
 
 	h.announceDeparture(roomID, participant)
+}
+
+// Stop cancels every pending departure and refuses to schedule another.
+//
+// A departure is a timer with a grace period on it, so a hub goes on
+// working for half a minute after its last socket closed — and what it
+// does when the timer fires is write to the store. That outlives
+// whatever built the hub, which is how a test's timers ended up
+// inserting into a database its own cleanup had already closed: an
+// `insert system message failed: sql: database is closed` per
+// participant, hundreds of them in a package run, every one of them
+// saying nothing except that a test had finished. They buried a real
+// failure once already.
+//
+// `serve` doesn't call this, and that isn't an oversight: the process
+// exits and takes its timers with it, and there is no graceful shutdown
+// to hang it off yet. Tests are the only thing that ends a hub's life
+// while the program carries on, which is exactly why they need it.
+func (h *Hub) Stop() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	h.stopped = true
+	for _, room := range h.departing {
+		for _, timer := range room {
+			timer.Stop()
+		}
+	}
+	// Emptied rather than left to the Stops above: a timer that has
+	// already fired is sitting on this lock right now, and
+	// finishDeparture's own look in this map is what turns it into a
+	// no-op. time.Timer.Stop cannot un-fire one.
+	clear(h.departing)
 }
 
 // clearDepartureLocked forgets a pending departure, and the room's map
