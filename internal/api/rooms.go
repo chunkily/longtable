@@ -365,6 +365,33 @@ func (srv *Server) deleteSeat(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// deleteRoom removes a room and everything in it, for a GM who is done
+// with it. There is no undo, which is why the button that calls this
+// asks first — see manage-room-dialog.svelte.
+//
+// The row goes before anyone is told, so nothing can join or reconnect
+// into the gap; the hub then tells whoever is still connected and closes
+// their sockets. The other order would leave a window where the room
+// says it is gone and still answers.
+func (srv *Server) deleteRoom(w http.ResponseWriter, r *http.Request) {
+	room, ok := srv.lookupRoom(w, r.PathValue("slug"))
+	if !ok {
+		return
+	}
+	if !srv.requireGM(w, r, room) {
+		return
+	}
+
+	if err := srv.store.DeleteRoom(room.ID); err != nil {
+		slog.Error("api: delete room failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to delete the room")
+		return
+	}
+	srv.hub.RoomDeleted(r.Context(), room.ID)
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 type setGMPasswordRequest struct {
 	Password string `json:"password"`
 }

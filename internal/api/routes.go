@@ -69,6 +69,9 @@ func NewRouter(
 	// to match the gm-login it governs, and a PUT because it replaces the
 	// one value rather than adding anything.
 	mux.HandleFunc("PUT /api/rooms/{slug}/gm-password", srv.setGMPassword)
+	// The one endpoint that ends a room. GM-only, and the only thing in
+	// the app with no undo behind it.
+	mux.HandleFunc("DELETE /api/rooms/{slug}", srv.deleteRoom)
 	mux.HandleFunc("GET /api/rooms/{slug}/assets", srv.listRoomAssets)
 	mux.HandleFunc("POST /api/rooms/{slug}/assets", srv.uploadAsset)
 	mux.HandleFunc("PATCH /api/rooms/{slug}/assets/{id}", srv.updateRoomAsset)

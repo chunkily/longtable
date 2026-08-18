@@ -516,3 +516,54 @@ func TestSetGMPassword_IsGMOnlyAndHasAMinimumLength(t *testing.T) {
 		t.Fatalf("the original password after two refusals: status = %d, want 201", stillWorks.StatusCode)
 	}
 }
+
+// Deleting a room is GM-only and final. The store test covers what goes
+// with it; this covers who may ask and what is left to ask.
+func TestDeleteRoom_IsGMOnlyAndLeavesNothingToJoin(t *testing.T) {
+	srv, _ := newTestServer(t)
+	created := createTestRoom(t, srv)
+
+	var bob sessionResponse
+	decodeJSONBody(t, postJSON(t, srv.URL+"/api/rooms/"+created.RoomSlug+"/join", map[string]string{
+		"displayName": "Bob",
+	}), &bob)
+
+	if code := deleteWithToken(t, srv.URL+"/api/rooms/"+created.RoomSlug, bob.SessionToken); code != http.StatusForbidden {
+		t.Fatalf("a Player deleting the room: status = %d, want 403", code)
+	}
+	if code := deleteWithToken(t, srv.URL+"/api/rooms/"+created.RoomSlug, ""); code != http.StatusUnauthorized {
+		t.Fatalf("no session: status = %d, want 401", code)
+	}
+
+	if code := deleteWithToken(t, srv.URL+"/api/rooms/"+created.RoomSlug,
+		created.SessionToken); code != http.StatusNoContent {
+		t.Fatalf("the GM deleting the room: status = %d, want 204", code)
+	}
+
+	// Nothing to reach it by any more: not the seat list a returning
+	// device asks for, and not a GM login with the password that used to
+	// work.
+	resp, err := http.Get(srv.URL + "/api/rooms/" + created.RoomSlug + "/seats")
+	if err != nil {
+		t.Fatalf("GET seats: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("seats after deleting: status = %d, want 404", resp.StatusCode)
+	}
+
+	login := postJSON(t, srv.URL+"/api/rooms/"+created.RoomSlug+"/gm-login", map[string]string{
+		"displayName": "Alice", "password": "hunter2",
+	})
+	login.Body.Close()
+	if login.StatusCode != http.StatusNotFound {
+		t.Errorf("gm-login after deleting: status = %d, want 404", login.StatusCode)
+	}
+
+	// And the second delete finds nothing rather than reporting success
+	// twice, which is what tells a stale tab it is looking at a ghost.
+	if code := deleteWithToken(t, srv.URL+"/api/rooms/"+created.RoomSlug,
+		created.SessionToken); code != http.StatusNotFound {
+		t.Errorf("deleting it twice: status = %d, want 404", code)
+	}
+}

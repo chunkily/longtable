@@ -196,6 +196,21 @@ export function removeSeat(
 }
 
 /**
+ * Deletes the room and everything in it. GM-only, and there is no undo —
+ * the images survive, because they belong to every room that uploaded
+ * the same bytes.
+ *
+ * Anyone still connected is told over the socket (`room.deleted`) rather
+ * than by this call, which only ever answers the person who asked.
+ */
+export function deleteRoom(slug: string, sessionToken: string): Promise<void> {
+	return apiFetch(`/api/rooms/${encodeURIComponent(slug)}`, {
+		method: 'DELETE',
+		headers: { Authorization: `Bearer ${sessionToken}` }
+	});
+}
+
+/**
  * Sets the password that signs somebody into this room's GM seat.
  *
  * Takes no current password — the session token is the proof, the same

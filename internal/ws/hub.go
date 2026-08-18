@@ -319,6 +319,62 @@ func (h *Hub) ConnectedParticipantIDs(roomID string) []string {
 	return ids
 }
 
+// RoomDeleted tells everyone still in a room that it is gone, then
+// closes their sockets.
+//
+// Called from the REST handler that does the deleting, which is the only
+// thing in the room's life that doesn't come in over this socket — so
+// this is the one exported way in, and it takes a room id because by the
+// time it runs there is no row left to look one up from.
+//
+// The event goes first and the close second. A client that is told
+// nothing sees a bare `onclose`, which is exactly what a dropped wifi
+// looks like: it would back off and retry a room that no longer exists,
+// and the only thing that would eventually stop it is the reconnect
+// probe getting a 404 and calling the session invalid — a true statement
+// that says nothing about what actually happened.
+//
+// Closing is what stops the retry loop for a client that missed the
+// event, since `unregister` runs through ServeHTTP's defers either way
+// and there is nothing left here to leak.
+func (h *Hub) RoomDeleted(ctx context.Context, roomID string) {
+	h.broadcast(ctx, roomID, "room.deleted", map[string]string{})
+
+	h.mu.Lock()
+	clients := make([]*client, 0, len(h.rooms[roomID]))
+	for c := range h.rooms[roomID] {
+		clients = append(clients, c)
+	}
+	// Forgotten here rather than left to each connection's own
+	// `unregister`, which runs whenever its read loop notices the close.
+	// Until it does, this room is still a live entry with sockets in it,
+	// and the disconnect path broadcasts into it — a `measure.ended` per
+	// departing client, written to sockets that have just been closed,
+	// which logs a warning apiece about a room that no longer exists.
+	// `unregister` deleting from a map that has already gone is a no-op.
+	delete(h.rooms, roomID)
+	h.mu.Unlock()
+
+	for _, c := range clients {
+		// A normal closure rather than an abrupt one: the client has just
+		// been told why, and an orderly close lets that last message land
+		// before the socket goes.
+		//
+		// One goroutine each, and nothing waits for them. `Close` writes a
+		// close frame and then waits for the peer's — up to five seconds
+		// per socket, which run back to back would hold the GM's HTTP
+		// request open for half a minute at a table of six. Nothing after
+		// this depends on the handshake finishing: the room is already
+		// gone, and each connection's own defers clean it up whenever its
+		// read loop ends.
+		go func(c *client) {
+			if err := c.conn.Close(websocket.StatusNormalClosure, "room deleted"); err != nil {
+				slog.Warn("ws: closing a deleted room's socket failed", "error", err)
+			}
+		}(c)
+	}
+}
+
 // broadcast sends an event to every client connected to roomID.
 func (h *Hub) broadcast(ctx context.Context, roomID, eventType string, payload any) {
 	data, err := marshalEnvelope(eventType, payload)
@@ -1820,6 +1876,18 @@ func (h *Hub) endMeasurementOnDisconnect(c *client) {
 func (h *Hub) announceDeparture(roomID string, participant store.Participant) {
 	ctx, cancel := context.WithTimeout(context.Background(), measureCleanupTimeout)
 	defer cancel()
+
+	// A deleted room takes everyone in it out at once, and every one of
+	// those connections leaves a departure timer behind. When they fire
+	// there is nobody to tell and no room to write a line into — the
+	// insert fails its foreign key and logs an error per participant,
+	// which reads like a bug and is only a room that ended. Checked here
+	// rather than swallowed at the insert, because the broadcast above is
+	// just as pointless.
+	if _, err := h.store.GetRoomByID(roomID); errors.Is(err, store.ErrNotFound) {
+		return
+	}
+
 	h.broadcast(ctx, roomID, "participant.disconnected", map[string]any{
 		"participantId": participant.ID,
 	})

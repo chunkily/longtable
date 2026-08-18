@@ -1,7 +1,7 @@
 ---
 title: GM deletes a room
 created: 2026-08-04
-status: incomplete
+status: done
 ---
 
 As a GM
@@ -17,3 +17,11 @@ So that an abandoned campaign stops cluttering the server and its contents don't
       roster
 - [ ] Images shared with other rooms survive — only this room's library entries go
 - [ ] Anyone still connected is told the room is gone rather than being left on a dead socket
+
+## Verified
+
+All five hold, across three levels: the store test for what cascades and what survives, the hub
+test for the event reaching both people and the sockets then closing, and `delete-room.spec.ts`
+for the whole thing in two browsers — the GM's confirmation, the player being told, both browsers
+ending up home with the room gone from their own list, and the room code answering `Room not
+found!` afterwards.

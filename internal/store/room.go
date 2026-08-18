@@ -163,6 +163,28 @@ func (s *Store) SetGMPassword(roomID, newPassword string) error {
 	return err
 }
 
+// DeleteRoom removes a room and everything that belongs to it.
+//
+// One statement: the participants, scenes (and through them the tokens,
+// fog and drawings), initiative entries, chat log and the room's library
+// rows all hang off `room(id)` with `ON DELETE CASCADE`, and the
+// connection sets `foreign_keys(ON)` (see internal/db) — without which
+// every one of them would silently survive as an orphan.
+//
+// **The images survive on purpose.** `room_asset` is the room's library
+// membership, and only those rows go; the `asset` rows and the blobs
+// behind them are content-addressed and shared with any other room that
+// uploaded the same bytes, so deleting them here would empty someone
+// else's library. That leaves a file nobody references, which a Host
+// clearing up wants to find — a job for the CLI, not for this.
+//
+// There is no undo. Every other destructive thing in this app has one;
+// this is the reason the button that calls it asks first.
+func (s *Store) DeleteRoom(roomID string) error {
+	_, err := s.db.Exec(`DELETE FROM room WHERE id = ?`, roomID)
+	return err
+}
+
 // SetActiveScene marks sceneID as the room's live scene.
 func (s *Store) SetActiveScene(roomID, sceneID string) error {
 	_, err := s.db.Exec(`UPDATE room SET active_scene_id = ? WHERE id = ?`, sceneID, roomID)

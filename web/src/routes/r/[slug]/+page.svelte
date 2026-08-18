@@ -237,6 +237,13 @@
 		if (client?.error) toast.error(client.error);
 	});
 
+	// Everyone who didn't press the button. The GM's own click goes
+	// through `ondeleted` on the dialog instead, because their socket
+	// being down shouldn't leave them looking at a room that has gone.
+	$effect(() => {
+		if (client?.roomDeleted) handleRoomDeleted();
+	});
+
 	function startSession(s: Session) {
 		session = s;
 		const c = new RoomClient();
@@ -302,6 +309,24 @@
 		client?.disconnect();
 		if (session) await endSession(slug, session.sessionToken);
 		clearSession(slug);
+		goto(resolve('/'));
+	}
+
+	// The room has gone: either this browser's GM deleted it, or someone
+	// else's did and the socket said so. Both land here.
+	//
+	// The stored session goes with it. Nothing on the server would honour
+	// it any more, and the home page lists rooms straight out of
+	// localStorage — leaving it there would put a dead room at the top of
+	// the list, one click from a screen saying it doesn't exist.
+	//
+	// No `endSession` call, unlike leaving: the room row is gone and the
+	// session rows went with it through the cascade, so there is nothing
+	// to sign out of.
+	function handleRoomDeleted() {
+		client?.disconnect();
+		clearSession(slug);
+		toast.info('That room has been deleted.');
 		goto(resolve('/'));
 	}
 
@@ -923,6 +948,7 @@
 			room={client}
 			roomSlug={session.roomSlug}
 			sessionToken={session.sessionToken}
+			ondeleted={handleRoomDeleted}
 			bind:open={manageRoomOpen}
 		/>
 	{/if}

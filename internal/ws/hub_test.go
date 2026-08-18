@@ -76,6 +76,17 @@ func (ts *testServer) connect(t *testing.T, slug, token string) *testClient {
 	return &testClient{conn: conn}
 }
 
+// dialErr is connect for the tests that expect the upgrade to be
+// refused, so a failure is the answer rather than the end of the test.
+func (ts *testServer) dialErr(slug, token string) error {
+	wsURL := "ws" + strings.TrimPrefix(ts.url, "http") + "?room=" + slug + "&token=" + token
+	conn, _, err := websocket.Dial(context.Background(), wsURL, nil)
+	if conn != nil {
+		conn.CloseNow()
+	}
+	return err
+}
+
 func (c *testClient) send(t *testing.T, typ string, payload any) {
 	t.Helper()
 

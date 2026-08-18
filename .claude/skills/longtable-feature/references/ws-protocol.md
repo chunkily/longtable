@@ -55,6 +55,15 @@ Envelope both ways:
 | `measure.update` | anyone | no | `measure.updated` |
 | `measure.end` | anyone | no | `measure.ended` |
 
+**One event has no command behind it: `room.deleted`.** A room ends over REST
+(`DELETE /api/rooms/{slug}`, GM-only), because the thing being deleted is the room the socket is
+attached to — so the API handler calls `Hub.RoomDeleted`, the hub's one exported broadcast, which
+tells everyone still connected and then closes their sockets. The payload is empty; there is
+nothing to say beyond the fact. Order matters in both directions: the row is deleted *before*
+anyone is told, so nothing can rejoin into the gap, and the event goes out *before* the sockets
+close, so a client isn't left reading a bare `onclose` — which is indistinguishable from a dropped
+connection and would send it into the reconnect backoff for a room that no longer exists.
+
 `measure.update` carries a `kind` — `distance` (the default when absent, so an older client is
 unaffected) or one of the four area templates `circle`, `cone`, `line`, `cube`. An unknown kind is
 refused. Only `line` uses `widthFeet`, since a drag gives length and direction but never width;

@@ -124,3 +124,81 @@ func TestSetGMPassword(t *testing.T) {
 		t.Fatal("old password still verifies after change")
 	}
 }
+
+// Deleting a room takes everything hanging off it, in one statement,
+// through the schema's cascades — and stops short of the shared images,
+// which belong to every room that uploaded the same bytes.
+func TestDeleteRoom_TakesItsContentsAndLeavesTheImages(t *testing.T) {
+	s := newTestStore(t)
+
+	room, gm, err := s.CreateRoom("Finished Campaign", "Alice", "", "hunter2")
+	if err != nil {
+		t.Fatalf("CreateRoom: %v", err)
+	}
+	scene, err := s.CreateScene(room.ID, "Cave", nil, 70, 1000, 800)
+	if err != nil {
+		t.Fatalf("CreateScene: %v", err)
+	}
+	if _, err := s.CreateToken(Token{SceneID: scene.ID, Name: "Goblin"}); err != nil {
+		t.Fatalf("CreateToken: %v", err)
+	}
+	if _, err := s.InsertMessage(Message{
+		RoomID: room.ID, ParticipantID: &gm.ID, ParticipantName: "Alice", Body: "hello",
+	}); err != nil {
+		t.Fatalf("InsertMessage: %v", err)
+	}
+
+	// An image this room shares with another one. Only the library
+	// membership should go.
+	asset, err := s.CreateAsset("shared-hash", "tavern.webp", "image/webp", 2048)
+	if err != nil {
+		t.Fatalf("CreateAsset: %v", err)
+	}
+	other, _, err := s.CreateRoom("Still Playing", "Bob", "", "hunter2")
+	if err != nil {
+		t.Fatalf("CreateRoom: %v", err)
+	}
+	for _, id := range []string{room.ID, other.ID} {
+		if err := s.AddAssetToRoom(id, asset.ID, "Tavern", "", AssetKindMap, nil); err != nil {
+			t.Fatalf("AddAssetToRoom: %v", err)
+		}
+	}
+
+	if err := s.DeleteRoom(room.ID); err != nil {
+		t.Fatalf("DeleteRoom: %v", err)
+	}
+
+	if _, err := s.GetRoomBySlug(room.Slug); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("GetRoomBySlug after delete: err = %v, want ErrNotFound", err)
+	}
+	for name, count := range map[string]int{
+		"scenes":          countRows(t, s, `SELECT count(*) FROM scene WHERE room_id = ?`, room.ID),
+		"tokens":          countRows(t, s, `SELECT count(*) FROM token WHERE scene_id = ?`, scene.ID),
+		"messages":        countRows(t, s, `SELECT count(*) FROM message WHERE room_id = ?`, room.ID),
+		"participants":    countRows(t, s, `SELECT count(*) FROM participant WHERE room_id = ?`, room.ID),
+		"library entries": countRows(t, s, `SELECT count(*) FROM room_asset WHERE room_id = ?`, room.ID),
+	} {
+		if count != 0 {
+			t.Errorf("%s left behind: %d, want 0", name, count)
+		}
+	}
+
+	// The other room still has the picture, and the asset row is still
+	// there for it to point at.
+	if _, err := s.GetAsset(asset.ID); err != nil {
+		t.Errorf("GetAsset after deleting one of its rooms: %v", err)
+	}
+	if n := countRows(t, s, `SELECT count(*) FROM room_asset WHERE room_id = ?`, other.ID); n != 1 {
+		t.Errorf("the other room's library holds %d assets, want 1", n)
+	}
+}
+
+func countRows(t *testing.T, s *Store, query, arg string) int {
+	t.Helper()
+
+	var n int
+	if err := s.db.QueryRow(query, arg).Scan(&n); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	return n
+}

@@ -409,6 +409,13 @@ export class RoomClient {
 	 * connection. Retrying can't fix it — the only way out is rejoining.
 	 */
 	sessionExpired = $state(false);
+	/**
+	 * Set when the room itself has been deleted out from under this
+	 * client. Terminal, and different from `sessionExpired`: there is no
+	 * rejoining, and nothing to rejoin. The page watching this is what
+	 * takes the browser somewhere that still exists.
+	 */
+	roomDeleted = $state(false);
 
 	roomName = $state('');
 	/**
@@ -1316,6 +1323,19 @@ export class RoomClient {
 				this.participants = payload.participants ?? [];
 				this.connectedParticipantIds = payload.connectedParticipantIds ?? [];
 				this.resetAfterSync();
+				break;
+			}
+
+			// The GM has deleted the room while people are sitting in it.
+			// The socket is closed from the other end a moment later, so
+			// this drops the retry loop first: a reconnect started here
+			// would go looking for a room that no longer exists, and the
+			// only thing that would stop it is the session probe's 404
+			// being read as an expired session — true, and no explanation
+			// of what happened.
+			case 'room.deleted': {
+				this.roomDeleted = true;
+				this.disconnect();
 				break;
 			}
 
