@@ -288,6 +288,15 @@ test('clicking away from an edited form asks, with one dialog on screen', async 
 	await openEditor(gm.page);
 	await gm.page.getByLabel('Name').fill('Hobgoblin');
 	await clickAway(gm.page);
+	// Wait for the form to actually go, the same way the first pass
+	// through this test does. The swap is two dialogs, not one changing
+	// its mind: the question opens while the form is still animating out,
+	// and for that window — measured at roughly 20-80ms — *both* carry a
+	// `Save changes`, so an unscoped click resolves to two elements and
+	// fails as a strict-mode violation. Fast enough to never lose the race
+	// locally and slow enough to lose it on CI, which is where it turned
+	// the e2e job red.
+	await expect(gm.page.getByLabel('Name')).toHaveCount(0);
 	await gm.page.getByRole('button', { name: 'Save changes' }).click();
 	await expect(detailsPanel(gm.page)).toContainText('Hobgoblin');
 });
