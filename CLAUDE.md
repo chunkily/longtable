@@ -258,8 +258,9 @@ assets page at `/r/{slug}/assets`. That page is tabbed by kind, Tokens and Maps,
 governs all of it: what the library grid shows, and what anything added from there is filed as —
 chosen before the file dialog opens rather than asked for afterwards. An upload is named
 (defaulting to the filename minus its extension), credited, and — for a map — aligned to the grid
-before it's added; if its dimensions disagree with the tab it was staged under, the card says so
-and offers to move it, but never moves it on its own. Name, credit and kind are all editable
+before it's added. **The tab it was staged under is simply what it's filed as** — nothing reads
+the image's shape to question that, and `planning/backlog/split-token-and-map-libraries.md`
+records what was there and why it went. Name, credit and kind are all editable
 afterwards, and an asset can be removed from a room's library (the shared file survives, and
 anything already using it keeps it). Token art is shown whole in a square tile, maps in a wide
 crop; the library there and the pickers in the room share one searchable component, the pickers

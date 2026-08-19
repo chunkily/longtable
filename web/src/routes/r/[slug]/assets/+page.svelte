@@ -27,7 +27,6 @@
 		type AssetKind,
 		type Session
 	} from '$lib/api';
-	import { guessAssetKind, measureImage } from '$lib/asset-kind';
 	import { paddingForOrigin } from '$lib/grid-align';
 	import { loadSession } from '$lib/session';
 	import { Button } from '$lib/components/ui/button';
@@ -64,28 +63,11 @@
 		 * made before picking rather than a default they have to notice.
 		 */
 		kind: AssetKind;
-		/**
-		 * The image's own dimensions, once they've been read, and what its
-		 * shape suggests it is. Only ever used to *ask* whether the tab was
-		 * right — see `mismatched`. Null while the measurement is in flight,
-		 * and for an image that couldn't be measured at all.
-		 */
-		shape: { width: number; height: number; suggests: AssetKind } | null;
 		aligning: boolean;
 		gridSize: number;
 		originX: number;
 		originY: number;
 		uploading: boolean;
-	}
-
-	/**
-	 * A staged file whose shape disagrees with the tab it was added under.
-	 * Worth a word, because it's the one case where the up-front choice is
-	 * likely to have been the wrong one — a 1400x900 image staged as token
-	 * art usually means someone forgot to switch tabs.
-	 */
-	function mismatched(item: Staged): boolean {
-		return item.shape !== null && item.shape.suggests !== item.kind;
 	}
 
 	let staged = $state<Staged[]>([]);
@@ -168,7 +150,6 @@
 				name: defaultName(file.name),
 				attribution: '',
 				kind: activeKind,
-				shape: null,
 				aligning: false,
 				gridSize: 70,
 				originX: 0,
@@ -176,27 +157,10 @@
 				uploading: false
 			};
 			staged.push(item);
-			void measure(item);
 		}
 		// Clearing the input means picking the same file again still fires a
 		// change event, which matters after removing one by mistake.
 		input.value = '';
-	}
-
-	/**
-	 * Reads a staged image's dimensions in the background.
-	 *
-	 * It writes to `staged` rather than to the local `item`, because by the
-	 * time this resolves the card may have been discarded — and pushing a
-	 * measurement onto an object nobody is rendering is how you end up
-	 * revoking an object URL and then measuring it.
-	 */
-	async function measure(item: Staged) {
-		const size = await measureImage(item.url);
-		if (!size) return;
-		const live = staged.find((s) => s.id === item.id);
-		if (!live) return;
-		live.shape = { ...size, suggests: guessAssetKind(size.width, size.height) };
 	}
 
 	/** The filename minus its extension — a real editable starting value. */
@@ -248,17 +212,6 @@
 		} finally {
 			item.uploading = false;
 		}
-	}
-
-	/**
-	 * Accepts the shape's suggestion for a staged file. Alignment is a
-	 * map's business, so it goes off on the way to being token art rather
-	 * than lurking switched-on behind a hidden control.
-	 */
-	function switchKind(item: Staged) {
-		if (!item.shape) return;
-		item.kind = item.shape.suggests;
-		if (item.kind !== 'map') item.aligning = false;
 	}
 
 	/**
@@ -420,30 +373,6 @@
 								bind:originX={item.originX}
 								bind:originY={item.originY}
 							/>
-						{/if}
-
-						{#if mismatched(item)}
-							<!-- The shape is only ever a question, never an answer: it
-							     can't override a choice someone made on purpose, and it
-							     shows the dimensions it's arguing from so the guess can
-							     be judged rather than trusted. Wrong sometimes — square
-							     maps and long banners both exist — which is exactly why
-							     it asks. -->
-							<p
-								class="flex flex-wrap items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-sm"
-							>
-								<span>
-									{item.shape?.width}×{item.shape?.height} is shaped more like
-									{item.shape?.suggests === 'map' ? 'a map' : 'token art'}.
-								</span>
-								<button
-									type="button"
-									class="underline underline-offset-2"
-									onclick={() => switchKind(item)}
-								>
-									File it as {item.shape?.suggests === 'map' ? 'a map' : 'token art'}
-								</button>
-							</p>
 						{/if}
 
 						<div class="flex flex-wrap items-center gap-2">

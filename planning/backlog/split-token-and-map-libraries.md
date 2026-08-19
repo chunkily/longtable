@@ -54,9 +54,10 @@ states the answer rather than asking for it. `AssetKindTabs` exists so the same 
 a grid in the pickers and a whole page here without becoming two controls that look alike and
 mean different things.
 
-**The image's shape questions the choice but never overrides it.** `guessAssetKind` in
-`web/src/lib/asset-kind.ts` reads a staged file's dimensions and, when they disagree with the open
-tab, the card says so and offers one click to move it. The rule is *squareness first*: token art
+**The image's shape questioned the choice but never overrode it, and has since been removed** —
+see the update at the foot of this item. What follows describes what was there. `guessAssetKind`
+in `web/src/lib/asset-kind.ts` read a staged file's dimensions and, when they disagreed with the
+open tab, the card said so and offered one click to move it. The rule was *squareness first*: token art
 is square by convention, so anything far off square, or square but over 1200px, reads as a map.
 A plain pixel threshold — the obvious first idea, and what was originally suggested — doesn't
 survive contact with real art, because token art is routinely 256–1024px and any threshold low
@@ -100,6 +101,21 @@ The decisions worth not rediscovering:
 Known and accepted: nothing validates the kind against the image beyond the prompt. A 4000px
 battle map can still be filed as a token if someone clicks past the warning — it'll look odd
 squeezed into a square tile, which is feedback enough.
+
+## Update 2026-08-19 — the shape guess is gone
+
+`web/src/lib/asset-kind.ts` and its tests are deleted, and the amber card that offered `File it as
+a map` with them. The tab an upload was staged under is now simply what it is filed as, with
+nothing anywhere reading the image to second-guess it.
+
+The reasoning above is left in place because it is still the best account of *why a guess is hard*
+— squareness beating a pixel threshold, and token art routinely being 256–1024px — and anyone
+proposing the feature again should read it before rebuilding it.
+
+What replaced it is what was already true: the kind is editable after upload, and re-staging under
+the other tab is two clicks. Both were the fallback whenever the guess was wrong, which it was
+often enough to be worth prompting about — and a prompt that is wrong often enough to need a
+fallback is a prompt with a real cost of its own.
 
 ## Related user stories
 

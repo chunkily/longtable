@@ -321,35 +321,26 @@ test('a picker links to the half of the assets page it is asking for', async ({ 
 	await expect(page.getByRole('tab', { name: /^Tokens/ })).toHaveAttribute('aria-selected', 'true');
 });
 
-test('a staged file whose shape disagrees with the open tab says so, and can be moved', async ({
+// The tab decides, and nothing second-guesses it any more. This used to
+// measure a staged file and offer to move one whose shape disagreed;
+// that whole card is gone, so what's left to prove is that a file staged
+// under a tab is filed under it whatever shape it is.
+test('a staged file is filed under the tab it was added on, whatever shape it is', async ({
 	page
 }) => {
 	await createRoom(page, 'Shape Guess');
 	await openAssetsPage(page);
 
-	// Staged on the Tokens tab, so that's what it would be filed as — but
-	// it's 40x12, which is not a shape token art comes in.
+	// 40x12 on the Tokens tab: not a shape token art comes in, and filed
+	// as token art regardless, because that is what was asked for.
 	await page.getByLabel('Choose images to add').setInputFiles(fixture('wide-map.png'));
 	await expect(page.getByText('Adding as token art')).toBeVisible();
-	await expect(page.getByText('40×12 is shaped more like a map')).toBeVisible();
-
-	// The guess only ever asks. Taking it up is one click, and it carries
-	// the alignment step over with it, since that belongs to maps.
-	await page.getByRole('button', { name: 'File it as a map' }).click();
-	await expect(page.getByText('Adding as a map')).toBeVisible();
-	await expect(page.getByRole('button', { name: 'Align to grid' })).toBeVisible();
+	await expect(page.getByText(/shaped more like/)).toHaveCount(0);
 
 	await page.getByLabel('Name').fill('Long hall');
 	await page.getByRole('button', { name: 'Add to library' }).click();
-	await expect(page.getByRole('tab', { name: 'Maps 1' })).toBeVisible();
+	await expect(page.getByRole('tab', { name: 'Tokens 1' })).toBeVisible();
 	await expect(page.getByText('Long hall')).toBeVisible();
-
-	// A square image on the Tokens tab is what the tab said it would be,
-	// and gets asked nothing.
-	await page.getByRole('tab', { name: /^Tokens/ }).click();
-	await page.getByLabel('Choose images to add').setInputFiles(fixture('goblin.png'));
-	await expect(page.getByText('Adding as token art')).toBeVisible();
-	await expect(page.getByText(/shaped more like/)).toHaveCount(0);
 });
 
 test('an asset can be taken off the room shelf without deleting the picture', async ({ page }) => {
