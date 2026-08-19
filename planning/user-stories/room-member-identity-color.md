@@ -22,6 +22,19 @@ So that my pings and chat messages are recognizably mine to everyone else at the
       restored connection
 - [ ] It also survives me coming back on a different device and taking my seat again
 
+## Update 2026-08-19 — a Player's story now
+
+Every criterion above still holds for a Player, and the story stays `done` on that basis. It no
+longer describes a **GM**: theirs is a fixed black, not chosen from the preset list and not
+changeable, so the first and third criteria are simply not asked of them — see
+[gm-color-is-fixed-black](../backlog/gm-color-is-fixed-black.md). The rest still are: their colour
+applies to their pings and their name in chat, it's the same on every device, and it survives a
+reconnect, because it follows from the role rather than from anything stored.
+
+Left as written rather than rewritten to say "Player": the role that dropped out is the
+interesting part of the history, and `roles.md` has no story-splitting convention that would make
+two files clearer than one note.
+
 The fifth criterion was unsatisfiable when this was written: `participant` had the session token
 as a column, so "my participant record" and "my device" were the same row, and clearing a browser
 would have lost the colour no matter how the feature was built.

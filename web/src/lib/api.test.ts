@@ -30,9 +30,7 @@ describe('apiFetch (via listRoomAssets/createRoom)', () => {
 			vi.fn().mockResolvedValue(jsonResponse(400, { error: 'roomName is required' }))
 		);
 
-		await expect(createRoom('', 'gm', 'violet', 'password')).rejects.toThrow(
-			'roomName is required'
-		);
+		await expect(createRoom('', 'gm', 'password')).rejects.toThrow('roomName is required');
 	});
 
 	it('falls back to a generic message when the error body is not JSON', async () => {

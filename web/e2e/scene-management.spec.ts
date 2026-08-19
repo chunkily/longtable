@@ -11,7 +11,12 @@ import {
 // Reaching a scene other than the one you just made. Before this there
 // was no switcher at all, which is why scene.create used to activate
 // every new scene — so the thing most worth proving here is that the
-// second scene *doesn't* take over, and that a GM can still get to it.
+// second scene *doesn't* take the room over, and that a GM can still get
+// to it.
+//
+// Since per-client viewing, "get to it" and "take the room over" are two
+// separate actions, and most of what these specs are watching for is one
+// of them doing the other's job.
 
 // Layer order, by index into document.querySelectorAll('canvas'):
 // 0 map, 1 grid, 2 fog, 3 drawings, 4 tokens, 5 pings, 6 measurements,
@@ -63,37 +68,85 @@ async function createScene(page: Page, name: string) {
 // reaching it is two clicks rather than one.
 const openScenes = (page: Page) => openScenesDialog(page);
 
-test('a second scene waits to be switched to, and switching moves the whole room', async ({
-	browser
-}) => {
-	const gm = await createRoomAsGM(browser, 'Scene Switch');
+test('a new scene takes the GM to it and leaves the table where it was', async ({ browser }) => {
+	const gm = await createRoomAsGM(browser, 'Scene Prep');
 	const player = await joinAsPlayer(browser, gm.slug);
 
 	await createScene(gm.page, 'Tavern');
-	// The first scene still activates — there was nothing to switch away
-	// from, and a room with no map after making one reads as a failure.
+	// The first scene still moves the room — there was nothing to switch
+	// away from, and a room with no map after making one reads as a
+	// failure.
 	await expect(gm.page.locator('canvas').first()).toBeVisible();
 	await expect(player.page.locator('canvas').first()).toBeVisible();
+	await expect(gm.page.getByText('The table is on')).toBeHidden();
 
 	await createScene(gm.page, 'Dungeon');
 
+	// The GM is standing on the new scene, and says so — the rail is the
+	// only thing on screen that can, since one empty map looks like
+	// another.
+	await expect(gm.page.getByText('The table is on')).toBeVisible();
+	// Scoped to the rail: the Scenes dialog names every scene too.
+	await expect(gm.page.getByLabel('Session info').getByText('Tavern')).toBeVisible();
+
 	await openScenes(gm.page);
-	await expect(gm.page.getByRole('button', { name: 'Switch to Dungeon' })).toBeVisible();
-	// Tavern is still the active one, so it offers no switch button at all.
-	await expect(gm.page.getByRole('button', { name: 'Switch to Tavern' })).toBeHidden();
+	await expect(gm.page.getByRole('button', { name: 'View Tavern' })).toBeVisible();
+	// Nothing offers to take you where you already are.
+	await expect(gm.page.getByRole('button', { name: 'View Dungeon' })).toBeHidden();
+	await expect(gm.page.getByRole('button', { name: 'Move everyone to Dungeon' })).toBeVisible();
 
-	await gm.page.getByRole('button', { name: 'Switch to Dungeon' }).click();
+	// The player heard a scene was made and nothing else.
+	await expect(player.page.getByText('The table is on')).toBeHidden();
 
-	// Both sides move, and the row that was switchable becomes the active one.
-	await expect(gm.page.getByRole('button', { name: 'Switch to Tavern' })).toBeVisible();
-	await expect(gm.page.getByRole('button', { name: 'Switch to Dungeon' })).toBeHidden();
+	await gm.page.getByRole('button', { name: 'Move everyone to Dungeon' }).click();
+
+	// Now the room is there too, so neither side is away from the table
+	// and the reveal button has nowhere left to send anyone.
+	await expect(gm.page.getByRole('button', { name: 'Move everyone to Dungeon' })).toBeHidden();
+	await expect(gm.page.getByRole('button', { name: 'Move everyone to Tavern' })).toBeVisible();
+	await expect(gm.page.getByText('The table is on')).toBeHidden();
 	await expect(player.page.locator('canvas').first()).toBeVisible();
 
 	await gm.context.close();
 	await player.context.close();
 });
 
-test('the active scene cannot be deleted, but another one can', async ({ browser }) => {
+// The half a Player has: the list, and a look at any scene on it. What
+// they must not have is any way to move anyone else, which is the same
+// line the server draws.
+test('a player can look at another scene without moving the table', async ({ browser }) => {
+	const gm = await createRoomAsGM(browser, 'Scene Look');
+	const player = await joinAsPlayer(browser, gm.slug);
+
+	await createScene(gm.page, 'Tavern');
+	await createScene(gm.page, 'Dungeon');
+	// Back with everyone else, so the GM is a witness to not moving.
+	await openScenes(gm.page);
+	await gm.page.getByRole('button', { name: 'View Tavern' }).click();
+	await gm.page.keyboard.press('Escape');
+	await expect(gm.page.getByText('The table is on')).toBeHidden();
+
+	await openScenes(player.page);
+	await expect(player.page.getByRole('button', { name: 'New scene' })).toBeHidden();
+	await expect(player.page.getByRole('button', { name: 'Delete Dungeon' })).toBeHidden();
+	await expect(player.page.getByRole('button', { name: 'Move everyone to Dungeon' })).toBeHidden();
+
+	await player.page.getByRole('button', { name: 'View Dungeon' }).click();
+
+	await expect(player.page.getByText('The table is on')).toBeVisible();
+	// The GM never moved, which is the whole point.
+	await expect(gm.page.getByText('The table is on')).toBeHidden();
+
+	// And there's a way back that doesn't need the menu.
+	await player.page.keyboard.press('Escape');
+	await player.page.getByRole('button', { name: 'Go there' }).click();
+	await expect(player.page.getByText('The table is on')).toBeHidden();
+
+	await gm.context.close();
+	await player.context.close();
+});
+
+test("the table's scene cannot be deleted, but another one can", async ({ browser }) => {
 	const gm = await createRoomAsGM(browser, 'Scene Delete');
 
 	await createScene(gm.page, 'Tavern');
@@ -101,8 +154,8 @@ test('the active scene cannot be deleted, but another one can', async ({ browser
 
 	await openScenes(gm.page);
 
-	// Tavern is active: deleting it would leave the room pointing at a
-	// scene that no longer exists, so the button is refused up front.
+	// Tavern is the table's: deleting it would leave the room pointing at
+	// a scene that no longer exists, so the button is refused up front.
 	await expect(gm.page.getByRole('button', { name: 'Delete Tavern' })).toBeDisabled();
 
 	// Deleting takes two clicks — a scene takes its tokens, fog and
@@ -113,6 +166,12 @@ test('the active scene cannot be deleted, but another one can', async ({ browser
 
 	await expect(gm.page.getByRole('button', { name: 'Delete Dungeon' })).toBeHidden();
 	await expect(gm.page.getByRole('button', { name: 'Delete Tavern' })).toBeVisible();
+
+	// The GM was standing on Dungeon when it went — making a scene takes
+	// you to it — so deleting it has to put them back with the table
+	// rather than leave a map on screen the server can't answer for.
+	await expect(gm.page.getByText('The table is on')).toBeHidden();
+	await expect(gm.page.getByRole('button', { name: 'View Tavern' })).toBeHidden();
 
 	// It's really gone, not just gone from this list.
 	await gm.page.reload();

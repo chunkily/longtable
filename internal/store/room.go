@@ -42,9 +42,14 @@ type Room struct {
 const roomColumns = `id, slug, name, gm_password_hash, active_scene_id, owner_only_movement, created_at`
 
 // CreateRoom creates a room and its founding GM participant in one
-// transaction, retrying on the rare slug collision. gmColor is the GM's
-// identity colour, chosen on the same form as their name.
-func (s *Store) CreateRoom(name, gmDisplayName, gmColor, password string) (Room, Participant, error) {
+// transaction, retrying on the rare slug collision.
+//
+// No colour for the GM, and no parameter to give them one: a GM seat is
+// black, decided by the role where it is drawn (GM_IDENTITY_COLOR in
+// web/src/lib/identity-color.ts) rather than stored. A key sitting in
+// that row would be a second answer to the same question, waiting for
+// something to read it.
+func (s *Store) CreateRoom(name, gmDisplayName, password string) (Room, Participant, error) {
 	passwordHash, err := auth.HashPassword(password)
 	if err != nil {
 		return Room{}, Participant{}, fmt.Errorf("hash password: %w", err)
@@ -57,7 +62,7 @@ func (s *Store) CreateRoom(name, gmDisplayName, gmColor, password string) (Room,
 			return Room{}, Participant{}, fmt.Errorf("generate slug: %w", err)
 		}
 
-		room, participant, err := s.tryCreateRoom(slug, name, passwordHash, gmDisplayName, gmColor)
+		room, participant, err := s.tryCreateRoom(slug, name, passwordHash, gmDisplayName)
 		if err == nil {
 			return room, participant, nil
 		}
@@ -70,7 +75,7 @@ func (s *Store) CreateRoom(name, gmDisplayName, gmColor, password string) (Room,
 	return Room{}, Participant{}, fmt.Errorf("could not generate a unique room slug after %d attempts", maxAttempts)
 }
 
-func (s *Store) tryCreateRoom(slug, name, passwordHash, gmDisplayName, gmColor string) (Room, Participant, error) {
+func (s *Store) tryCreateRoom(slug, name, passwordHash, gmDisplayName string) (Room, Participant, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return Room{}, Participant{}, err
@@ -91,7 +96,7 @@ func (s *Store) tryCreateRoom(slug, name, passwordHash, gmDisplayName, gmColor s
 		return Room{}, Participant{}, err
 	}
 
-	participant, err := createParticipant(tx, room.ID, gmDisplayName, gmColor, RoleGM)
+	participant, err := createParticipant(tx, room.ID, gmDisplayName, "", RoleGM)
 	if err != nil {
 		return Room{}, Participant{}, err
 	}
@@ -125,8 +130,12 @@ func (s *Store) scanRoom(row *sql.Row) (Room, error) {
 }
 
 // ListRooms returns every room, most recently created first.
+//
+// rowid settles a tie on created_at (see ListRecentMessages), so
+// `longtable room list` prints the same order twice running — a Host
+// reading a code off that list should not have to check it moved.
 func (s *Store) ListRooms() ([]Room, error) {
-	rows, err := s.db.Query(`SELECT ` + roomColumns + ` FROM room ORDER BY created_at DESC`)
+	rows, err := s.db.Query(`SELECT ` + roomColumns + ` FROM room ORDER BY created_at DESC, rowid DESC`)
 	if err != nil {
 		return nil, err
 	}

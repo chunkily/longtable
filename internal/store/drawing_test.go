@@ -9,7 +9,7 @@ import (
 func TestCreateDrawing_ListForScene(t *testing.T) {
 	s := newTestStore(t)
 
-	room, _, err := s.CreateRoom("Room", "GM", "", "password")
+	room, _, err := s.CreateRoom("Room", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestCreateDrawing_ListForScene(t *testing.T) {
 func TestCreateDrawing_RecordsCreator(t *testing.T) {
 	s := newTestStore(t)
 
-	room, _, err := s.CreateRoom("Room", "GM", "", "password")
+	room, _, err := s.CreateRoom("Room", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestCreateDrawing_RecordsCreator(t *testing.T) {
 func TestCreateDrawing_RejectsUnknownCreator(t *testing.T) {
 	s := newTestStore(t)
 
-	room, _, err := s.CreateRoom("Room", "GM", "", "password")
+	room, _, err := s.CreateRoom("Room", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestCreateDrawing_RejectsUnknownCreator(t *testing.T) {
 func TestListDrawingsForScene_CreatorClearedWhenParticipantRemoved(t *testing.T) {
 	s := newTestStore(t)
 
-	room, _, err := s.CreateRoom("Room", "GM", "", "password")
+	room, _, err := s.CreateRoom("Room", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -149,7 +149,7 @@ func TestListDrawingsForScene_CreatorClearedWhenParticipantRemoved(t *testing.T)
 func TestListDrawingsForScene_OrderedByCreation(t *testing.T) {
 	s := newTestStore(t)
 
-	room, _, err := s.CreateRoom("Room", "GM", "", "password")
+	room, _, err := s.CreateRoom("Room", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestListDrawingsForScene_OrderedByCreation(t *testing.T) {
 func TestGetDrawing(t *testing.T) {
 	s := newTestStore(t)
 
-	room, _, err := s.CreateRoom("Room", "GM", "", "password")
+	room, _, err := s.CreateRoom("Room", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -228,7 +228,7 @@ func TestGetDrawing(t *testing.T) {
 func TestDeleteDrawing(t *testing.T) {
 	s := newTestStore(t)
 
-	room, _, err := s.CreateRoom("Room", "GM", "", "password")
+	room, _, err := s.CreateRoom("Room", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -267,7 +267,7 @@ func TestDeleteDrawing(t *testing.T) {
 func TestListDrawingsForScene_Empty(t *testing.T) {
 	s := newTestStore(t)
 
-	room, _, err := s.CreateRoom("Room", "GM", "", "password")
+	room, _, err := s.CreateRoom("Room", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}

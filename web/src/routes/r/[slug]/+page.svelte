@@ -4,6 +4,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
+	import { mode } from 'mode-watcher';
 	import {
 		endSession,
 		gmLogin,
@@ -21,7 +22,7 @@
 	import { DRAWING_STROKE_WIDTH } from '$lib/drawing-hit';
 	import { DEFAULT_STROKE_COLOR } from '$lib/stroke-colors';
 	import { dayLabel, fullTimestamp, sameDay, timeOfDay } from '$lib/chat-time';
-	import { IDENTITY_COLORS, identityHex, suggestedColor } from '$lib/identity-color';
+	import { IDENTITY_COLORS, seatHex, suggestedColor } from '$lib/identity-color';
 	import IdentityColorPicker from '$lib/components/identity-color-picker.svelte';
 	import { DEFAULT_LINE_WIDTH_FEET, type SnapMode } from '$lib/aoe';
 	import { familyHasStrip, familyOf, type Tool } from '$lib/tool-family';
@@ -280,7 +281,7 @@
 		try {
 			const s =
 				step === 'gm'
-					? await gmLogin(slug, displayName, chosenColor, password)
+					? await gmLogin(slug, displayName, password)
 					: await joinRoom(slug, { displayName, color: chosenColor });
 			saveSession(s);
 			startSession(s);
@@ -378,6 +379,15 @@
 		!!client && client.status !== 'open' && client.status !== 'connecting'
 	);
 	const isGM = $derived(client?.you?.role === 'gm');
+	// Only the GM's colour has a scheme to follow — theirs is a fixed
+	// black/white pair rather than one of the sixteen.
+	const scheme = $derived(mode.current === 'dark' ? 'dark' : 'light');
+	// Looking at a scene the room isn't on — a GM prepping the next map, or
+	// anyone who went for a look. False before the first sync, and while
+	// the room has no scene at all.
+	const awayFromTable = $derived(
+		!!client?.scene && !!client.activeSceneId && client.scene.id !== client.activeSceneId
+	);
 	// Who may open the edit dialog on the selected token: a GM on anything,
 	// and a Player on one they own — where all they get is the trackers and
 	// conditions. Mirrors the per-field check in handleTokenUpdate, which is
@@ -498,10 +508,10 @@
 										     *before* joining, and the picker is the only
 										     screen that exists then. A seat from before
 										     colours shows nothing rather than a guess. -->
-											{#if identityHex(seat.color)}
+											{#if seatHex(seat, scheme)}
 												<span
 													class="h-3 w-3 shrink-0 rounded-full"
-													style="background-color: {identityHex(seat.color)}"
+													style="background-color: {seatHex(seat, scheme)}"
 												></span>
 											{/if}
 											<span class="truncate">{seat.displayName}</span>
@@ -542,13 +552,17 @@
 								<Label for="display-name">Your name</Label>
 								<Input id="display-name" bind:value={displayName} required />
 							</div>
-							<div class="flex flex-col gap-2">
-								<Label>Your colour</Label>
-								<IdentityColorPicker
-									bind:value={chosenColor}
-									taken={seats.map((seat) => seat.color)}
-								/>
-							</div>
+							<!-- Players only. The GM's colour is a fixed black, so asking
+							     would be offering a choice that isn't one. -->
+							{#if step !== 'gm'}
+								<div class="flex flex-col gap-2">
+									<Label>Your colour</Label>
+									<IdentityColorPicker
+										bind:value={chosenColor}
+										taken={seats.map((seat) => seat.color)}
+									/>
+								</div>
+							{/if}
 							{#if step === 'gm'}
 								<div class="flex flex-col gap-2">
 									<Label for="gm-password">GM password</Label>
@@ -665,8 +679,8 @@
 									     answered is "who said this" rather than "what does
 									     this say". A seat with no colour keeps the plain
 									     bold it always had. -->
-										{#if identityHex(room.colorOf(msg.participantId))}
-											<strong style="color: {identityHex(room.colorOf(msg.participantId))}"
+										{#if seatHex(room.seatOf(msg.participantId), scheme)}
+											<strong style="color: {seatHex(room.seatOf(msg.participantId), scheme)}"
 												>{msg.participantName}:</strong
 											>
 										{:else}
@@ -755,6 +769,7 @@
 	<!-- Room name, who you are, and whether the socket is up. There is no
 	     page header any more, so this is the only place these live. -->
 	{#snippet sessionInfo(room: RoomClient)}
+		{@const yourColor = seatHex(room.seatOf(room.you?.participantId), scheme)}
 		<section aria-label="Session info" class="flex flex-col gap-2 border-b p-3">
 			<div class="flex flex-wrap items-center gap-2">
 				<h1 class="min-w-0 flex-1 truncate text-sm font-semibold">{room.roomName || slug}</h1>
@@ -766,20 +781,48 @@
 				     dialog — where every colour at the table is on screen at
 				     once, which is the thing you actually want to see while
 				     choosing one. So this is now the way in rather than the
-				     control: it shows your colour and opens the list. -->
-				<button
-					type="button"
-					aria-label="Your colour"
-					title="Change your colour"
-					class="h-3.5 w-3.5 shrink-0 rounded-full border border-border"
-					style={identityHex(room.colorOf(room.you?.participantId))
-						? `background-color: ${identityHex(room.colorOf(room.you?.participantId))}`
-						: undefined}
-					onclick={() => (seatsOpen = true)}
-				></button>
+				     control: it shows your colour and opens the list.
+
+				     A GM gets the swatch and not the button: theirs is a fixed
+				     black, so there is nothing at the other end of the click
+				     for them — and a control that opens a dialog to show you
+				     no control is worse than no control. Seats is still in the
+				     menu, which is how they read the roster. -->
+				{#if isGM}
+					<span
+						class="h-3.5 w-3.5 shrink-0 rounded-full border border-border"
+						style={yourColor ? `background-color: ${yourColor}` : undefined}
+					></span>
+				{:else}
+					<button
+						type="button"
+						aria-label="Your colour"
+						title="Change your colour"
+						class="h-3.5 w-3.5 shrink-0 rounded-full border border-border"
+						style={yourColor ? `background-color: ${yourColor}` : undefined}
+						onclick={() => (seatsOpen = true)}
+					></button>
+				{/if}
 				playing as <strong>{room.you?.displayName}</strong>
 				<Badge variant="outline" class="ml-1">{room.you?.role}</Badge>
 			</p>
+			<!-- Only while this browser is somewhere the table isn't. Without
+			     it, prepping a scene looks exactly like the room being on it,
+			     and a Player who went for a look has nothing on screen saying
+			     why the map stopped changing. The rail is where the other
+			     "where am I" facts already live. -->
+			{#if awayFromTable}
+				<p class="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+					The table is on <strong>{room.activeScene?.name}</strong>.
+					<button
+						type="button"
+						class="underline underline-offset-2"
+						onclick={() => room.activeSceneId && room.viewScene(room.activeSceneId)}
+					>
+						Go there
+					</button>
+				</p>
+			{/if}
 			<!-- The room code used to sit here. It lives at the top of the
 			     room menu now, where it shows itself and opens a dialog
 			     holding both the code and this browser's address. The rail
@@ -937,14 +980,18 @@
 		/>
 	{/if}
 
-	{#if isGM && session}
+	{#if session}
 		<SceneManagerDialog
 			room={client}
 			roomSlug={session.roomSlug}
 			sessionToken={session.sessionToken}
+			{isGM}
 			bind:open={scenesOpen}
 			trigger={false}
 		/>
+	{/if}
+
+	{#if isGM && session}
 		<ManageRoomDialog
 			room={client}
 			roomSlug={session.roomSlug}

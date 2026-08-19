@@ -111,6 +111,12 @@ is broken, they just don't have the teardown guarantee yet.
 - Removing a spec's own `openRoomAsGM` without also giving it the fixture leaves it creating
   contexts and never closing them, which is worse than where it started.
 
+**A fourth cause, found later and Go-side rather than e2e**: two unit tests failed intermittently
+on Windows because a millisecond-grained `time.Now()` cannot separate rows written in one breath,
+leaving their order to a tie-break that was random or absent. See
+[rows-ordered-on-a-coarse-clock](rows-ordered-on-a-coarse-clock.md) — it fits this item's lesson
+exactly: "passes alone, fails in a run" was not the shape, and load was not the mechanism.
+
 **Not fixed, and still open**: the `token-trackers` hang recorded in
 [e2e-hang-after-token-edit](e2e-hang-after-token-edit.md) has not been seen in these ten runs, but
 ten runs is not enough to call a one-in-six flake dead. That item stays open. If it returns, its

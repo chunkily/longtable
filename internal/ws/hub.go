@@ -524,6 +524,8 @@ func (h *Hub) handleMessage(ctx context.Context, c *client, data []byte) {
 		h.handleFogReset(ctx, c, env.Payload)
 	case "scene.create":
 		h.handleSceneCreate(ctx, c, env.Payload)
+	case "scene.view":
+		h.handleSceneView(ctx, c, env.Payload)
 	case "scene.setActive":
 		h.handleSceneSetActive(ctx, c, env.Payload)
 	case "scene.delete":
@@ -787,6 +789,16 @@ func (h *Hub) handleParticipantSetColor(ctx context.Context, c *client, raw json
 	var req participantSetColorRequest
 	if err := decodePayload(raw, &req); err != nil {
 		h.sendError(ctx, c, "invalid participant.setColor payload")
+		return
+	}
+	// A GM has no colour to change: theirs is a fixed black, decided by
+	// the role where it's drawn (GM_IDENTITY_COLOR in
+	// web/src/lib/identity-color.ts) rather than stored. Refused rather
+	// than stored-and-ignored, so there is only ever one answer to what
+	// colour a GM is — a key sitting in that row would be a second one,
+	// waiting for something to read it.
+	if c.participant.Role == store.RoleGM {
+		h.sendError(ctx, c, "the GM's colour is fixed")
 		return
 	}
 	if !store.ValidIdentityColor(req.Color) {
@@ -2018,14 +2030,20 @@ func (h *Hub) handleSceneCreate(ctx context.Context, c *client, raw json.RawMess
 
 	h.broadcast(ctx, c.roomID, "scene.created", map[string]any{"scene": scenePayload(scene)})
 
-	// A new scene only takes over the room when there wasn't one to take
-	// over from. Building the *second* scene mid-session is prep work —
+	// A new scene only takes over the *room* when there wasn't one to take
+	// over from. Building the second scene mid-session is prep work —
 	// yanking the party off the map they're standing on to look at an
-	// empty one is not what a GM meant by "New scene". They switch to it
-	// deliberately, through the picker. (Before that picker existed this
-	// activated unconditionally, because activation was the only way to
-	// ever reach a scene again.)
+	// empty one is not what a GM meant by "New scene". (Before the scene
+	// picker existed this activated unconditionally, because activation
+	// was the only way to ever reach a scene again.)
+	//
+	// It does take over the GM's own screen, which is a different thing
+	// now that the two are separable: making a scene is the start of
+	// working on it, and being left on the old map after filling in a form
+	// about a new one reads as the form having failed. Nobody else moves,
+	// so this is prep in private — the reveal is Move everyone here.
 	if room.ActiveSceneID != nil {
+		h.sendSceneViewed(ctx, c, scene.ID)
 		return
 	}
 	if err := h.store.SetActiveScene(c.roomID, scene.ID); err != nil {
@@ -2042,7 +2060,7 @@ type sceneDeleteRequest struct {
 }
 
 // handleSceneDelete removes a scene and everything on it. The room's
-// active scene is refused: `room.active_scene_id` has no foreign key to
+// own scene is refused: `room.active_scene_id` has no foreign key to
 // clean it up, so deleting it would leave every client staring at a
 // scene the server can no longer load. Switching away first is one
 // click, and makes the destruction deliberate.
@@ -2067,7 +2085,7 @@ func (h *Hub) handleSceneDelete(ctx context.Context, c *client, raw json.RawMess
 		return
 	}
 	if room.ActiveSceneID != nil && *room.ActiveSceneID == req.SceneID {
-		h.sendError(ctx, c, "switch to another scene before deleting this one")
+		h.sendError(ctx, c, "move everyone to another scene before deleting this one")
 		return
 	}
 
@@ -2128,10 +2146,60 @@ func (h *Hub) handleSceneSetMap(ctx context.Context, c *client, raw json.RawMess
 	h.broadcast(ctx, c.roomID, "scene.updated", map[string]any{"scene": scenePayload(scene)})
 }
 
+type sceneViewRequest struct {
+	SceneID string `json:"sceneId"`
+}
+
+// handleSceneView answers one client with one scene, and changes nothing
+// else: no broadcast, no stored active scene, nobody else's screen. It is
+// open to everyone, GM or Player, which is ADR-0007 rather than an
+// oversight — a Player who wanders onto next week's map is spoiling their
+// own evening, and the alternative is a permission that only stops the
+// curious.
+//
+// The hub deliberately doesn't remember the answer. Nothing server-side
+// is scoped to where a client is looking: scene-scoped events go to the
+// whole room and each client drops the ones for scenes it isn't showing,
+// hidden tokens are filtered by role rather than by scene, and a fresh
+// connection opens on the room's scene. Recording a viewed scene per
+// connection would buy nothing and would have to be kept in step with
+// every delete.
+func (h *Hub) handleSceneView(ctx context.Context, c *client, raw json.RawMessage) {
+	var req sceneViewRequest
+	if err := decodePayload(raw, &req); err != nil || req.SceneID == "" {
+		h.sendError(ctx, c, "invalid scene.view payload")
+		return
+	}
+	if !h.requireSceneInRoom(ctx, c, req.SceneID) {
+		return
+	}
+
+	h.sendSceneViewed(ctx, c, req.SceneID)
+}
+
+// sendSceneViewed hands one client the full picture of a scene — the
+// same {scene, tokens, fogChunks, drawings} triple scene.activated
+// carries, since a client that is changing scene needs exactly as much
+// either way. The difference is who hears about it, and that's the whole
+// difference between browsing and revealing.
+func (h *Hub) sendSceneViewed(ctx context.Context, c *client, sceneID string) {
+	payload, err := h.sceneStatePayload(sceneID, c.participant.Role)
+	if err != nil {
+		slog.Error("ws: load viewed scene state failed", "error", err)
+		h.sendError(ctx, c, "failed to load that scene")
+		return
+	}
+
+	h.send(ctx, c, "scene.viewed", payload)
+}
+
 type sceneSetActiveRequest struct {
 	SceneID string `json:"sceneId"`
 }
 
+// handleSceneSetActive is the reveal: it moves the room's own scene and
+// every connected client with it, which is what makes it GM-only while
+// scene.view is everyone's.
 func (h *Hub) handleSceneSetActive(ctx context.Context, c *client, raw json.RawMessage) {
 	if !h.requireGM(ctx, c) {
 		return

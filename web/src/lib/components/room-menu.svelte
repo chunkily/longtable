@@ -129,20 +129,22 @@
 			     scenes or a new one before showing you either. It is a mode
 			     of the Scenes dialog now — reached from the foot of the list
 			     it will join — so nothing here opens a second dialog over a
-			     first, which was the original reason for keeping them apart. -->
-			{#if isGM}
-				<Button
-					variant="ghost"
-					class="justify-start"
-					onclick={() => {
-						close();
-						onOpenScenes();
-					}}
-				>
-					<Layers class="h-4 w-4" />
-					Scenes
-				</Button>
-			{/if}
+			     first, which was the original reason for keeping them apart.
+
+			     Everyone's since looking at a scene stopped moving the
+			     table: a Player gets the list and a View button on each row,
+			     with the making, remapping and deleting left off. -->
+			<Button
+				variant="ghost"
+				class="justify-start"
+				onclick={() => {
+					close();
+					onOpenScenes();
+				}}
+			>
+				<Layers class="h-4 w-4" />
+				Scenes
+			</Button>
 			<!-- Everyone's, like Assets and unlike the two either side of it.
 			     Reading who is at the table is not a GM power (ADR-0007), and
 			     it is where anyone changes their own colour — so a Player

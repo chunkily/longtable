@@ -12,7 +12,7 @@ import (
 func TestJoinRoom(t *testing.T) {
 	s := newTestStore(t)
 
-	room, _, err := s.CreateRoom("Room", "GM", "", "password")
+	room, _, err := s.CreateRoom("Room", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -37,11 +37,11 @@ func TestJoinRoom(t *testing.T) {
 func TestGetParticipantByToken_ScopedToRoom(t *testing.T) {
 	s := newTestStore(t)
 
-	roomA, _, err := s.CreateRoom("Room A", "GM", "", "password")
+	roomA, _, err := s.CreateRoom("Room A", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
-	roomB, _, err := s.CreateRoom("Room B", "GM", "", "password")
+	roomB, _, err := s.CreateRoom("Room B", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -59,12 +59,12 @@ func TestGetParticipantByToken_ScopedToRoom(t *testing.T) {
 func TestGMLogin(t *testing.T) {
 	s := newTestStore(t)
 
-	room, _, err := s.CreateRoom("Room", "GM", "", "password")
+	room, _, err := s.CreateRoom("Room", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
 
-	p, err := s.GMLogin(room.ID, "Second GM", "")
+	p, err := s.GMLogin(room.ID, "Second GM")
 	if err != nil {
 		t.Fatalf("GMLogin: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestGMLogin(t *testing.T) {
 // before seats and sessions were separated.
 func TestIdentityColor_BelongsToTheSeatRatherThanTheDevice(t *testing.T) {
 	s := newTestStore(t)
-	room, _, err := s.CreateRoom("Room", "GM", "violet", "password")
+	room, _, err := s.CreateRoom("Room", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -104,15 +104,41 @@ func TestIdentityColor_BelongsToTheSeatRatherThanTheDevice(t *testing.T) {
 		t.Fatal("claiming should mint a new session, so this test isn't reading the same device back")
 	}
 
-	// And the GM's, which is created down a different path entirely.
+	// The GM's seat holds no colour at all, and there is no longer a way
+	// to give it one: theirs is a fixed black, decided where it's drawn.
 	participants, err := s.ListParticipantsForRoom(room.ID)
 	if err != nil {
 		t.Fatalf("ListParticipantsForRoom: %v", err)
 	}
 	for _, p := range participants {
-		if p.Role == RoleGM && p.Color != "violet" {
-			t.Fatalf("GM Color = %q, want violet", p.Color)
+		if p.Role == RoleGM && p.Color != "" {
+			t.Fatalf("GM Color = %q, want none stored", p.Color)
 		}
+	}
+}
+
+// Both paths that make a GM seat leave its colour empty — the room's
+// founding GM, and a GM signing in on a room whose seat was somehow
+// never made. A key stored here would be a second answer to a question
+// the role already settles.
+func TestIdentityColor_AGMSeatHoldsNone(t *testing.T) {
+	s := newTestStore(t)
+	room, gm, err := s.CreateRoom("Room", "GM", "password")
+	if err != nil {
+		t.Fatalf("CreateRoom: %v", err)
+	}
+	if gm.Color != "" {
+		t.Fatalf("founding GM Color = %q, want none stored", gm.Color)
+	}
+
+	// Signing in again reuses that seat rather than growing the roster,
+	// so this is the same seat read back.
+	again, err := s.GMLogin(room.ID, "GM")
+	if err != nil {
+		t.Fatalf("GMLogin: %v", err)
+	}
+	if again.Color != "" {
+		t.Fatalf("returning GM Color = %q, want none stored", again.Color)
 	}
 }
 
@@ -122,7 +148,7 @@ func TestIdentityColor_BelongsToTheSeatRatherThanTheDevice(t *testing.T) {
 // people at the table.
 func TestIdentityColor_TwoSeatsMayShareOne(t *testing.T) {
 	s := newTestStore(t)
-	room, _, err := s.CreateRoom("Room", "GM", "green", "password")
+	room, _, err := s.CreateRoom("Room", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}

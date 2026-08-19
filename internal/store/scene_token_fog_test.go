@@ -8,7 +8,7 @@ import (
 func TestCreateScene(t *testing.T) {
 	s := newTestStore(t)
 
-	room, _, err := s.CreateRoom("Room", "GM", "", "password")
+	room, _, err := s.CreateRoom("Room", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -41,11 +41,11 @@ func TestSceneRoomID_NotFound(t *testing.T) {
 func TestListScenesForRoom_OldestFirstAndScopedToTheRoom(t *testing.T) {
 	s := newTestStore(t)
 
-	room, _, err := s.CreateRoom("Room", "GM", "", "password")
+	room, _, err := s.CreateRoom("Room", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
-	other, _, err := s.CreateRoom("Other", "GM", "", "password")
+	other, _, err := s.CreateRoom("Other", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom(other): %v", err)
 	}
@@ -78,7 +78,7 @@ func TestListScenesForRoom_OldestFirstAndScopedToTheRoom(t *testing.T) {
 func TestDeleteScene_TakesItsTokensFogAndDrawingsWithIt(t *testing.T) {
 	s := newTestStore(t)
 
-	room, _, err := s.CreateRoom("Room", "GM", "", "password")
+	room, _, err := s.CreateRoom("Room", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -140,7 +140,7 @@ func TestDeleteScene_TakesItsTokensFogAndDrawingsWithIt(t *testing.T) {
 func TestSetSceneMap_SwapsTheImageAndBoundsButKeepsWhatIsOnIt(t *testing.T) {
 	s := newTestStore(t)
 
-	room, _, err := s.CreateRoom("Room", "GM", "", "password")
+	room, _, err := s.CreateRoom("Room", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -191,7 +191,7 @@ func TestSetSceneMap_SwapsTheImageAndBoundsButKeepsWhatIsOnIt(t *testing.T) {
 func TestCreateToken_DefaultsAndLookup(t *testing.T) {
 	s := newTestStore(t)
 
-	room, _, err := s.CreateRoom("Room", "GM", "", "password")
+	room, _, err := s.CreateRoom("Room", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -234,7 +234,7 @@ func TestCreateToken_DefaultsAndLookup(t *testing.T) {
 func TestToken_TrackersAreAlwaysThreeSlotsOnTheWayOut(t *testing.T) {
 	s := newTestStore(t)
 
-	room, _, err := s.CreateRoom("Room", "GM", "", "password")
+	room, _, err := s.CreateRoom("Room", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -294,7 +294,7 @@ func TestTokenRoomID_NotFound(t *testing.T) {
 func TestMoveToken(t *testing.T) {
 	s := newTestStore(t)
 
-	room, _, err := s.CreateRoom("Room", "GM", "", "password")
+	room, _, err := s.CreateRoom("Room", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}

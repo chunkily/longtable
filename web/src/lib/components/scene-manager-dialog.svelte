@@ -1,8 +1,14 @@
 <script lang="ts">
-	// The room's scenes, and everything a GM can do to one: make it,
-	// switch to it, swap its map, throw it away. Before this there was no
-	// way to reach a scene other than the one `scene.create`
-	// auto-activated, which is why it used to auto-activate at all.
+	// The room's scenes: what there is, which one you're looking at, and
+	// which one the table is on. Before this there was no way to reach a
+	// scene other than the one `scene.create` auto-activated, which is why
+	// it used to auto-activate at all.
+	//
+	// Everyone's, like Seats and unlike Manage room. Looking at a scene
+	// moves nobody else now, so there is nothing here for a Player to
+	// disturb — and the same line the server draws is the one drawn here:
+	// `View` for everyone, and making, remapping, deleting and moving the
+	// table for a GM.
 	//
 	// Making one used to be a dialog of its own with its own menu entry,
 	// which meant the menu asked a question nobody has — "do you want the
@@ -19,6 +25,11 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import AssetPicker from '$lib/components/asset-picker.svelte';
 	import Plus from '@lucide/svelte/icons/plus';
+	// Aliased, and it has to be: this file calls `new Image()` twice to
+	// read a picked map's real dimensions, and importing the icon under
+	// its own name shadows the DOM constructor with a Svelte component.
+	import ImageIcon from '@lucide/svelte/icons/image';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
 
 	// Bindable `open` and an optional trigger, so the room menu can open
 	// this without a toolbar button of its own — neither Scenes nor New
@@ -27,12 +38,14 @@
 		room,
 		roomSlug,
 		sessionToken,
+		isGM,
 		open = $bindable(false),
 		trigger = true
 	}: {
 		room: RoomClient;
 		roomSlug: string;
 		sessionToken: string;
+		isGM: boolean;
 		open?: boolean;
 		trigger?: boolean;
 	} = $props();
@@ -179,13 +192,17 @@
 			{/snippet}
 		</Dialog.Trigger>
 	{/if}
-	<Dialog.Content>
+	<!-- Wider than the dialog default, which is 448px and leaves a row's
+	     content box 364px: a GM's row needs 371 for a readable name beside
+	     View, Move everyone and the two icons, so every one of them wrapped
+	     by seven pixels. This is the only dialog in the room that is a list
+	     with per-row actions rather than a form. -->
+	<Dialog.Content class="sm:max-w-lg">
 		{#if creating}
 			<Dialog.Header>
 				<Dialog.Title>New scene</Dialog.Title>
 				<Dialog.Description>
-					The room's first scene becomes active straight away. After that, new scenes wait in this
-					list until you switch to one.
+					The room's first scene opens for everyone. After that, a new scene opens for you alone.
 				</Dialog.Description>
 			</Dialog.Header>
 			<form class="flex flex-col gap-4" onsubmit={handleCreate}>
@@ -258,53 +275,102 @@
 		{:else}
 			<Dialog.Header>
 				<Dialog.Title>Scenes</Dialog.Title>
-				<Dialog.Description>
-					Switching moves everyone in the room to that map straight away.
-				</Dialog.Description>
+				<!-- The one thing about this list nobody can see: looking at a
+				     scene is private. The GM's button says the rest itself. -->
+				<Dialog.Description>Viewing a scene changes only your own screen.</Dialog.Description>
 			</Dialog.Header>
 			{#if room.scenes.length === 0}
 				<p class="text-sm text-muted-foreground">No scenes yet.</p>
 			{:else}
 				<ul class="flex max-h-80 flex-col gap-2 overflow-y-auto">
 					{#each room.scenes as scene (scene.id)}
-						{@const isActive = room.scene?.id === scene.id}
+						<!-- Two different questions, and the whole reason this list
+						     changed: which scene *you* are looking at, and which one
+						     the table is on. They're usually the same scene and are
+						     no longer the same thing. -->
+						{@const isViewing = room.scene?.id === scene.id}
+						{@const isTables = room.activeSceneId === scene.id}
+						<!-- A floor under the name rather than `min-w-0`, which let it be
+						     squeezed to 50px by a GM row's controls — "The Sunless
+						     Citadel" came out as "The…", and reading the names is what
+						     this list is for. Under the floor the row wraps instead,
+						     which is the right way round: a long name costs a second
+						     line, not its own text. -->
 						<li class="flex flex-wrap items-center gap-2 rounded-md border p-2">
-							<span class="min-w-0 flex-1 truncate text-sm">{scene.name}</span>
-							{#if isActive}
-								<Badge variant="secondary">Active</Badge>
+							<span class="min-w-[6rem] flex-1 truncate text-sm">{scene.name}</span>
+							{#if isTables}
+								<Badge variant="secondary">Table is here</Badge>
+							{/if}
+							{#if isViewing}
+								<Badge variant="outline">Viewing</Badge>
 							{:else}
 								<Button
 									size="sm"
 									variant="outline"
-									aria-label="Switch to {scene.name}"
-									onclick={() => room.setActiveScene(scene.id)}
+									aria-label="View {scene.name}"
+									onclick={() => room.viewScene(scene.id)}
 								>
-									Switch to
+									View
 								</Button>
 							{/if}
-							<Button
-								size="sm"
-								variant="outline"
-								aria-label="Replace the map for {scene.name}"
-								onclick={() => startReplacing(scene.id)}
-							>
-								Replace map
-							</Button>
-							<!-- The active scene can't be deleted: the room points at it
-							     by id with nothing to clean that up, so the server refuses
-							     it too. Saying why beats a button that errors. -->
-							<Button
-								size="sm"
-								variant={confirmingDeleteId === scene.id ? 'destructive' : 'outline'}
-								disabled={isActive}
-								title={isActive ? 'Switch to another scene before deleting this one' : undefined}
-								aria-label={confirmingDeleteId === scene.id
-									? `Confirm deleting ${scene.name}`
-									: `Delete ${scene.name}`}
-								onclick={() => handleDelete(scene.id)}
-							>
-								{confirmingDeleteId === scene.id ? 'Really delete?' : 'Delete'}
-							</Button>
+							{#if isGM}
+								{#if !isTables}
+									<Button
+										size="sm"
+										variant="outline"
+										aria-label="Move everyone to {scene.name}"
+										onclick={() => room.moveRoomToScene(scene.id)}
+									>
+										Move everyone
+									</Button>
+								{/if}
+								<!-- Icons for these two, words for the two above, and the
+								     split is what keeps a GM's row on one line: five text
+								     buttons wrapped every row in a 448px dialog. What
+								     survived as words is what the list is *for* — going to
+								     a scene, and taking the table there — while replacing a
+								     map and throwing one away are maintenance you come here
+								     knowing you want. An overflow menu would have been the
+								     obvious answer and is unavailable: a popover inside a
+								     dialog comes out unpositioned and under the overlay
+								     (see seats-dialog.svelte). -->
+								<Button
+									size="sm"
+									variant="outline"
+									title="Replace map"
+									aria-label="Replace the map for {scene.name}"
+									onclick={() => startReplacing(scene.id)}
+								>
+									<ImageIcon class="h-4 w-4" />
+								</Button>
+								<!-- The table's scene can't be deleted: the room points at
+								     it by id with nothing to clean that up, so the server
+								     refuses it too. Saying why beats a button that errors.
+
+								     Armed, it gives up the icon and says so in words. A
+								     destructive colour is the whole signal otherwise, which
+								     is no signal at all to anyone who can't see the
+								     difference — and this is the one control here that takes
+								     a scene's tokens, fog and drawings with it. The row may
+								     wrap for as long as it stays armed; that is a second's
+								     worth of layout against a click nobody can take back. -->
+								<Button
+									size="sm"
+									variant={confirmingDeleteId === scene.id ? 'destructive' : 'outline'}
+									disabled={isTables}
+									title={isTables ? 'Move everyone to another scene first' : 'Delete'}
+									aria-label={confirmingDeleteId === scene.id
+										? `Confirm deleting ${scene.name}`
+										: `Delete ${scene.name}`}
+									onclick={() => handleDelete(scene.id)}
+								>
+									{#if confirmingDeleteId === scene.id}
+										Really delete?
+									{:else}
+										<Trash2 class="h-4 w-4" />
+									{/if}
+								</Button>
+							{/if}
 						</li>
 					{/each}
 				</ul>
@@ -313,11 +379,13 @@
 			     join. It was a separate menu entry and a separate dialog,
 			     which meant choosing between "the scenes" and "a new scene"
 			     from a menu, before seeing either. -->
-			<Dialog.Footer>
-				<Button variant="outline" onclick={startCreating}>
-					<Plus class="h-4 w-4" /> New scene
-				</Button>
-			</Dialog.Footer>
+			{#if isGM}
+				<Dialog.Footer>
+					<Button variant="outline" onclick={startCreating}>
+						<Plus class="h-4 w-4" /> New scene
+					</Button>
+				</Dialog.Footer>
+			{/if}
 		{/if}
 	</Dialog.Content>
 </Dialog.Root>

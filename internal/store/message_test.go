@@ -9,7 +9,7 @@ import (
 func TestInsertMessage_TextAndRoll(t *testing.T) {
 	s := newTestStore(t)
 
-	room, gm, err := s.CreateRoom("Room", "GM", "", "password")
+	room, gm, err := s.CreateRoom("Room", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -54,7 +54,7 @@ func TestInsertMessage_TextAndRoll(t *testing.T) {
 func TestListRecentMessages_RespectsLimit(t *testing.T) {
 	s := newTestStore(t)
 
-	room, gm, err := s.CreateRoom("Room", "GM", "", "password")
+	room, gm, err := s.CreateRoom("Room", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestListRecentMessages_RespectsLimit(t *testing.T) {
 func TestSoftDeleteMessage_KeepsContentAndRecordsDeleter(t *testing.T) {
 	s := newTestStore(t)
 
-	room, gm, err := s.CreateRoom("Room", "GM", "", "password")
+	room, gm, err := s.CreateRoom("Room", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestSoftDeleteMessage_KeepsContentAndRecordsDeleter(t *testing.T) {
 func TestDeleteMessage_RemovesRow(t *testing.T) {
 	s := newTestStore(t)
 
-	room, gm, err := s.CreateRoom("Room", "GM", "", "password")
+	room, gm, err := s.CreateRoom("Room", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}

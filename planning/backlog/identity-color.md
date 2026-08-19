@@ -117,3 +117,11 @@ Seats holding a key from the first six still read correctly where the key surviv
 `indigo`, `teal`, `pink` — in a new shade), and read as unchosen where it didn't (`emerald`,
 `lime`). That is `identityHex` returning null for an unknown key, which is the behaviour that makes
 changing a palette safe at all.
+
+## Update 2026-08-19 — the GM is out of the palette
+
+The sixteen are the Players' now. A GM's colour is a fixed black decided by the role where it's
+drawn, with no palette on any form and none stored on the seat — see
+[gm-color-is-fixed-black](gm-color-is-fixed-black.md). Everything above still describes how a
+*Player's* colour works, including the whole "belongs to the seat" argument, which is what makes
+the GM's case a deliberate exception rather than a hole.

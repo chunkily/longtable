@@ -204,6 +204,27 @@ func (s *Store) RemoveAssetFromRoom(roomID, assetID string) error {
 // ListRoomAssets returns a room's library, newest first — the order a
 // picker wants, since the thing you just uploaded is the thing you're
 // most likely reaching for.
+//
+// **Ordered by rowid, not by added_at**, though added_at is still what
+// the library shows. Two reasons, and the first one bit:
+//
+//   - `added_at` is `time.Now()`, whose resolution on Windows is around a
+//     millisecond at best — so several assets added in one pass share a
+//     timestamp exactly. This used to tie-break on `a.id`, which is a
+//     random UUID, and "newest first" then came out as a coin toss: the
+//     test for it failed about three runs in ten, and a room that added
+//     three files at once got them back shuffled.
+//   - A clock that steps backwards (an NTP correction mid-session) would
+//     file the next upload *below* what came before it, for as long as
+//     the two disagree.
+//
+// rowid answers both, because it is insertion order rather than a clock.
+// SQLite hands a new row the largest existing rowid plus one, so even
+// after a removal frees the top value the next insert still lands above
+// every row still there — which is all this ordering needs. It survives
+// re-adding bytes a room already has, too: that path is an UPDATE, which
+// leaves the rowid where it was, and the entry keeps its place exactly
+// as it does today (the upsert deliberately doesn't restamp added_at).
 func (s *Store) ListRoomAssets(roomID string) ([]LibraryAsset, error) {
 	rows, err := s.db.Query(`
 		SELECT a.id, a.content_hash, a.filename, a.mime_type, a.byte_size, a.created_at,
@@ -211,7 +232,7 @@ func (s *Store) ListRoomAssets(roomID string) ([]LibraryAsset, error) {
 		FROM room_asset ra
 		JOIN asset a ON a.id = ra.asset_id
 		WHERE ra.room_id = ?
-		ORDER BY ra.added_at DESC, a.id`, roomID)
+		ORDER BY ra.rowid DESC`, roomID)
 	if err != nil {
 		return nil, err
 	}

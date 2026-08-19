@@ -1,7 +1,7 @@
 ---
 title: Room Member switches their own viewed scene
 created: 2026-08-14
-status: incomplete
+status: done
 ---
 
 As a Room Member

@@ -111,15 +111,13 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 	return res.json();
 }
 
-export function createRoom(
-	roomName: string,
-	gmName: string,
-	gmColor: string,
-	password: string
-): Promise<Session> {
+// No colour here, or on gmLogin below: the GM's is a fixed black rather
+// than one of the sixteen, so there is nothing to send. The server stores
+// none for a GM seat either.
+export function createRoom(roomName: string, gmName: string, password: string): Promise<Session> {
 	return apiFetch('/api/rooms', {
 		method: 'POST',
-		body: JSON.stringify({ roomName, gmName, gmColor, password })
+		body: JSON.stringify({ roomName, gmName, password })
 	});
 }
 
@@ -242,15 +240,10 @@ export async function endSession(slug: string, sessionToken: string): Promise<vo
 	}
 }
 
-export function gmLogin(
-	slug: string,
-	displayName: string,
-	color: string,
-	password: string
-): Promise<Session> {
+export function gmLogin(slug: string, displayName: string, password: string): Promise<Session> {
 	return apiFetch(`/api/rooms/${encodeURIComponent(slug)}/gm-login`, {
 		method: 'POST',
-		body: JSON.stringify({ displayName, color, password })
+		body: JSON.stringify({ displayName, password })
 	});
 }
 

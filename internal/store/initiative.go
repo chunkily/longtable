@@ -54,9 +54,17 @@ type InitiativeState struct {
 const initiativeColumns = `id, room_id, token_id, name, initiative, hidden, sort_order, created_at`
 
 // initiativeOrder is the sort every read shares: highest initiative
-// first, ties broken by the manual order, and anything still tied by
-// age so the result is stable rather than whatever SQLite feels like.
-const initiativeOrder = ` ORDER BY initiative DESC, sort_order ASC, created_at ASC`
+// first, ties broken by the manual order, then by age, and anything
+// still tied by rowid so the result is stable rather than whatever
+// SQLite feels like.
+//
+// That last step is the one doing real work here, and age alone was not
+// enough: created_at comes from a clock about a millisecond wide, and
+// eight goblins added in one go share an initiative *and* a sort_order
+// *and* a timestamp — which is the tracker's most ordinary case rather
+// than an edge one. Without it the turn order reshuffled itself between
+// reads. See ListRecentMessages for the long version.
+const initiativeOrder = ` ORDER BY initiative DESC, sort_order ASC, created_at ASC, rowid ASC`
 
 func (s *Store) CreateInitiativeEntry(e InitiativeEntry) (InitiativeEntry, error) {
 	e.ID = uuid.NewString()

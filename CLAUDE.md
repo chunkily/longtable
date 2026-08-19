@@ -34,9 +34,10 @@ architecture and current state live here instead**, and keeping them true is par
 | `web/src/lib/components/map-toolbar.svelte`, `tool-strip.svelte` | the floating tool row, and the active family's contextual strip |
 | `web/src/lib/stroke-colors.ts`, `components/stroke-color-picker.svelte` | the eight colours a drawing can be — light-map hues above, their bright counterparts for dark maps below — and the only place their hex lives, including the default every browser starts on; plus the one strip button they open from |
 | `web/src/lib/components/room-menu.svelte` | the menu behind the side panel's third icon: Scenes, Seats, Assets, Manage room, Leave room |
+| `web/src/lib/components/scene-manager-dialog.svelte` | the room's scenes — everyone's to open and to look through, the GM's to make, remap, delete and move the table to. `View` and `Move everyone` are the two halves of what used to be one `Switch to`. Wider than the other dialogs, and the GM's two maintenance actions are icons, because five text buttons wrapped every row |
 | `web/src/lib/components/seats-dialog.svelte` | who is at the table — everyone's to open, the GM's to change, and where anyone picks their own colour. Read the note on the palette before putting anything on a popover inside a dialog |
-| `web/src/lib/components/manage-room-dialog.svelte` | the three things that are a GM's alone: the movement lock, the room password and deleting the room |
-| `web/src/lib/identity-color.ts` | the sixteen colours a seat can be, and the only place their hex lives. A seat stores the *key*; `store.IdentityColors` in Go is the same list and validates it, since the value reaches a `style` attribute. `TestIdentityColors_MatchTheClientPalette` fails if the two drift |
+| `web/src/lib/components/manage-room-dialog.svelte` | the three things that are a GM's alone, one headed section each: `Token permissions`, `GM password`, `Delete room` |
+| `web/src/lib/identity-color.ts` | the sixteen colours a *Player's* seat can be, the GM's fixed black beside them (`GM_IDENTITY_COLOR`, a light/dark pair), and the only place any of those hexes live. `seatHex` is what anything drawing a seat's colour calls, since the answer depends on the role. A seat stores the *key*; `store.IdentityColors` in Go is the same list and validates it, since the value reaches a `style` attribute. `TestIdentityColors_MatchTheClientPalette` fails if the two drift |
 | `web/src/lib/components/ui/popover/` | the bits-ui popover, wrapped the way `ui/dialog` is. Every popup in the room is on it — the room menu and the draw strip's stroke width — and anything new that pops up over the map should be too, for the focus handling rather than the placement. **Not inside a dialog**, where it comes out unpositioned, transparent and under the overlay while still reading as present — see `seats-dialog.svelte` |
 | `web/src/lib/host-notice.svelte.ts`, `components/host-notice.svelte` | the Host's `banner` message: fetched once, dismissable, and the height everything else moves down by |
 | `web/src/lib/grid-contrast.ts` | whether this browser rules the grid in its bold style, stored per browser like the theme and the GM's fog opacity. The colours themselves are `GRID_LINE_BOLD` in `game-canvas.svelte`, and are deliberately *not* a light/dark pair |
@@ -72,7 +73,8 @@ the table isn't a GM power (ADR-0007), so a Player opens the same dialog and get
 names, colours, who is here now — with the add form and the bins simply not rendered, which is the
 same line `createSeat` and `deleteSeat` already draw with `requireGM`. A GM can add a seat before
 anyone arrives and remove a finished one from there. `Manage room` is what was left once seats
-moved out, and all of it is a GM's alone: the movement lock, and **a new room password** — no current password asked for, since
+moved out, and all of it is a GM's alone, in three headed sections: the movement lock under
+`Token permissions`, and **a new room password** — no current password asked for, since
 the session already proves the seat, and nobody is signed out by the change, including whoever
 made it. That dialog is also where a room **ends**: `Delete room` arms and then fires,
 takes the scenes, tokens, chat and seats with it, and leaves the uploaded images alone — they are
@@ -95,7 +97,17 @@ since a blip says nothing about whether the room exists. A browser with
 no rooms gets no list at all rather than an empty one, since the two buttons are what it came for.
 Scenes built
 from an uploaded map or a
-picked library asset and managed from one dialog (make, switch, delete, swap the map under one),
+picked library asset and managed from one dialog (make, look at, delete, swap the map under one,
+move the table to). **Where you are looking and where the room is are two different things**: the
+room's scene is where every connection opens and where a reconnect goes back to, and only the
+GM's `Move everyone` moves it. Anyone else's `View` moves that browser alone and is
+announced to nobody — a Player included, since wandering onto next week's map spoils only their
+own evening (ADR-0007), which is also why the Scenes dialog is everyone's, with the making,
+remapping and deleting simply not rendered for a Player. Making a scene takes **the GM who made
+it** to it and leaves the table where it was, which is what prepping a map without unveiling it
+means. Anyone away from the table's scene is told so in the rail, with a way back; the room's
+scene still can't be deleted, and anyone privately standing on one that is deleted is returned to
+the table rather than left on a map the server can no longer answer for,
 tokens (**anyone creates them**, from the same `New token` icon on the toolbar and up to twenty at
 a time — a batch is numbered `Monkey 1`…`Monkey 8` and spreads over free squares rather than
 stacking, and each one is its own undo. A GM's dialog carries name, art, size, owner and
@@ -185,7 +197,12 @@ landed**, with the full date on hover and the date above the first entry of each
 message kind the hub writes itself, holding the event (`joined`/`left`) rather than a sentence, so
 the wording stays a `longtable-copy` decision. Those lines are the room talking — no bold name, no
 delete button — and they persist, so a refresh and a late arrival read the same history.
-**Everyone at the table has a colour**, picked from sixteen presets on the same form as their name —
+**Everyone at the table has a colour. The GM's is a fixed black** — white on the dark scheme,
+since their name in chat is text on a themed panel — decided by the role where it is drawn rather
+than stored, so nothing asks a GM to pick one, `Seats` shows them no palette, the rail's swatch is
+a dot rather than a button for them, and `participant.setColor` refuses them. A room made before
+that still has a key in the GM's row and it is ignored rather than migrated. **A Player's** is
+picked from sixteen presets on the same form as their name —
 on the seat picker before joining, where the swatch beside each chair says which colours the room
 is already wearing (taken ones are marked, never blocked: two people may match, and the room
 doesn't argue). It belongs to the *seat*, so it survives a cleared browser and comes back when that
@@ -220,7 +237,8 @@ measure, fog, ping — with `New token` alongside and a contextual strip below c
 active family's variants and settings (the eraser is inside draw; the templates inside measure).
 Everything else lives in a fixed full-height rail down the right: the selected token at the top
 (a plain shaded block holding its height when nothing is selected, so the rail doesn't jump),
-session info under it (room name, who you are, the socket status),
+session info under it (room name, who you are, the socket status, and — only while this browser
+is looking at a scene the room isn't — which scene the table is on and a way back to it),
 then chat or the initiative tracker filling the rest, and three icons at the foot switching
 between chat, initiative and a menu. That menu opens with **the room code**, shown in monospace
 under a muted label and readable without going further; clicking it opens a dialog holding the code
@@ -228,7 +246,7 @@ and this browser's address as readonly fields, one click to select either. There
 anywhere, and that's a decision, not a gap — see
 `planning/backlog/share-room-code-from-room.md`. Under it the menu holds Scenes, Seats, Assets, Manage
 room and Leave room (making a scene is a mode of the Scenes dialog rather than a menu entry of its
-own; Seats and Assets are the two everyone gets, Scenes and Manage room the two the GM does), and
+own; Scenes, Seats and Assets are everyone's, Manage room the GM's alone), and
 above Leave room a **System/Light/Dark** control — grouped with it because those two are
 the only things in the menu that change this browser rather than the room. Below `lg` the rail becomes a bottom sheet with those icons pinned to the bottom edge, the
 contextual strip docks into it rather than floating, the selected token becomes a bar above the

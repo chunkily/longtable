@@ -115,12 +115,20 @@
 			<Dialog.Description>These apply to the whole room, not just this scene.</Dialog.Description>
 		</Dialog.Header>
 
-		<div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
-			<!-- Two buttons rather than a switch: there is no switch component in
-		     this project, and the pair says what each state *means* — which
-		     matters more here than switch-ness, because "on" and "off" are
-		     not obvious names for a rule about other people's tokens. -->
-			<div class="flex flex-col gap-2">
+		<!-- Three sections, each announced by a heading over a hairline. It
+		     read as one long column of controls before that: the password
+		     boxes carried field labels and nothing said where the password
+		     *began*, so the form under "Moving tokens" looked like more of the
+		     same setting. The headings are also where the next GM-only switch
+		     goes — Player token creation is still open in the backlog, and it
+		     belongs under Token permissions rather than at the end of a list. -->
+		<div class="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto">
+			<section class="flex flex-col gap-2">
+				<h3 class="text-sm font-medium">Token permissions</h3>
+				<!-- Two buttons rather than a switch: there is no switch component in
+			     this project, and the pair says what each state *means* — which
+			     matters more here than switch-ness, because "on" and "off" are
+			     not obvious names for a rule about other people's tokens. -->
 				<Label id="movement-label">Moving tokens</Label>
 				<div class="flex gap-2" role="group" aria-labelledby="movement-label">
 					<Button
@@ -149,42 +157,50 @@
 						Anyone at the table can drag any token, including yours.
 					{/if}
 				</p>
-			</div>
+			</section>
 
 			<!-- Rotating the room password from inside the room, rather than
 		     asking whoever runs the server to do it. The current one isn't
 		     asked for: the session proves the seat, the same as every other
 		     control in here (ADR-0007). -->
-			<form class="flex flex-col gap-2" onsubmit={handlePassword}>
-				<Label for="new-gm-password">New GM password</Label>
-				<Input
-					id="new-gm-password"
-					type="password"
-					bind:value={newPassword}
-					minlength={MIN_PASSWORD}
-					autocomplete="new-password"
-				/>
-				<Label for="repeat-gm-password">Type it again</Label>
-				<Input
-					id="repeat-gm-password"
-					type="password"
-					bind:value={repeatPassword}
-					minlength={MIN_PASSWORD}
-					autocomplete="new-password"
-				/>
-				{#if repeatPassword && repeatPassword !== newPassword}
-					<p class="text-xs font-medium text-destructive" role="alert">Both boxes have to match.</p>
-				{/if}
-				<p class="text-xs text-muted-foreground">
-					Everyone stays signed in, including you. The next GM login needs the new password.
-				</p>
-				<Button type="submit" class="self-start" disabled={busy || !passwordReady}>Save</Button>
-			</form>
+			<section class="flex flex-col gap-2 border-t pt-4">
+				<h3 class="text-sm font-medium">GM password</h3>
+				<form class="flex flex-col gap-2" onsubmit={handlePassword}>
+					<!-- `New password`, not `New GM password`: the heading above it
+				     already said whose. -->
+					<Label for="new-gm-password">New password</Label>
+					<Input
+						id="new-gm-password"
+						type="password"
+						bind:value={newPassword}
+						minlength={MIN_PASSWORD}
+						autocomplete="new-password"
+					/>
+					<Label for="repeat-gm-password">Type it again</Label>
+					<Input
+						id="repeat-gm-password"
+						type="password"
+						bind:value={repeatPassword}
+						minlength={MIN_PASSWORD}
+						autocomplete="new-password"
+					/>
+					{#if repeatPassword && repeatPassword !== newPassword}
+						<p class="text-xs font-medium text-destructive" role="alert">
+							Both boxes have to match.
+						</p>
+					{/if}
+					<p class="text-xs text-muted-foreground">
+						Everyone stays signed in, including you. The next GM login needs the new password.
+					</p>
+					<Button type="submit" class="self-start" disabled={busy || !passwordReady}>Save</Button>
+				</form>
+			</section>
 
 			<!-- Last, and set apart, because it is the one thing in this app
 		     that can't be undone. Everything else destructive here is a
 		     seat, a stroke or a token, and every one of those comes back. -->
-			<div class="flex flex-col gap-2 border-t pt-4">
+			<section class="flex flex-col gap-2 border-t pt-4">
+				<h3 class="text-sm font-medium">Delete room</h3>
 				<p class="text-xs text-muted-foreground">
 					{room.roomName || roomSlug} goes for everyone, with its scenes, tokens, chat and seats. Images
 					you uploaded stay on the server. There's no undo.
@@ -202,7 +218,7 @@
 						Delete room
 					{/if}
 				</Button>
-			</div>
+			</section>
 		</div>
 	</Dialog.Content>
 </Dialog.Root>

@@ -181,6 +181,9 @@ export async function openRoomMenu(page: Page) {
  */
 export async function openNewSceneDialog(page: Page) {
 	await openScenesDialog(page);
+	// GM-only, and the thing that says the dialog has finished arriving —
+	// a click sent while it is still animating lands on the backdrop.
+	await expect(page.getByRole('button', { name: 'New scene', exact: true })).toBeVisible();
 	await page.getByRole('button', { name: 'New scene', exact: true }).click();
 	await expect(page.getByRole('button', { name: 'Create scene', exact: true })).toBeVisible();
 }
@@ -208,14 +211,18 @@ export async function openSeatsDialog(page: Page) {
 	await expect(page.getByRole('heading', { name: 'Seats' })).toBeVisible();
 }
 
-/** Opens the Scenes dialog from the room menu. */
+/**
+ * Opens the Scenes dialog from the room menu. Everyone has this entry —
+ * a Player gets the same list without `New scene`, `Replace map`,
+ * `Delete` or `Move everyone`.
+ *
+ * Waits on the heading rather than a control, since which controls are
+ * there is exactly what differs between the two roles.
+ */
 export async function openScenesDialog(page: Page) {
 	await openRoomMenu(page);
 	await page.getByRole('button', { name: 'Scenes', exact: true }).click();
-	// The dialog animates in, and `New scene` at its foot is the next
-	// thing most callers click — a click sent while it is still arriving
-	// lands on the backdrop.
-	await expect(page.getByRole('button', { name: 'New scene', exact: true })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Scenes' })).toBeVisible();
 }
 
 /**

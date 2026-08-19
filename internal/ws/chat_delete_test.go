@@ -21,7 +21,7 @@ func newChatDeleteTestRoom(t *testing.T) chatDeleteTestRoom {
 	t.Helper()
 
 	ts := newTestServer(t)
-	room, gm, err := ts.store.CreateRoom("Room", "GM", "", "password")
+	room, gm, err := ts.store.CreateRoom("Room", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -283,7 +283,7 @@ func TestChatDelete_PlayerCannotDeleteSomeoneElsesMessage(t *testing.T) {
 func TestChatDelete_RejectsMessageFromAnotherRoom(t *testing.T) {
 	r := newChatDeleteTestRoom(t)
 
-	otherRoom, otherGM, err := r.ts.store.CreateRoom("Room B", "GM", "", "password")
+	otherRoom, otherGM, err := r.ts.store.CreateRoom("Room B", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}

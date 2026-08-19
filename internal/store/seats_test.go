@@ -10,7 +10,7 @@ import (
 func TestClaimSeat_SecondDeviceGetsTheSameSeat(t *testing.T) {
 	s := newTestStore(t)
 
-	room, _, err := s.CreateRoom("Room", "GM", "", "password")
+	room, _, err := s.CreateRoom("Room", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestClaimSeat_SecondDeviceGetsTheSameSeat(t *testing.T) {
 func TestClaimSeat_KeepsTheTokensTheSeatOwns(t *testing.T) {
 	s := newTestStore(t)
 
-	room, _, err := s.CreateRoom("Room", "GM", "", "password")
+	room, _, err := s.CreateRoom("Room", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestClaimSeat_KeepsTheTokensTheSeatOwns(t *testing.T) {
 func TestDeleteSession_LeavesTheSeatAndOtherDevices(t *testing.T) {
 	s := newTestStore(t)
 
-	room, _, err := s.CreateRoom("Room", "GM", "", "password")
+	room, _, err := s.CreateRoom("Room", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -127,11 +127,11 @@ func TestDeleteSession_LeavesTheSeatAndOtherDevices(t *testing.T) {
 func TestClaimSeat_RefusesTheGMSeatAndAnotherRoom(t *testing.T) {
 	s := newTestStore(t)
 
-	room, gm, err := s.CreateRoom("Room", "GM", "", "password")
+	room, gm, err := s.CreateRoom("Room", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
-	other, _, err := s.CreateRoom("Other", "GM", "", "password")
+	other, _, err := s.CreateRoom("Other", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -155,12 +155,12 @@ func TestClaimSeat_RefusesTheGMSeatAndAnotherRoom(t *testing.T) {
 func TestGMLogin_ReusesTheGMSeat(t *testing.T) {
 	s := newTestStore(t)
 
-	room, gm, err := s.CreateRoom("Room", "Alice", "", "password")
+	room, gm, err := s.CreateRoom("Room", "Alice", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
 
-	again, err := s.GMLogin(room.ID, "Alice on her phone", "")
+	again, err := s.GMLogin(room.ID, "Alice on her phone")
 	if err != nil {
 		t.Fatalf("GMLogin: %v", err)
 	}
@@ -183,7 +183,7 @@ func TestGMLogin_ReusesTheGMSeat(t *testing.T) {
 func TestSeats_ListedForThePreJoinScreenWithoutCredentials(t *testing.T) {
 	s := newTestStore(t)
 
-	room, _, err := s.CreateRoom("Room", "Alice", "", "password")
+	room, _, err := s.CreateRoom("Room", "Alice", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -226,7 +226,7 @@ func TestSeats_ListedForThePreJoinScreenWithoutCredentials(t *testing.T) {
 func TestDeleteSeat_RemovesSessionsButRefusesTheGM(t *testing.T) {
 	s := newTestStore(t)
 
-	room, gm, err := s.CreateRoom("Room", "Alice", "", "password")
+	room, gm, err := s.CreateRoom("Room", "Alice", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}

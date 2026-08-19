@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { IDENTITY_COLORS, identityHex, suggestedColor } from './identity-color';
+import {
+	GM_IDENTITY_COLOR,
+	IDENTITY_COLORS,
+	identityHex,
+	seatHex,
+	suggestedColor
+} from './identity-color';
 
 describe('identityHex', () => {
 	it('resolves a stored key to the colour it is painted in', () => {
@@ -74,5 +80,41 @@ describe('the palette itself', () => {
 			expect(words).toHaveLength(2);
 			expect(key).toBe(words[1].toLowerCase());
 		}
+	});
+});
+
+describe('seatHex', () => {
+	it('paints a player in whatever they picked', () => {
+		expect(seatHex({ role: 'player', color: 'violet' }, 'light')).toBe('#8b5cf6');
+		// The scheme is the GM's business alone — a picked colour is the
+		// same colour whatever the page is wearing.
+		expect(seatHex({ role: 'player', color: 'violet' }, 'dark')).toBe('#8b5cf6');
+	});
+
+	it('paints the GM black, and white on the dark scheme', () => {
+		expect(seatHex({ role: 'gm', color: '' }, 'light')).toBe(GM_IDENTITY_COLOR.light);
+		expect(seatHex({ role: 'gm', color: '' }, 'dark')).toBe(GM_IDENTITY_COLOR.dark);
+	});
+
+	// A room made before the GM's colour was fixed still has a key in that
+	// row. It is ignored rather than migrated, so those rooms read the new
+	// way with nothing having to run over their database.
+	it('ignores a colour a GM seat still has stored', () => {
+		expect(seatHex({ role: 'gm', color: 'violet' }, 'light')).toBe(GM_IDENTITY_COLOR.light);
+	});
+
+	it('has no colour for a seat that has none, or for nobody at all', () => {
+		expect(seatHex({ role: 'player', color: '' }, 'light')).toBeNull();
+		expect(seatHex(null, 'light')).toBeNull();
+		expect(seatHex(undefined, 'dark')).toBeNull();
+	});
+
+	// The GM's black is not one of the sixteen: a player picking it would
+	// make two people the same colour by the palette's own rule rather
+	// than by anyone's choice.
+	it('keeps the GM out of the palette', () => {
+		const hexes = IDENTITY_COLORS.map((c) => c.hex);
+		expect(hexes).not.toContain(GM_IDENTITY_COLOR.light);
+		expect(hexes).not.toContain(GM_IDENTITY_COLOR.dark);
 	});
 });

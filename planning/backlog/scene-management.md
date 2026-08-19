@@ -90,6 +90,21 @@ Creating closes the whole dialog rather than returning to the list. Making a sce
 always the last thing you came here for — the room's first one is already on screen behind — and
 being dropped back on a list you then have to dismiss reads as the form having failed.
 
+## Update 2026-08-19 — switching split in two
+
+Two things above are no longer true, and are left in place because they are why the code looks
+like it does. `Switch to` moved the whole room, and creating a scene moved nobody — both because
+where a client was looking *was* `room.active_scene_id`. Those are now separate:
+[per-client-scene-viewing](per-client-scene-viewing.md) split the row's one button into `View`
+(everyone's, this browser only) and `Move everyone` (the GM's reveal), and a new scene takes
+its creator to it.
+
+What survived unchanged is the reasoning behind the rest of this item: the map swap still
+broadcasts `scene.updated` rather than `scene.activated` for exactly the reason recorded above,
+delete still confirms in place, and the room's own scene still can't be deleted. That last refusal
+now reads "move everyone to another scene first", since switching away privately no longer clears
+the way.
+
 ## Related user stories
 
 - [gm-switch-active-scene](../user-stories/gm-switch-active-scene.md)

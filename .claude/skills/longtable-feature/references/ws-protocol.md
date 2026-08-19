@@ -27,7 +27,7 @@ Envelope both ways:
 
 | Command | Who | Persists | Broadcast |
 | --- | --- | --- | --- |
-| `participant.setColor` | anyone, for their own seat | yes | `participant.updated` |
+| `participant.setColor` | any Player, for their own seat; refused to a GM | yes | `participant.updated` |
 | `chat.send` | anyone | yes | `chat.posted` |
 | `chat.delete` | author, or any GM | yes | `chat.deleted` (first call) or `chat.purged` (second) |
 | `token.create` | anyone; a non-GM's is theirs and visible | yes | one `token.created` per token (GM-only if hidden) |
@@ -38,7 +38,8 @@ Envelope both ways:
 | `fog.hide` | GM only | yes | `fog.hidden` |
 | `fog.revealAll` | GM only | yes | `fog.revealed` |
 | `fog.reset` | GM only | yes | `fog.hidden` |
-| `scene.create` | GM only | yes | `scene.created` (+ `scene.activated` if it's the room's first) |
+| `scene.create` | GM only | yes | `scene.created`, then `scene.activated` if it's the room's first or `scene.viewed` to the creator alone if it isn't |
+| `scene.view` | anyone | no | none — `scene.viewed` to the sender only |
 | `scene.setActive` | GM only | yes | `scene.activated` |
 | `scene.delete` | GM only | yes | `scene.deleted` |
 | `scene.setMap` | GM only | yes | `scene.updated` |
@@ -175,11 +176,32 @@ The cap and the bounds check used to sit on `fog.revealAll` and the free `DELETE
 They swapped places when fog started storing what's hidden, which is worth knowing if an old
 comment says otherwise.
 
-Only the room's *first* scene auto-activates. A later `scene.create` is prep work, so it stays
-off screen until the GM switches to it — before the scene picker existed it activated
-unconditionally, because activation was the only way to ever reach a scene again.
-`scene.delete` refuses the active scene: `room.active_scene_id` has no foreign key to clean it
-up, so deleting it would leave every client pointed at a scene the server can't load.
+### Scenes, and who moves
+
+**Where a client is looking and where the room is are two different things.** The room's is
+`room.active_scene_id`, carried on `roomPayload` (so it rides `state.sync` and `room.updated`
+alike) and moved only by `scene.setActive`, which is GM-only and broadcasts `scene.activated` —
+the reveal, and the only thing that moves anyone else's screen. `scene.view` is everyone's,
+answers the sender alone with `scene.viewed`, and changes nothing else: no broadcast, no stored
+scene. A Player wandering onto next week's map is spoiling their own evening, which ADR-0007 says
+is allowed.
+
+**The hub deliberately keeps no per-connection viewed scene.** Nothing server-side is scoped to
+it: scene-scoped events go to the whole room and each client drops the ones for scenes it isn't
+showing, hidden tokens are filtered by role rather than by scene, and every connection opens on
+`room.active_scene_id` — a reconnect goes back to the table rather than to wherever that browser
+was. Recording it per connection would buy nothing and would then have to be kept in step with
+every delete.
+
+Only the room's *first* scene auto-activates. A later `scene.create` moves **the creator's own
+screen** — one `scene.viewed`, to them — and nobody else's, which is what makes prepping a map
+possible without unveiling it. Before the scene picker existed it activated unconditionally,
+because activation was the only way to ever reach a scene again.
+
+`scene.delete` refuses the *room's* scene: `room.active_scene_id` has no foreign key to clean it
+up, so deleting it would leave every client pointed at a scene the server can't load. A scene
+somebody has privately wandered onto is fair game, and the client handles that end — `RoomClient`
+sends itself back to `activeSceneId` on a `scene.deleted` for the scene it is showing.
 
 `token.create` is **open to Players**, with the same per-field shape `token.update` uses: a
 non-GM's owner is forced to the creator and the visibility to `visible`, and both are *ignored
@@ -414,6 +436,11 @@ Three more things worth knowing before touching it:
   against `store.IdentityColors` on the way in, because the value ends up in a `style` attribute on
   every other client's screen. `ping` carries `participantId` for the same feature — the colour is
   looked up in the roster rather than copied onto each ping, so it can't go stale.
+- **A GM seat holds no colour at all**, and `participant.setColor` is refused to one. The GM is a
+  fixed black (`GM_IDENTITY_COLOR`, a light/dark pair, since their name is DOM text on a themed
+  panel), decided by the role where it's drawn rather than stored — so `CreateRoom` and `GMLogin`
+  take no colour, and a key in that row would be a second answer waiting for something to read it.
+  A room made before this still has one there; it is ignored rather than migrated.
 - **It carries the whole participant**, so a first-time joiner — who is on nobody else's roster
   yet — can be upserted. `participant.disconnected` carries only an id: they stay on the roster,
   because leaving the table isn't leaving the room.
@@ -443,13 +470,13 @@ picture and `resetAfterSync` drops anything in flight, so a reconnect converges 
 
 `state.sync`, `chat.posted`, `chat.deleted`, `chat.purged`, `token.created`, `token.moved`,
 `token.updated`, `token.deleted`, `participant.connected`, `participant.disconnected`,
-`fog.revealed`, `fog.hidden`, `scene.activated`, `scene.created`, `scene.updated`,
-`scene.deleted`, `room.updated`, `initiative.updated`, `drawing.created`, `drawing.deleted`,
-`ping`, `measure.updated`, `measure.ended`, `error`.
+`fog.revealed`, `fog.hidden`, `scene.activated`, `scene.viewed`, `scene.created`,
+`scene.updated`, `scene.deleted`, `room.updated`, `initiative.updated`, `drawing.created`,
+`drawing.deleted`, `ping`, `measure.updated`, `measure.ended`, `error`.
 
-`state.sync` and `scene.activated` both carry the same full picture — `{scene, tokens, fogChunks,
-drawings}` built by `sceneStatePayload` — so a client can render immediately without another
-round trip. `state.sync` adds `room`, `you`, the last 50 chat messages (newest first; the client
+`state.sync`, `scene.activated` and `scene.viewed` all carry the same full picture — `{scene,
+tokens, fogChunks, drawings}` built by `sceneStatePayload` — so a client can render immediately
+without another round trip. `state.sync` adds `room`, `you`, the last 50 chat messages (newest first; the client
 reverses them), and `scenes`: every scene in the room, for the picker. `messagePayloads` builds
 that list against the connecting client's own participant id, so a message soft-deleted before it
 connects arrives already redacted (or not) exactly as it would have live — the author or deleter

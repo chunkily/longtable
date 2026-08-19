@@ -121,6 +121,21 @@ that holds for *text*, where the neighbours are visible. Strip the text and the 
 it: an unlabelled glyph is announced on its own, so the accessible name has to carry the noun the
 visible label was leaning on. Not a licence for a sentence; `Fill shape` is still two words.
 
+### Two from the Scenes dialog, where the row ran out of room
+
+| Written                                | Rewritten                                                     | What it teaches                                                                 |
+| -------------------------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| A button reading `Move everyone here`  | `Move everyone`                                               | The row already names the scene, so `here` was pointing at something the reader was looking at |
+| A button reading `Replace map`         | An image icon, `title="Replace map"`, `aria-label="Replace the map for Dungeon"` | Same trade as `Fill shape`, at the other end: the visible name goes, the accessible one grows to carry the scene |
+| A badge reading `The table is here`    | `Table is here`                                               | An article a badge has no room for and no reader misses                        |
+
+All three came out of one layout problem — five text buttons wrapping a 448px row — and that is
+worth saying plainly: **space is a legitimate reason to cut a word, and it cuts the right words.**
+`here`, `The`, and a visible `Replace map` were all doing less than they looked. What space is not
+a licence to cut is the *accessible* name, which is why the icon's grew while its label vanished.
+
+Note the third rewrite is a badge rather than a button, and takes rule 3's treatment anyway.
+
 ## README.md and docs/
 
 Same instinct, more room. A Host reading `docs/hosting.md` is mid-task — the server won't start, or

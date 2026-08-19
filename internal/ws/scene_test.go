@@ -26,7 +26,7 @@ func newSceneTestRoom(t *testing.T) *sceneTestRoom {
 	t.Helper()
 
 	ts := newTestServer(t)
-	room, gm, err := ts.store.CreateRoom("Room", "GM", "", "password")
+	room, gm, err := ts.store.CreateRoom("Room", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -63,10 +63,13 @@ func (s *sceneTestRoom) createScene(t *testing.T, name string) string {
 	s.player.readEnvelope(t) // the player's copy of scene.created
 
 	// Only the room's first scene also activates, which is two more
-	// envelopes to clear before the next assertion.
+	// envelopes to clear before the next assertion. Every later one moves
+	// the GM's own screen and nobody else's, which is one.
 	if s.created == 0 {
 		s.gm.readEnvelope(t)
 		s.player.readEnvelope(t)
+	} else {
+		s.gm.readEnvelope(t)
 	}
 	s.created++
 	return id
@@ -130,12 +133,188 @@ func TestSceneCreate_FirstSceneActivatesButLaterOnesDoNot(t *testing.T) {
 		t.Fatalf("type = %q, want scene.created", env.Type)
 	}
 	s.player.readEnvelope(t)
-	// Nothing else should follow: no activation for the second scene.
+	// The GM's own screen follows the new scene, so what must not follow
+	// is an activation — the room stays where it was.
+	if env := s.gm.readEnvelope(t); env.Type != "scene.viewed" {
+		t.Fatalf("type = %q, want scene.viewed", env.Type)
+	}
 	s.gm.expectNoMessage(t, 300*time.Millisecond)
 
 	if got := s.activeSceneID(t); got != first {
 		t.Fatalf("active scene = %q, want it left on the first scene %q", got, first)
 	}
+}
+
+// Making a scene is the start of working on it, so the GM who made it is
+// standing on it a moment later — while the table is left exactly where
+// it was. The two halves used to be the same thing, which is why a GM
+// could not prep a map without unveiling it.
+func TestSceneCreate_MovesTheCreatorAndNobodyElse(t *testing.T) {
+	s := newSceneTestRoom(t)
+	first := s.createScene(t, "Tavern")
+
+	s.gm.send(t, "scene.create", map[string]any{
+		"name": "Dungeon", "gridSize": 70, "width": 210, "height": 140,
+	})
+	second := sceneIDFromPayload(t, s.gm.readEnvelope(t))
+	if env := s.player.readEnvelope(t); env.Type != "scene.created" {
+		t.Fatalf("player got %q, want scene.created", env.Type)
+	}
+
+	env := s.gm.readEnvelope(t)
+	if env.Type != "scene.viewed" {
+		t.Fatalf("type = %q, want scene.viewed", env.Type)
+	}
+	if got := sceneIDFromPayload(t, env); got != second {
+		t.Fatalf("viewed scene = %q, want the new scene %q", got, second)
+	}
+
+	// The player heard that a scene exists and nothing more.
+	s.player.expectNoMessage(t, 300*time.Millisecond)
+	if got := s.activeSceneID(t); got != first {
+		t.Fatalf("active scene = %q, want the room left on %q", got, first)
+	}
+}
+
+// The whole point of splitting looking from activating: one client
+// changes scene and the room doesn't notice.
+func TestSceneView_MovesOneClientAndLeavesTheRoomAlone(t *testing.T) {
+	s := newSceneTestRoom(t)
+	active := s.createScene(t, "Tavern")
+	other := s.createScene(t, "Dungeon")
+
+	// A Player, not the GM: looking at another scene is nobody's
+	// permission to ask for (ADR-0007).
+	s.player.send(t, "scene.view", map[string]any{"sceneId": other})
+
+	env := s.player.readEnvelope(t)
+	if env.Type != "scene.viewed" {
+		t.Fatalf("type = %q, want scene.viewed", env.Type)
+	}
+	if got := sceneIDFromPayload(t, env); got != other {
+		t.Fatalf("viewed scene = %q, want %q", got, other)
+	}
+
+	s.gm.expectNoMessage(t, 300*time.Millisecond)
+	if got := s.activeSceneID(t); got != active {
+		t.Fatalf("active scene = %q, want the room left on %q", got, active)
+	}
+}
+
+// scene.viewed is a second door out of the token table, so it needs the
+// same doorman scene.activated has: a hidden token is never sent to a
+// Player, not even flagged.
+func TestSceneView_WithholdsHiddenTokensFromPlayers(t *testing.T) {
+	s := newSceneTestRoom(t)
+	s.createScene(t, "Tavern")
+	other := s.createScene(t, "Dungeon")
+
+	if _, err := s.ts.store.CreateToken(store.Token{
+		SceneID: other, Name: "Ambush", Visibility: store.VisibilityHidden,
+	}); err != nil {
+		t.Fatalf("CreateToken: %v", err)
+	}
+
+	s.player.send(t, "scene.view", map[string]any{"sceneId": other})
+	if names := tokenNamesFromPayload(t, s.player.readEnvelope(t)); len(names) != 0 {
+		t.Fatalf("player got tokens %v, want none — the only one there is hidden", names)
+	}
+
+	s.gm.send(t, "scene.view", map[string]any{"sceneId": other})
+	names := tokenNamesFromPayload(t, s.gm.readEnvelope(t))
+	if len(names) != 1 || names[0] != "Ambush" {
+		t.Fatalf("GM got tokens %v, want the hidden one", names)
+	}
+}
+
+func TestSceneView_SceneFromAnotherRoomFailsLikeAMissingOne(t *testing.T) {
+	s := newSceneTestRoom(t)
+	s.createScene(t, "Tavern")
+
+	otherRoom, _, err := s.ts.store.CreateRoom("Other", "GM", "password")
+	if err != nil {
+		t.Fatalf("CreateRoom: %v", err)
+	}
+	otherScene, err := s.ts.store.CreateScene(otherRoom.ID, "Theirs", nil, 70, 210, 140)
+	if err != nil {
+		t.Fatalf("CreateScene: %v", err)
+	}
+
+	s.player.send(t, "scene.view", map[string]any{"sceneId": otherScene.ID})
+	fromOtherRoom := errorMessage(t, s.player.readEnvelope(t))
+
+	s.player.send(t, "scene.view", map[string]any{"sceneId": "nosuch"})
+	fromMissing := errorMessage(t, s.player.readEnvelope(t))
+
+	if fromOtherRoom == "" {
+		t.Fatal("expected a refusal for another room's scene")
+	}
+	if fromOtherRoom != fromMissing {
+		t.Fatalf("errors differ: %q vs %q — the two must be indistinguishable", fromOtherRoom, fromMissing)
+	}
+}
+
+// The other half of the split: this one is the reveal, so it moves the
+// room's own scene and everybody's screen with it.
+func TestSceneSetActive_MovesTheWholeRoom(t *testing.T) {
+	s := newSceneTestRoom(t)
+	s.createScene(t, "Tavern")
+	target := s.createScene(t, "Dungeon")
+
+	s.gm.send(t, "scene.setActive", map[string]any{"sceneId": target})
+
+	for _, c := range []struct {
+		name   string
+		client *testClient
+	}{{"gm", s.gm}, {"player", s.player}} {
+		env := c.client.readEnvelope(t)
+		if env.Type != "scene.activated" {
+			t.Fatalf("%s got %q, want scene.activated", c.name, env.Type)
+		}
+		if got := sceneIDFromPayload(t, env); got != target {
+			t.Fatalf("%s moved to %q, want %q", c.name, got, target)
+		}
+	}
+
+	if got := s.activeSceneID(t); got != target {
+		t.Fatalf("active scene = %q, want %q", got, target)
+	}
+}
+
+func TestSceneSetActive_PlayerMayNot(t *testing.T) {
+	s := newSceneTestRoom(t)
+	active := s.createScene(t, "Tavern")
+	target := s.createScene(t, "Dungeon")
+
+	s.player.send(t, "scene.setActive", map[string]any{"sceneId": target})
+
+	if msg := errorMessage(t, s.player.readEnvelope(t)); msg == "" {
+		t.Fatal("expected a refusal message")
+	}
+	if got := s.activeSceneID(t); got != active {
+		t.Fatalf("active scene = %q, want the room left on %q", got, active)
+	}
+}
+
+// tokenNamesFromPayload reads the token names out of any envelope
+// carrying a scene's full picture — scene.viewed, scene.activated or
+// state.sync.
+func tokenNamesFromPayload(t *testing.T, env envelope) []string {
+	t.Helper()
+
+	var payload struct {
+		Tokens []struct {
+			Name string `json:"name"`
+		} `json:"tokens"`
+	}
+	if err := json.Unmarshal(env.Payload, &payload); err != nil {
+		t.Fatalf("unmarshal %s payload: %v", env.Type, err)
+	}
+	names := make([]string, len(payload.Tokens))
+	for i, tok := range payload.Tokens {
+		names[i] = tok.Name
+	}
+	return names
 }
 
 // A scene starts fully revealed rather than fully covered: a Player
@@ -271,7 +450,7 @@ func TestSceneDelete_SceneFromAnotherRoomFailsLikeAMissingOne(t *testing.T) {
 	s := newSceneTestRoom(t)
 	s.createScene(t, "Tavern")
 
-	otherRoom, _, err := s.ts.store.CreateRoom("Other", "GM", "", "password")
+	otherRoom, _, err := s.ts.store.CreateRoom("Other", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -354,7 +533,7 @@ func TestSceneSetMap_RejectsAssetFromAnotherRoom(t *testing.T) {
 	s := newSceneTestRoom(t)
 	sceneID := s.createScene(t, "Tavern")
 
-	otherRoom, _, err := s.ts.store.CreateRoom("Other", "GM", "", "password")
+	otherRoom, _, err := s.ts.store.CreateRoom("Other", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}

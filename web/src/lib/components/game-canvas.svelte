@@ -4,7 +4,7 @@
 	import Konva from 'konva';
 	import { assetUrl } from '$lib/api';
 	import { DRAWING_STROKE_WIDTH, isFilled, pickDrawing, strokeWidthOf } from '$lib/drawing-hit';
-	import { identityHex } from '$lib/identity-color';
+	import { seatHex } from '$lib/identity-color';
 	import { fillFor } from '$lib/drawing-fill';
 	import {
 		DEFAULT_LINE_WIDTH_FEET,
@@ -1714,7 +1714,12 @@
 		// used to be. That fallback is not decoration: a seat from before
 		// colours has none, and a ping nobody can see is worse than one
 		// that doesn't say whose it is.
-		const stroke = identityHex(room.colorOf(ping.participantId)) ?? PING_COLOR;
+		//
+		// `stageScheme` rather than a reactive read of the theme, for the
+		// reason every other colour here uses it — and it only matters for
+		// the GM, whose black/white is the one identity colour that has a
+		// scheme at all.
+		const stroke = seatHex(room.seatOf(ping.participantId), stageScheme) ?? PING_COLOR;
 
 		for (let i = 0; i < PING_PULSES; i++) {
 			const ring = new Konva.Circle({

@@ -12,7 +12,8 @@
 	// Player's time rather than a list they can only look at.
 	import { toast } from 'svelte-sonner';
 	import { addSeat, listSeats, removeSeat, type Seat } from '$lib/api';
-	import { identityHex, suggestedColor } from '$lib/identity-color';
+	import { mode } from 'mode-watcher';
+	import { seatHex, suggestedColor } from '$lib/identity-color';
 	import type { RoomClient } from '$lib/room.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -75,6 +76,10 @@
 	function seatColor(seat: Seat): string {
 		return room.colorOf(seat.participantId) || seat.color;
 	}
+
+	// Only the GM's dot has a scheme to follow — theirs is a fixed
+	// black/white pair rather than one of the sixteen.
+	const scheme = $derived(mode.current === 'dark' ? 'dark' : 'light');
 
 	async function handleAdd(event: SubmitEvent) {
 		event.preventDefault();
@@ -151,10 +156,13 @@
 				{#each seats as seat (seat.participantId)}
 					{@const isYou = seat.participantId === room.you?.participantId}
 					<li class="flex flex-wrap items-center gap-2 rounded-md border p-2">
-						{#if identityHex(seatColor(seat))}
+						{#if seatHex({ role: seat.role, color: seatColor(seat) }, scheme)}
 							<span
 								class="h-3 w-3 shrink-0 rounded-full"
-								style="background-color: {identityHex(seatColor(seat))}"
+								style="background-color: {seatHex(
+									{ role: seat.role, color: seatColor(seat) },
+									scheme
+								)}"
 							></span>
 						{/if}
 						<span class="min-w-0 flex-1 truncate text-sm">{seat.displayName}</span>
@@ -218,16 +226,22 @@
 		     Sitting open costs nothing here: it is one row of the dialog,
 		     and the seats above it are exactly the "who else is wearing
 		     what" this is chosen against. -->
-			<div class="flex flex-col gap-2 border-t pt-4">
-				<Label>Your colour</Label>
-				<IdentityColorPicker
-					value={room.colorOf(room.you?.participantId)}
-					taken={seats
-						.filter((seat) => seat.participantId !== room.you?.participantId)
-						.map((seat) => seatColor(seat))}
-					onpick={(color) => room.setColor(color)}
-				/>
-			</div>
+			<!-- Not for the GM, whose colour is fixed black rather than one of
+		     the sixteen: there is one GM at a table and everyone knows
+		     which name is theirs, so the palette is for telling the
+		     players apart. -->
+			{#if !isGM}
+				<div class="flex flex-col gap-2 border-t pt-4">
+					<Label>Your colour</Label>
+					<IdentityColorPicker
+						value={room.colorOf(room.you?.participantId)}
+						taken={seats
+							.filter((seat) => seat.participantId !== room.you?.participantId)
+							.map((seat) => seatColor(seat))}
+						onpick={(color) => room.setColor(color)}
+					/>
+				</div>
+			{/if}
 		</div>
 	</Dialog.Content>
 </Dialog.Root>

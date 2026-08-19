@@ -272,6 +272,12 @@ const EMPTY_INITIATIVE: InitiativeState = { entries: [], round: 1, currentEntryI
 export interface RoomSettings {
 	slug: string;
 	name: string;
+	/**
+	 * The scene the room is on, which is where every connection opens and
+	 * where `Move everyone` sends the table. Not necessarily the one
+	 * this browser is looking at — see `RoomClient.scene`.
+	 */
+	activeSceneId: string | null;
 	/** When set, only a token's owner (and the GM) may move it. */
 	ownerOnlyMovement: boolean;
 }
@@ -306,7 +312,10 @@ interface FogChunksPayload {
 	chunks: FogChunk[];
 }
 
-interface SceneActivatedPayload {
+// scene.activated (the room moved) and scene.viewed (only this browser
+// did) carry the same full picture, since a client changing scene needs
+// exactly as much either way.
+interface SceneStatePayload {
 	scene: Scene;
 	tokens?: Token[];
 	fogChunks?: FogChunk[];
@@ -440,7 +449,12 @@ export class RoomClient {
 	// one actually on screen — the two are kept in step, but only `scene`
 	// carries the tokens/fog/drawings that go with it.
 	scenes = $state<Scene[]>([]);
+	// What *this* browser is looking at, which since per-client viewing is
+	// not necessarily where the room is. Everyone starts on the room's
+	// scene and stays there unless they go looking; `activeSceneId` is the
+	// one the table is on.
 	scene = $state<Scene | null>(null);
+	activeSceneId = $state<string | null>(null);
 	tokens = $state<Token[]>([]);
 	fogChunks = $state<FogChunk[]>([]);
 	drawings = $state<Drawing[]>([]);
@@ -677,7 +691,22 @@ export class RoomClient {
 		this.send('scene.create', { name, mapAssetId, gridSize, width, height });
 	}
 
-	setActiveScene(sceneId: string) {
+	/**
+	 * Looks at a scene, and tells nobody. The server answers this browser
+	 * alone with `scene.viewed`, so a GM can prep a map with the table
+	 * still on the one they're standing on, and a Player can go and look
+	 * at something without dragging everyone along.
+	 */
+	viewScene(sceneId: string) {
+		this.send('scene.view', { sceneId });
+	}
+
+	/**
+	 * The reveal: moves the room's own scene and every connected client
+	 * with it. GM-only, and deliberately a different action from
+	 * `viewScene` rather than a side effect of one.
+	 */
+	moveRoomToScene(sceneId: string) {
 		this.send('scene.setActive', { sceneId });
 	}
 
@@ -835,6 +864,19 @@ export class RoomClient {
 	colorOf(participantId: string | null | undefined): string {
 		if (!participantId) return '';
 		return this.participants.find((p) => p.id === participantId)?.color ?? '';
+	}
+
+	/**
+	 * The whole seat behind a participant id, or null when there is nobody
+	 * to ask about — a system chat line, or an id the roster hasn't got.
+	 *
+	 * What renders a colour needs the *role* as well as the key, since the
+	 * GM's is fixed rather than picked (`seatHex` in $lib/identity-color).
+	 * One lookup rather than two, and the same roster `colorOf` reads.
+	 */
+	seatOf(participantId: string | null | undefined): Participant | null {
+		if (!participantId) return null;
+		return this.participants.find((p) => p.id === participantId) ?? null;
 	}
 
 	createDrawing(
@@ -1085,6 +1127,14 @@ export class RoomClient {
 	// check permission, and (for drawings) already render optimistically.
 
 	/** Who's at the table right now, in the order they first joined. */
+	/**
+	 * The scene the table is on, as far as this browser knows it. Null
+	 * before the first sync, and while the room has no scene at all.
+	 */
+	get activeScene(): Scene | null {
+		return this.scenes.find((s) => s.id === this.activeSceneId) ?? null;
+	}
+
 	get connectedParticipants(): Participant[] {
 		// Thrown away before this getter returns, and rebuilt from $state
 		// each time the getter runs — so a plain Set is right here, not a
@@ -1202,6 +1252,18 @@ export class RoomClient {
 		this.measurements = [];
 	}
 
+	// Puts a scene on screen with everything on it, for both events that
+	// carry the full picture. Undo history and any gesture in flight go
+	// with the old scene — see resetAfterSync.
+	private showScene(payload: SceneStatePayload) {
+		this.scene = payload.scene;
+		this.scenes = upsertScene(this.scenes, payload.scene);
+		this.tokens = payload.tokens ?? [];
+		this.fogChunks = payload.fogChunks ?? [];
+		this.drawings = payload.drawings ?? [];
+		this.resetAfterSync();
+	}
+
 	private restoreErased(drawingId: string) {
 		const pending = this.pendingErases.get(drawingId);
 		if (!pending) return;
@@ -1310,6 +1372,7 @@ export class RoomClient {
 			case 'state.sync': {
 				const payload = env.payload as StateSyncPayload;
 				this.roomName = payload.room.name;
+				this.activeSceneId = payload.room.activeSceneId ?? null;
 				this.ownerOnlyMovement = payload.room.ownerOnlyMovement ?? false;
 				this.initiative = payload.initiative ?? { ...EMPTY_INITIATIVE };
 				this.you = payload.you;
@@ -1497,14 +1560,20 @@ export class RoomClient {
 				break;
 			}
 
+			// The room moved, so this browser moves with it and the table's
+			// scene changes under everyone.
 			case 'scene.activated': {
-				const payload = env.payload as SceneActivatedPayload;
-				this.scene = payload.scene;
-				this.scenes = upsertScene(this.scenes, payload.scene);
-				this.tokens = payload.tokens ?? [];
-				this.fogChunks = payload.fogChunks ?? [];
-				this.drawings = payload.drawings ?? [];
-				this.resetAfterSync();
+				const payload = env.payload as SceneStatePayload;
+				this.activeSceneId = payload.scene.id;
+				this.showScene(payload);
+				break;
+			}
+
+			// Only this browser moved. Sent in answer to `viewScene`, and
+			// unprompted to whoever just made a scene — where the room is
+			// doesn't change either way.
+			case 'scene.viewed': {
+				this.showScene(env.payload as SceneStatePayload);
 				break;
 			}
 
@@ -1529,6 +1598,14 @@ export class RoomClient {
 			case 'scene.deleted': {
 				const payload = env.payload as SceneDeletedPayload;
 				this.scenes = this.scenes.filter((s) => s.id !== payload.sceneId);
+				// The room's own scene can't be deleted, but the one this
+				// browser wandered off to can be — and staying on it would
+				// leave a map on screen that the server can no longer load
+				// anything for. Back to the table, which is the one scene
+				// that is certainly still there.
+				if (this.scene?.id === payload.sceneId && this.activeSceneId) {
+					this.viewScene(this.activeSceneId);
+				}
 				break;
 			}
 
@@ -1657,9 +1734,9 @@ function mergeFogChunks(existing: FogChunk[], incoming: FogChunk[]): FogChunk[] 
 }
 
 // Replaces a scene in the list, or appends it if it's new. Both cases
-// arrive: scene.created is always new, scene.updated never is, and
-// scene.activated can be either — a client that connected before a scene
-// existed still gets activated onto it.
+// arrive: scene.created is always new, scene.updated never is, and the
+// two full-picture events can be either — a client that connected before
+// a scene existed still gets moved onto it.
 function upsertScene(existing: Scene[], scene: Scene): Scene[] {
 	if (!existing.some((s) => s.id === scene.id)) return [...existing, scene];
 	return existing.map((s) => (s.id === scene.id ? scene : s));

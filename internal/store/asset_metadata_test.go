@@ -13,11 +13,11 @@ import (
 func TestRoomLibrary_NamesAndGridSizesAreScopedPerRoom(t *testing.T) {
 	s := newTestStore(t)
 
-	roomA, _, err := s.CreateRoom("Room A", "GM", "", "pw")
+	roomA, _, err := s.CreateRoom("Room A", "GM", "pw")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
-	roomB, _, err := s.CreateRoom("Room B", "GM", "", "pw")
+	roomB, _, err := s.CreateRoom("Room B", "GM", "pw")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -50,11 +50,11 @@ func TestRoomLibrary_NamesAndGridSizesAreScopedPerRoom(t *testing.T) {
 func TestRoomLibrary_KindIsScopedPerRoom(t *testing.T) {
 	s := newTestStore(t)
 
-	roomA, _, err := s.CreateRoom("Room A", "GM", "", "pw")
+	roomA, _, err := s.CreateRoom("Room A", "GM", "pw")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
-	roomB, _, err := s.CreateRoom("Room B", "GM", "", "pw")
+	roomB, _, err := s.CreateRoom("Room B", "GM", "pw")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestRoomLibrary_KindIsScopedPerRoom(t *testing.T) {
 func TestAddAssetToRoom_DefaultsToToken(t *testing.T) {
 	s := newTestStore(t)
 
-	room, _, err := s.CreateRoom("Room", "GM", "", "pw")
+	room, _, err := s.CreateRoom("Room", "GM", "pw")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestAddAssetToRoom_DefaultsToToken(t *testing.T) {
 func TestAddAssetToRoom_KeepsDetailsWhenNoneGiven(t *testing.T) {
 	s := newTestStore(t)
 
-	room, _, err := s.CreateRoom("Room", "GM", "", "pw")
+	room, _, err := s.CreateRoom("Room", "GM", "pw")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestAddAssetToRoom_KeepsDetailsWhenNoneGiven(t *testing.T) {
 func TestListRoomAssets_FallsBackToTheFilenameWhenUnnamed(t *testing.T) {
 	s := newTestStore(t)
 
-	room, _, err := s.CreateRoom("Room", "GM", "", "pw")
+	room, _, err := s.CreateRoom("Room", "GM", "pw")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -176,11 +176,11 @@ func TestListRoomAssets_FallsBackToTheFilenameWhenUnnamed(t *testing.T) {
 func TestUpdateRoomAsset(t *testing.T) {
 	s := newTestStore(t)
 
-	room, _, err := s.CreateRoom("Room", "GM", "", "pw")
+	room, _, err := s.CreateRoom("Room", "GM", "pw")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
-	other, _, err := s.CreateRoom("Other", "GM", "", "pw")
+	other, _, err := s.CreateRoom("Other", "GM", "pw")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -226,7 +226,7 @@ func TestUpdateRoomAsset(t *testing.T) {
 func TestUpdateRoomAsset_MovesAnAssetBetweenKinds(t *testing.T) {
 	s := newTestStore(t)
 
-	room, _, err := s.CreateRoom("Room", "GM", "", "pw")
+	room, _, err := s.CreateRoom("Room", "GM", "pw")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -261,11 +261,11 @@ func TestUpdateRoomAsset_MovesAnAssetBetweenKinds(t *testing.T) {
 func TestRemoveAssetFromRoom_LeavesTheFileAndOtherRooms(t *testing.T) {
 	s := newTestStore(t)
 
-	roomA, _, err := s.CreateRoom("Room A", "GM", "", "pw")
+	roomA, _, err := s.CreateRoom("Room A", "GM", "pw")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
-	roomB, _, err := s.CreateRoom("Room B", "GM", "", "pw")
+	roomB, _, err := s.CreateRoom("Room B", "GM", "pw")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -317,11 +317,11 @@ func TestRemoveAssetFromRoom_LeavesTheFileAndOtherRooms(t *testing.T) {
 func TestRemoveAssetFromRoom_WontReachIntoAnotherRoomsLibrary(t *testing.T) {
 	s := newTestStore(t)
 
-	room, _, err := s.CreateRoom("Room", "GM", "", "pw")
+	room, _, err := s.CreateRoom("Room", "GM", "pw")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
-	other, _, err := s.CreateRoom("Other", "GM", "", "pw")
+	other, _, err := s.CreateRoom("Other", "GM", "pw")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}

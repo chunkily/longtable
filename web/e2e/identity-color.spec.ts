@@ -1,5 +1,5 @@
 import { expect, test } from './fixtures/table';
-import { openSeatPicker } from './fixtures/room';
+import { openSeatPicker, openSeatsDialog } from './fixtures/room';
 
 // An identity colour is only worth anything on somebody else's screen,
 // which is why these run two browsers: the point is that Bob's name is
@@ -7,6 +7,9 @@ import { openSeatPicker } from './fixtures/room';
 
 /** The hex for a palette key, from web/src/lib/identity-color.ts. */
 const HEX = { teal: 'rgb(45, 212, 191)', pink: 'rgb(236, 72, 153)' };
+
+/** GM_IDENTITY_COLOR.light, which is what these run under. */
+const GM_BLACK = 'rgb(0, 0, 0)';
 
 test('a name in chat wears the colour its owner picked', async ({ table }) => {
 	const gm = table.gm;
@@ -147,4 +150,45 @@ test('changing your colour recolours your name for everyone', async ({ table }) 
 	// stored rather than only broadcast.
 	await gm.page.reload();
 	await expect(nameOnGMsScreen).toHaveCSS('color', HEX.pink);
+});
+
+// The GM's colour is fixed black rather than picked, so the two things
+// worth proving are that it lands on somebody else's screen and that
+// nothing anywhere offers to change it.
+test("the GM's name is black, and nothing offers them a choice", async ({ table }) => {
+	const gm = table.gm;
+	const bob = await table.join('Bob', 'Lagoon Teal');
+
+	await gm.page.getByPlaceholder('Say something, or /roll 2d6+3').fill('roll initiative');
+	await gm.page.getByRole('button', { name: 'Send' }).click();
+
+	// Read on Bob's screen, off the roster rather than out of any form.
+	const name = bob.page
+		.getByRole('list')
+		.first()
+		.locator('li')
+		.filter({ hasText: 'roll initiative' })
+		.locator('strong');
+	await expect(name).toHaveText('Alice:');
+	await expect(name).toHaveCSS('color', GM_BLACK);
+
+	// The rail's swatch is a control for a Player and a plain dot for the
+	// GM: there is nothing at the other end of the click for them.
+	await expect(bob.page.getByRole('button', { name: 'Your colour' })).toBeVisible();
+	await expect(gm.page.getByRole('button', { name: 'Your colour' })).toBeHidden();
+
+	// And the palette is not at the foot of their Seats dialog either.
+	await openSeatsDialog(gm.page);
+	await expect(gm.page.getByRole('radiogroup', { name: 'Your colour' })).toBeHidden();
+});
+
+// The create-room form used to ask the GM for a colour before they had a
+// room to be a GM of. It asks for a name and a password now.
+test('creating a room does not ask the GM for a colour', async ({ page }) => {
+	await page.goto('/');
+	await page.waitForLoadState('networkidle');
+	await page.getByRole('button', { name: 'Create a room' }).click();
+	await expect(page.getByLabel('Room name')).toBeVisible();
+
+	await expect(page.getByRole('radiogroup', { name: 'Your colour' })).toBeHidden();
 });

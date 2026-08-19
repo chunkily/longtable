@@ -1,5 +1,8 @@
 // The colours a seat can be, and the only place their hex lives.
 //
+// Sixteen of them are the Players'. The GM's is a seventeenth that isn't
+// in the list and isn't picked — see GM_IDENTITY_COLOR below.
+//
 // A seat stores a *key* — `violet`, not `#8b5cf6` and not `Arcane Violet`. The server validates
 // against its own copy of these keys (`IdentityColors` in
 // internal/store/participant.go) and never handles a colour, which keeps
@@ -65,6 +68,53 @@ export const IDENTITY_COLORS: IdentityColor[] = [
 	{ key: 'grey', label: 'Storm Grey', hex: '#64748b' },
 	{ key: 'white', label: 'Bone White', hex: '#e7e5e4' }
 ];
+
+/**
+ * The GM's colour, which is not one of the sixteen and is not chosen:
+ * black, with white standing in for it on the dark scheme.
+ *
+ * Fixed rather than picked because there is exactly one GM in a room and
+ * everyone knows which name is theirs — a colour is for telling six
+ * players apart, and spending one of the sixteen on the person who needs
+ * it least made the palette shorter for everybody else.
+ *
+ * A pair rather than a hex for the reason black is always a pair here: the
+ * GM's name in chat is DOM text on a themed panel, and one that reads on
+ * the light scheme is invisible on the dark one. Same two hexes as the
+ * drawing palette's black/white column, which is the pairing this repo
+ * already speaks.
+ *
+ * The **ping** is the one place the scheme is a guess: a ping is painted
+ * on map art, which has no idea what the page is wearing (the note in
+ * stroke-colors.ts is the long version). A GM pinging a dark map under a
+ * light UI gets a black ring on dark art. Accepted rather than solved —
+ * the alternative is a halo behind every ping, which is a bigger change
+ * than the colour it would be fixing.
+ */
+export const GM_IDENTITY_COLOR = { light: '#000000', dark: '#ffffff' };
+
+export type ColorScheme = 'light' | 'dark';
+
+/**
+ * What a seat is painted in: whatever they picked for a Player, and the
+ * fixed pair above for the GM, whose stored key is ignored.
+ *
+ * Ignored rather than migrated, so a room made before this reads the new
+ * way without anything having to run over its database — and so there is
+ * one answer to "what colour is the GM" rather than a rule and a stored
+ * value that can disagree.
+ */
+export function seatHex(seat: SeatIdentity | null | undefined, scheme: ColorScheme): string | null {
+	if (!seat) return null;
+	if (seat.role === 'gm') return GM_IDENTITY_COLOR[scheme];
+	return identityHex(seat.color);
+}
+
+/** The half of a seat this module needs: what they are, and what they picked. */
+export interface SeatIdentity {
+	role: string;
+	color?: string | null;
+}
 
 /**
  * The hex for a stored key, or null for a seat that has none.

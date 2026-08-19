@@ -17,8 +17,14 @@ import (
 // room.updated so a setting can't arrive on one and not the other.
 func roomPayload(room store.Room) map[string]any {
 	return map[string]any{
-		"slug":              room.Slug,
-		"name":              room.Name,
+		"slug": room.Slug,
+		"name": room.Name,
+		// Where the room is, which since per-client viewing is no longer
+		// where any particular client is looking. A client needs it for two
+		// things it can't work out on its own: saying which scene the table
+		// is on, and finding its way back there when the scene it wandered
+		// off to is deleted underneath it.
+		"activeSceneId":     room.ActiveSceneID,
 		"ownerOnlyMovement": room.OwnerOnlyMovement,
 	}
 }
@@ -68,6 +74,12 @@ func (h *Hub) sendStateSync(ctx context.Context, c *client, room store.Room) {
 	// a GM flipping scenes mid-fight doesn't reload the encounter.
 	payload["initiative"] = h.initiativeStatePayload(room.ID, c.participant.Role)
 
+	// A connection always opens on the room's scene, never on whatever
+	// this participant was looking at last. Where someone is looking is
+	// this browser's business and the hub keeps none of it — a scene.view
+	// is answered and forgotten — so a reconnect has nothing to restore,
+	// and lands the table's newcomer and its returning phone in the same
+	// place.
 	if room.ActiveSceneID != nil {
 		sceneState, err := h.sceneStatePayload(*room.ActiveSceneID, c.participant.Role)
 		if err != nil {

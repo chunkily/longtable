@@ -244,7 +244,7 @@ func TestPresence_ASecondTabIsNotASecondPerson(t *testing.T) {
 
 func TestListParticipantsForRoom_IsScopedToItsRoomAndOrderedByJoin(t *testing.T) {
 	ts := newTestServer(t)
-	room, gm, err := ts.store.CreateRoom("Room", "GM", "", "password")
+	room, gm, err := ts.store.CreateRoom("Room", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -252,7 +252,7 @@ func TestListParticipantsForRoom_IsScopedToItsRoomAndOrderedByJoin(t *testing.T)
 	if err != nil {
 		t.Fatalf("JoinRoom: %v", err)
 	}
-	other, _, err := ts.store.CreateRoom("Other", "Their GM", "", "password")
+	other, _, err := ts.store.CreateRoom("Other", "Their GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}

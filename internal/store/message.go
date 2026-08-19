@@ -87,10 +87,19 @@ func (s *Store) InsertMessage(m Message) (Message, error) {
 // intact — redacting it per viewer is the WS layer's job, since this
 // query has no notion of who's asking — and a purged one is gone from
 // the table entirely and simply isn't here.
+//
+// rowid breaks a tie on created_at, and it isn't hypothetical: that
+// column is time.Now(), whose resolution on Windows is about a
+// millisecond, so two lines written in one breath share it exactly —
+// two people's arrivals, or a /roll and the line announcing whoever
+// asked for it. Without the tie-break the order was SQLite's to choose
+// and it chose differently between runs, which read as the log
+// shuffling itself. Insertion order is what "newest" means here, and
+// rowid is the only monotonic thing in the row.
 func (s *Store) ListRecentMessages(roomID string, limit int) ([]Message, error) {
 	rows, err := s.db.Query(
 		`SELECT id, room_id, participant_id, participant_name, kind, body, roll_expression, roll_result, roll_breakdown, created_at, deleted_at, deleted_by_participant_id
-		 FROM message WHERE room_id = ? ORDER BY created_at DESC LIMIT ?`,
+		 FROM message WHERE room_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?`,
 		roomID, limit,
 	)
 	if err != nil {

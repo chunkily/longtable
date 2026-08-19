@@ -24,7 +24,7 @@ func newFogTestRoom(t *testing.T) *fogTestRoom {
 	t.Helper()
 
 	ts := newTestServer(t)
-	room, gm, err := ts.store.CreateRoom("Room", "GM", "", "password")
+	room, gm, err := ts.store.CreateRoom("Room", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -209,7 +209,7 @@ func TestFogReveal_PlayerMayNot(t *testing.T) {
 func TestFogHide_SceneFromAnotherRoomFailsLikeAMissingOne(t *testing.T) {
 	f := newFogTestRoom(t)
 
-	otherRoom, _, err := f.ts.store.CreateRoom("Other", "GM", "", "password")
+	otherRoom, _, err := f.ts.store.CreateRoom("Other", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}

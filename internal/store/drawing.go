@@ -117,10 +117,17 @@ func (s *Store) DeleteDrawing(id string) error {
 
 // ListDrawingsForScene returns a scene's drawings in creation order, so
 // later strokes render on top of earlier ones.
+//
+// rowid settles a tie on created_at, which is not decoration: that
+// column comes from a clock about a millisecond wide, and two people
+// drawing at once share it exactly. Left to SQLite, whose stroke was on
+// top would then be decided per query — so a reload could swap them, and
+// the two clients could disagree. See ListRecentMessages for the long
+// version.
 func (s *Store) ListDrawingsForScene(sceneID string) ([]Drawing, error) {
 	rows, err := s.db.Query(
 		`SELECT id, scene_id, kind, points, color, filled, stroke_width, created_by_participant_id, created_at
-		 FROM drawing WHERE scene_id = ? ORDER BY created_at ASC`,
+		 FROM drawing WHERE scene_id = ? ORDER BY created_at ASC, rowid ASC`,
 		sceneID,
 	)
 	if err != nil {

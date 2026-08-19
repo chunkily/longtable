@@ -61,10 +61,14 @@ func (s *Store) SceneRoomID(sceneID string) (string, error) {
 // ListScenesForRoom returns every scene in a room, oldest first, which
 // is the order a GM built them in and so the order they expect to pick
 // from.
+//
+// rowid settles a tie on created_at, which a clock about a millisecond
+// wide leaves plenty of — see ListRecentMessages. A Scenes dialog that
+// reordered itself between openings is the symptom.
 func (s *Store) ListScenesForRoom(roomID string) ([]Scene, error) {
 	rows, err := s.db.Query(
 		`SELECT id, room_id, name, map_asset_id, grid_size, grid_offset_x, grid_offset_y, width, height, created_at
-		 FROM scene WHERE room_id = ? ORDER BY created_at`, roomID,
+		 FROM scene WHERE room_id = ? ORDER BY created_at, rowid`, roomID,
 	)
 	if err != nil {
 		return nil, err

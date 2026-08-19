@@ -149,19 +149,22 @@ func (s *Store) JoinRoom(roomID, displayName, color string) (Participant, error)
 // device was a second person and the roster grew one entry per login.
 // Called after the caller has already verified the room password —
 // which is a role boundary, not an identity one (ADR-0007).
-// color is used only if the seat has to be created; a GM signing back
-// into an existing seat keeps whatever colour that seat already has,
-// like every other returning device.
-func (s *Store) GMLogin(roomID, displayName, color string) (Participant, error) {
+// No colour, and no parameter to pass one — see CreateRoom, which makes
+// the other GM seat there is.
+func (s *Store) GMLogin(roomID, displayName string) (Participant, error) {
 	var p Participant
 	var role string
 	err := s.db.QueryRow(
+		// rowid settles a tie on created_at (see ListRecentMessages). A
+		// room should only ever hold one GM seat, but this is the query
+		// that decides which one is *the* one if it somehow holds two, and
+		// that answer must not change between logins.
 		`SELECT id, room_id, display_name, color, role, created_at
-		 FROM participant WHERE room_id = ? AND role = 'gm' ORDER BY created_at ASC LIMIT 1`,
+		 FROM participant WHERE room_id = ? AND role = 'gm' ORDER BY created_at ASC, rowid ASC LIMIT 1`,
 		roomID,
 	).Scan(&p.ID, &p.RoomID, &p.DisplayName, &p.Color, &role, &p.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
-		return createParticipant(s.db, roomID, displayName, color, RoleGM)
+		return createParticipant(s.db, roomID, displayName, "", RoleGM)
 	}
 	if err != nil {
 		return Participant{}, err
@@ -274,8 +277,11 @@ func (s *Store) DeleteSeat(roomID, participantID string) error {
 // be loaded in the first place. The field comes back zero.
 func (s *Store) ListParticipantsForRoom(roomID string) ([]Participant, error) {
 	rows, err := s.db.Query(
+		// rowid settles a tie on created_at (see ListRecentMessages), so a
+		// roster of people who joined together holds still between reads
+		// rather than reshuffling under the badges.
 		`SELECT id, room_id, display_name, color, role, created_at
-		 FROM participant WHERE room_id = ? ORDER BY created_at ASC`, roomID,
+		 FROM participant WHERE room_id = ? ORDER BY created_at ASC, rowid ASC`, roomID,
 	)
 	if err != nil {
 		return nil, err
@@ -316,13 +322,19 @@ type Seat struct {
 
 // ListSeatsForRoom returns the room's seats, oldest first — the order
 // people sat down in, which is stabler than sorting by name.
+//
+// rowid settles a tie on created_at (see ListRecentMessages), and is in
+// the GROUP BY rather than only the ORDER BY: it is functionally
+// dependent on p.id and so adds no groups, but naming it there is what
+// keeps it a column this query is entitled to sort on rather than one
+// SQLite picks out of an arbitrary row of the group.
 func (s *Store) ListSeatsForRoom(roomID string) ([]Seat, error) {
 	rows, err := s.db.Query(
 		`SELECT p.id, p.display_name, p.color, p.role, COUNT(s.token)
 		 FROM participant p LEFT JOIN session s ON s.participant_id = p.id
 		 WHERE p.room_id = ?
-		 GROUP BY p.id, p.display_name, p.color, p.role, p.created_at
-		 ORDER BY p.created_at ASC`, roomID,
+		 GROUP BY p.id, p.display_name, p.color, p.role, p.created_at, p.rowid
+		 ORDER BY p.created_at ASC, p.rowid ASC`, roomID,
 	)
 	if err != nil {
 		return nil, err

@@ -333,6 +333,97 @@ describe('RoomClient', () => {
 		expect(client.scene?.id).toBe('s2');
 		expect(client.tokens.map((t) => t.id)).toEqual(['t9']);
 		expect(client.fogChunks).toEqual([]);
+		// The room moved, not just this browser.
+		expect(client.activeSceneId).toBe('s2');
+	});
+
+	// The other half of that pair: the same full picture, and the table
+	// left exactly where it was. Getting this wrong in either direction is
+	// the whole feature — a private look that moves the room, or a reveal
+	// that doesn't.
+	it('puts a scene on screen on scene.viewed without moving the table', () => {
+		const { client, socket } = connectedClient();
+		socket.emit({
+			type: 'state.sync',
+			payload: {
+				room: { slug: 'abc123', name: 'Room', activeSceneId: 's1' },
+				you: { participantId: 'p1', displayName: 'A', role: 'player' },
+				scenes: [{ id: 's1', name: 'Tavern' }],
+				scene: { id: 's1', name: 'Tavern' },
+				tokens: [{ id: 't1' }]
+			}
+		});
+
+		socket.emit({
+			type: 'scene.viewed',
+			payload: { scene: { id: 's2', name: 'Dungeon' }, tokens: [{ id: 't9' }] }
+		});
+
+		expect(client.scene?.id).toBe('s2');
+		expect(client.tokens.map((t) => t.id)).toEqual(['t9']);
+		expect(client.activeSceneId).toBe('s1');
+		// A scene arriving this way is new to a client that connected before
+		// it existed, so the picker has to learn about it too.
+		expect(client.scenes.map((sc) => sc.id)).toEqual(['s1', 's2']);
+	});
+
+	it('sends scene.view for a private look and scene.setActive for the reveal', () => {
+		const { client, socket } = connectedClient();
+
+		client.viewScene('s2');
+		client.moveRoomToScene('s2');
+
+		expect(socket.sent.map((raw) => JSON.parse(raw))).toEqual([
+			{ type: 'scene.view', payload: { sceneId: 's2' } },
+			{ type: 'scene.setActive', payload: { sceneId: 's2' } }
+		]);
+	});
+
+	// The room's own scene can't be deleted, but the one this browser
+	// wandered off to can be — and staying on it would leave a map on
+	// screen the server can no longer answer for.
+	it('goes back to the table when the scene it is looking at is deleted', () => {
+		const { socket } = connectedClient();
+		socket.emit({
+			type: 'state.sync',
+			payload: {
+				room: { slug: 'abc123', name: 'Room', activeSceneId: 's1' },
+				you: { participantId: 'p1', displayName: 'A', role: 'gm' },
+				scenes: [
+					{ id: 's1', name: 'Tavern' },
+					{ id: 's2', name: 'Dungeon' }
+				],
+				scene: { id: 's2', name: 'Dungeon' }
+			}
+		});
+
+		socket.emit({ type: 'scene.deleted', payload: { sceneId: 's2' } });
+
+		expect(JSON.parse(socket.sent.at(-1)!)).toEqual({
+			type: 'scene.view',
+			payload: { sceneId: 's1' }
+		});
+	});
+
+	it('stays put when a scene it is not looking at is deleted', () => {
+		const { client, socket } = connectedClient();
+		socket.emit({
+			type: 'state.sync',
+			payload: {
+				room: { slug: 'abc123', name: 'Room', activeSceneId: 's1' },
+				you: { participantId: 'p1', displayName: 'A', role: 'gm' },
+				scenes: [
+					{ id: 's1', name: 'Tavern' },
+					{ id: 's2', name: 'Dungeon' }
+				],
+				scene: { id: 's1', name: 'Tavern' }
+			}
+		});
+
+		socket.emit({ type: 'scene.deleted', payload: { sceneId: 's2' } });
+
+		expect(client.scene?.id).toBe('s1');
+		expect(socket.sent).toHaveLength(0);
 	});
 
 	it('surfaces error envelopes on the error field', () => {

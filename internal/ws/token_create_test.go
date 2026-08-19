@@ -116,7 +116,7 @@ func TestTokenCreate_DefaultsToOneSquareAndUnowned(t *testing.T) {
 func TestTokenCreate_RefusesAnOwnerFromAnotherRoom(t *testing.T) {
 	r := newTokenTestRoom(t)
 
-	_, otherGM, err := r.ts.store.CreateRoom("Elsewhere", "Carol", "", "pw")
+	_, otherGM, err := r.ts.store.CreateRoom("Elsewhere", "Carol", "pw")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}

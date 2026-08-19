@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -66,11 +67,11 @@ func TestCreateAsset_DuplicateHashRejected(t *testing.T) {
 func TestRoomLibrary_ScopedPerRoomOverOneSharedAsset(t *testing.T) {
 	s := newTestStore(t)
 
-	roomA, _, err := s.CreateRoom("Room A", "GM", "", "pw")
+	roomA, _, err := s.CreateRoom("Room A", "GM", "pw")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
-	roomB, _, err := s.CreateRoom("Room B", "GM", "", "pw")
+	roomB, _, err := s.CreateRoom("Room B", "GM", "pw")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -152,7 +153,7 @@ func TestRoomLibrary_ScopedPerRoomOverOneSharedAsset(t *testing.T) {
 func TestAddAssetToRoom_IsIdempotent(t *testing.T) {
 	s := newTestStore(t)
 
-	room, _, err := s.CreateRoom("Room", "GM", "", "pw")
+	room, _, err := s.CreateRoom("Room", "GM", "pw")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -183,7 +184,7 @@ func TestAddAssetToRoom_IsIdempotent(t *testing.T) {
 func TestAddAssetToRoom_KeepsExistingAttributionWhenNoneGiven(t *testing.T) {
 	s := newTestStore(t)
 
-	room, _, err := s.CreateRoom("Room", "GM", "", "pw")
+	room, _, err := s.CreateRoom("Room", "GM", "pw")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -223,7 +224,7 @@ func TestAddAssetToRoom_KeepsExistingAttributionWhenNoneGiven(t *testing.T) {
 func TestListRoomAssets_NewestFirst(t *testing.T) {
 	s := newTestStore(t)
 
-	room, _, err := s.CreateRoom("Room", "GM", "", "pw")
+	room, _, err := s.CreateRoom("Room", "GM", "pw")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
@@ -244,11 +245,114 @@ func TestListRoomAssets_NewestFirst(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListRoomAssets: %v", err)
 	}
-	if len(library) != 3 {
-		t.Fatalf("library has %d entries, want 3", len(library))
+	// The whole order, not just the head: three assets added in one pass
+	// share an added_at exactly — time.Now() is about millisecond-grained
+	// on Windows — so this is the case that used to be decided by a random
+	// tie-break and fail three runs in ten. Deliberately no sleep between
+	// the adds above: adding several files in one go is what the assets
+	// page does, and pacing the test would test something nobody does.
+	got := make([]string, len(library))
+	for i, la := range library {
+		got[i] = la.ID
 	}
-	// What you just added is what you're most likely reaching for.
-	if library[0].ID != ids[2] {
-		t.Fatal("expected the most recently added asset first")
+	want := []string{ids[2], ids[1], ids[0]}
+	if !slices.Equal(got, want) {
+		t.Fatalf("library order = %v, want newest first %v", got, want)
+	}
+}
+
+// Removing an entry and adding another must still leave the new one on
+// top. Worth its own test because the ordering is by rowid, and SQLite
+// reuses the rowid freed by deleting the newest row — the reuse is
+// always above everything still there, which is the property this
+// depends on.
+func TestListRoomAssets_NewestFirstAfterARemoval(t *testing.T) {
+	s := newTestStore(t)
+
+	room, _, err := s.CreateRoom("Room", "GM", "pw")
+	if err != nil {
+		t.Fatalf("CreateRoom: %v", err)
+	}
+
+	var ids []string
+	for i, hash := range []string{"h1", "h2", "h3"} {
+		asset, err := s.CreateAsset(hash, "a.webp", "image/webp", int64(i+1))
+		if err != nil {
+			t.Fatalf("CreateAsset: %v", err)
+		}
+		if err := s.AddAssetToRoom(room.ID, asset.ID, "", "", "", nil); err != nil {
+			t.Fatalf("AddAssetToRoom: %v", err)
+		}
+		ids = append(ids, asset.ID)
+	}
+
+	// Take the newest back out, which is what frees its rowid.
+	if err := s.RemoveAssetFromRoom(room.ID, ids[2]); err != nil {
+		t.Fatalf("RemoveAssetFromRoom: %v", err)
+	}
+
+	fourth, err := s.CreateAsset("h4", "a.webp", "image/webp", 4)
+	if err != nil {
+		t.Fatalf("CreateAsset: %v", err)
+	}
+	if err := s.AddAssetToRoom(room.ID, fourth.ID, "", "", "", nil); err != nil {
+		t.Fatalf("AddAssetToRoom: %v", err)
+	}
+
+	library, err := s.ListRoomAssets(room.ID)
+	if err != nil {
+		t.Fatalf("ListRoomAssets: %v", err)
+	}
+	got := make([]string, len(library))
+	for i, la := range library {
+		got[i] = la.ID
+	}
+	want := []string{fourth.ID, ids[1], ids[0]}
+	if !slices.Equal(got, want) {
+		t.Fatalf("library order = %v, want the re-added one first %v", got, want)
+	}
+}
+
+// Re-adding bytes a room already has updates the entry in place rather
+// than promoting it: the upsert doesn't restamp when it landed, and the
+// rowid it is ordered by doesn't move on an update either. Two halves of
+// one answer, and this is what fails if they ever stop agreeing.
+func TestListRoomAssets_ReAddingKeepsAnEntryWhereItWas(t *testing.T) {
+	s := newTestStore(t)
+
+	room, _, err := s.CreateRoom("Room", "GM", "pw")
+	if err != nil {
+		t.Fatalf("CreateRoom: %v", err)
+	}
+
+	var ids []string
+	for i, hash := range []string{"h1", "h2"} {
+		asset, err := s.CreateAsset(hash, "a.webp", "image/webp", int64(i+1))
+		if err != nil {
+			t.Fatalf("CreateAsset: %v", err)
+		}
+		if err := s.AddAssetToRoom(room.ID, asset.ID, "", "", "", nil); err != nil {
+			t.Fatalf("AddAssetToRoom: %v", err)
+		}
+		ids = append(ids, asset.ID)
+	}
+
+	// The older of the two, added again under a new name.
+	if err := s.AddAssetToRoom(room.ID, ids[0], "Renamed", "", "", nil); err != nil {
+		t.Fatalf("AddAssetToRoom (again): %v", err)
+	}
+
+	library, err := s.ListRoomAssets(room.ID)
+	if err != nil {
+		t.Fatalf("ListRoomAssets: %v", err)
+	}
+	if len(library) != 2 {
+		t.Fatalf("library has %d entries, want 2 — re-adding must not make a second", len(library))
+	}
+	if library[0].ID != ids[1] {
+		t.Fatal("re-adding an entry moved it to the top; it should stay where it was")
+	}
+	if library[1].Name != "Renamed" {
+		t.Fatalf("name = %q, want the re-add to have renamed it", library[1].Name)
 	}
 }

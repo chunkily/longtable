@@ -327,6 +327,31 @@ func TestParticipantSetColor_ChangesOnlyTheCallersOwnSeat(t *testing.T) {
 	}
 }
 
+// The GM has no colour to change: theirs is a fixed black decided where
+// it's drawn. Refused rather than stored and ignored, so nothing can end
+// up in that row for a later reader to believe.
+func TestParticipantSetColor_RefusesTheGM(t *testing.T) {
+	r := newTokenTestRoom(t)
+
+	client := r.ts.connect(t, r.room.Slug, r.gm.SessionToken)
+	client.readEnvelope(t) // state.sync
+
+	client.send(t, "participant.setColor", map[string]any{"color": "pink"})
+	if env := client.readEnvelope(t); env.Type != "error" {
+		t.Fatalf("type = %q, want error — a GM's colour is not theirs to set", env.Type)
+	}
+
+	participants, err := r.ts.store.ListParticipantsForRoom(r.room.ID)
+	if err != nil {
+		t.Fatalf("ListParticipantsForRoom: %v", err)
+	}
+	for _, p := range participants {
+		if p.ID == r.gm.ID && p.Color != "" {
+			t.Fatalf("stored GM colour = %q, want none", p.Color)
+		}
+	}
+}
+
 func TestParticipantSetColor_RefusesOneOutsideThePalette(t *testing.T) {
 	r := newTokenTestRoom(t)
 

@@ -60,3 +60,10 @@ It is not on a popover any more, and that isn't a change of taste: a bits-ui pop
 a dialog comes out unpositioned, transparent and under the dialog's overlay, while staying in the
 accessibility tree — see the note in the other item, and read it before putting anything else on a
 popover inside a dialog.
+
+## Update 2026-08-19 — not the GM's to change
+
+The palette at the foot of the `Seats` dialog is a Player's. A GM has no colour to change — theirs
+is a fixed black, and `participant.setColor` refuses them — so that block simply isn't rendered
+for them, and the rail's swatch is a plain dot rather than the button that opens it. See
+[gm-color-is-fixed-black](gm-color-is-fixed-black.md).

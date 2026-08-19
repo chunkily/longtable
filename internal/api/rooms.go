@@ -51,10 +51,12 @@ func rejectUnknownColor(w http.ResponseWriter, color string) bool {
 	return true
 }
 
+// No colour, here or on gmLoginRequest. A GM seat is black, decided by
+// the role when it's drawn rather than stored — so there is nothing for a
+// client to send, and an empty key is what the seat keeps.
 type createRoomRequest struct {
 	RoomName string `json:"roomName"`
 	GMName   string `json:"gmName"`
-	GMColor  string `json:"gmColor"`
 	Password string `json:"password"`
 }
 
@@ -97,11 +99,7 @@ func (srv *Server) createRoom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if rejectUnknownColor(w, req.GMColor) {
-		return
-	}
-
-	room, participant, err := srv.store.CreateRoom(req.RoomName, req.GMName, req.GMColor, req.Password)
+	room, participant, err := srv.store.CreateRoom(req.RoomName, req.GMName, req.Password)
 	if err != nil {
 		slog.Error("api: create room failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to create room")
@@ -250,7 +248,6 @@ func (srv *Server) joinRoom(w http.ResponseWriter, r *http.Request) {
 
 type gmLoginRequest struct {
 	DisplayName string `json:"displayName"`
-	Color       string `json:"color"`
 	Password    string `json:"password"`
 }
 
@@ -277,11 +274,7 @@ func (srv *Server) gmLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if rejectUnknownColor(w, req.Color) {
-		return
-	}
-
-	participant, err := srv.store.GMLogin(room.ID, req.DisplayName, req.Color)
+	participant, err := srv.store.GMLogin(room.ID, req.DisplayName)
 	if err != nil {
 		slog.Error("api: gm login failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to log in")
