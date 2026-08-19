@@ -176,7 +176,7 @@
 						minlength={MIN_PASSWORD}
 						autocomplete="new-password"
 					/>
-					<Label for="repeat-gm-password">Type it again</Label>
+					<Label for="repeat-gm-password">Confirm password</Label>
 					<Input
 						id="repeat-gm-password"
 						type="password"

@@ -8,6 +8,12 @@
 // when somebody else takes over hosting, or when it's been six months.
 // `-config` names a different file; that is the whole of the command
 // line.
+//
+// The Host's banner isn't here — see cmd/longtable's `set-banner` and
+// `clear-banner`. It's server *state*, changed while the process is
+// running, rather than a setting the process starts with; this package
+// is only ever read once, at startup, which is the wrong shape for
+// something a Host wants to change without a restart.
 package config
 
 import (
@@ -44,7 +50,8 @@ func (d *Duration) UnmarshalText(text []byte) error {
 
 func (d Duration) String() string { return time.Duration(d).String() }
 
-// Config is the whole of a Longtable server's settings.
+// Config is the whole of a Longtable server's settings. The banner
+// isn't one of them — see the package doc for why.
 //
 // Flat keys rather than TOML tables, while there is one group of
 // settings to put in them. The first setting that doesn't belong beside
@@ -56,7 +63,6 @@ type Config struct {
 	Addr           string   `toml:"addr"`
 	Database       string   `toml:"database"`
 	Assets         string   `toml:"assets"`
-	Banner         string   `toml:"banner"`
 	DepartureGrace Duration `toml:"departure_grace"`
 }
 
@@ -73,7 +79,6 @@ func Defaults() Config {
 		Addr:           ":8080",
 		Database:       "longtable.db",
 		Assets:         "longtable-assets",
-		Banner:         "",
 		DepartureGrace: Duration(30 * time.Second),
 	}
 }

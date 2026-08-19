@@ -55,3 +55,16 @@ editable in place.
 `longtable.toml` and the flag is gone. The second half of this paragraph is still true, though —
 the file is read once at startup, so changing the message still means a restart. Live reload was
 deliberately left out of that item and is the note at the foot of it.
+
+**Update, 2026-08-19.** Out of `longtable.toml` and off the command line both, onto
+`longtable set-banner "…"` / `longtable clear-banner`, which write straight to a one-row `banner`
+table in the same SQLite file the running server has open — the way `room reset-password` already
+reaches into a live database. `getNotice` reads that table fresh on every `GET /api/notice` rather
+than holding a value on `Server`, so a Host can change or clear the message while the server keeps
+running and every client picks it up on its next page load. No restart, no signal, no reload logic
+of the kind [host-config-file](host-config-file.md) deliberately left out.
+
+That closes the gap this item's own "Not done" line named: changing the message without
+restarting was always what a config file's reload would have bought, and the actual fix needed no
+reload at all — just moving the value somewhere a second process can already reach without one.
+`addr` and `database` still belong in `longtable.toml`; a banner never really did, and doesn't now.

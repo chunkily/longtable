@@ -28,8 +28,14 @@ func newReader(data []byte) io.Reader { return bytes.NewReader(data) }
 // which is why an absent key takes its default quietly.
 const template = `# Longtable server settings.
 #
-# Everything this server can be told is in this file. Edit it, then
-# restart the server for a change to take effect.
+# Everything this server can be told is in this file, except the banner
+# across the top of every page — that's set and cleared with
+# "longtable set-banner" and "longtable clear-banner" instead, while the
+# server keeps running, rather than edited here and restarted. See
+# docs/hosting.md.
+#
+# Edit anything below, then restart the server for the change to take
+# effect.
 #
 # Longtable wrote this file with its defaults because it didn't find one.
 # It won't write it again. Anything you put here, including your own
@@ -46,12 +52,6 @@ database = "%s"
 
 # The directory uploaded maps and token art are stored in.
 assets = "%s"
-
-# A message shown across the top of every page, to everyone on this
-# server, until each person dismisses it. Change the text and it comes
-# back for the people who dismissed the last one. Empty means no
-# message.
-banner = "%s"
 
 # How long someone may be disconnected before the room is told they
 # left. A phone locking its screen is back well inside 30 seconds and
@@ -81,7 +81,7 @@ func create(path string) error {
 func defaultFileContents() string {
 	d := Defaults()
 	return fmt.Sprintf(template,
-		escape(d.Addr), escape(d.Database), escape(d.Assets), escape(d.Banner), d.DepartureGrace)
+		escape(d.Addr), escape(d.Database), escape(d.Assets), d.DepartureGrace)
 }
 
 // escape makes a value safe inside a TOML basic string. None of the

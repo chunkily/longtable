@@ -22,11 +22,11 @@ test('a GM changes the room password, and the next GM login needs the new one', 
 	// Mismatched halves can't be saved, which is the whole reason there
 	// are two boxes: a typo here isn't recoverable from inside the room.
 	await page.getByLabel('New password').fill(NEW);
-	await page.getByLabel('Type it again').fill('a whole new passwrod');
+	await page.getByLabel('Confirm password').fill('a whole new passwrod');
 	await expect(page.getByText('Both boxes have to match.')).toBeVisible();
 	await expect(page.getByRole('button', { name: 'Save' })).toBeDisabled();
 
-	await page.getByLabel('Type it again').fill(NEW);
+	await page.getByLabel('Confirm password').fill(NEW);
 	await expect(page.getByText('Both boxes have to match.')).toHaveCount(0);
 	await page.getByRole('button', { name: 'Save' }).click();
 	await expect(page.getByText('Password changed')).toBeVisible();

@@ -7,10 +7,17 @@
 //	longtable [serve] [-config longtable.toml]
 //	longtable room list [-config longtable.toml]
 //	longtable room reset-password [-config longtable.toml] <room-code>
+//	longtable set-banner [-config longtable.toml] <message>
+//	longtable clear-banner [-config longtable.toml]
 //
 // Every setting lives in the config file, which the server writes for
-// itself the first time it runs. `-config` is the only flag there is:
-// see internal/config for why.
+// itself the first time it runs. `-config` is the only flag any
+// subcommand takes: see internal/config for why.
+//
+// set-banner and clear-banner are the exception to "settings live in
+// the file" — they change a message across the top of every page while
+// the server keeps running, by writing straight to its database the way
+// room reset-password already does. See docs/hosting.md.
 package main
 
 import (
@@ -36,9 +43,14 @@ func main() {
 	args := os.Args[1:]
 
 	var err error
-	if len(args) > 0 && args[0] == "room" {
+	switch {
+	case len(args) > 0 && args[0] == "room":
 		err = runRoomCommand(args[1:])
-	} else {
+	case len(args) > 0 && args[0] == "set-banner":
+		err = runSetBanner(args[1:])
+	case len(args) > 0 && args[0] == "clear-banner":
+		err = runClearBanner(args[1:])
+	default:
 		if len(args) > 0 && args[0] == "serve" {
 			args = args[1:]
 		}
@@ -87,15 +99,15 @@ func serve(cfg config.Config) error {
 	}
 
 	hub := ws.NewHub(s, time.Duration(cfg.DepartureGrace))
-	router := api.NewRouter(s, hub, blobs, frontend, cfg.Banner)
+	router := api.NewRouter(s, hub, blobs, frontend)
 
 	slog.Info("longtable: listening", "addr", cfg.Addr, "db", cfg.Database, "assets", cfg.Assets)
 	logReachableURLs(cfg.Addr)
 	return http.ListenAndServe(cfg.Addr, router)
 }
 
-// addConfigFlag registers the one flag every subcommand has. There are
-// no others: settings live in the file, and this says which file.
+// addConfigFlag registers the one flag every subcommand has: settings
+// live in the file, and this says which file.
 func addConfigFlag(fset *flag.FlagSet) *string {
 	return fset.String("config", config.DefaultPath, "path to the settings file")
 }
@@ -149,8 +161,8 @@ func logReachableURLs(addr string) {
 }
 
 // openStore opens the database at dbPath and wraps it in a Store,
-// returning a close func that shuts the connection down. Shared by both
-// the serve command and the room admin CLI.
+// returning a close func that shuts the connection down. Shared by
+// serve, the room admin CLI, and set-banner/clear-banner.
 func openStore(dbPath string) (*store.Store, func(), error) {
 	database, err := db.Open(dbPath)
 	if err != nil {

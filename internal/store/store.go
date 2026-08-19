@@ -327,6 +327,26 @@ func (s *Store) createTables() error {
 			deleted_by_participant_id TEXT REFERENCES participant(id) ON DELETE SET NULL
 		);
 		CREATE INDEX IF NOT EXISTS idx_message_room ON message(room_id);
+
+		-- The Host's own announcement, one row rather than one column per
+		-- room: this is server state, not room state, and there is exactly
+		-- one Host. Set and cleared by GetBanner/SetBanner in banner.go —
+		-- through 'longtable set-banner'/'clear-banner', reaching into this
+		-- same file while the server keeps running, the way
+		-- 'room reset-password' already does — rather than through a
+		-- config file or a command-line flag on the server itself, neither
+		-- of which a running process notices changing.
+		--
+		-- No PRIMARY KEY enforcing a single row: TestSchema_HasNoCheckConstraints
+		-- rules out a CHECK, and nothing else needs one. The row is seeded
+		-- once, right below, so every later SetBanner is a plain UPDATE
+		-- rather than an upsert that could race between the server and a
+		-- CLI invocation opening this file at the same moment.
+		CREATE TABLE IF NOT EXISTS banner (
+			message TEXT NOT NULL DEFAULT ''
+		);
+		INSERT INTO banner (message)
+		SELECT '' WHERE NOT EXISTS (SELECT 1 FROM banner);
 	`)
 	return err
 }

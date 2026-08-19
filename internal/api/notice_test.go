@@ -19,7 +19,11 @@ import (
 // joined anything — so what it must not do is say anything about the
 // server beyond the message the Host typed.
 
-func noticeServer(t *testing.T, notice string) *httptest.Server {
+// noticeServer returns a running server and the store behind it, so a
+// test can call SetBanner directly the way `longtable set-banner` does
+// — against the same database, without restarting anything — rather
+// than baking a fixed notice into the router at construction time.
+func noticeServer(t *testing.T) (*httptest.Server, *store.Store) {
 	t.Helper()
 
 	sqlDB, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
@@ -37,9 +41,9 @@ func noticeServer(t *testing.T, notice string) *httptest.Server {
 		t.Fatalf("new blobstore: %v", err)
 	}
 
-	srv := httptest.NewServer(NewRouter(s, ws.NewHub(s, ws.DefaultDepartureGrace), blobs, os.DirFS(t.TempDir()), notice))
+	srv := httptest.NewServer(NewRouter(s, ws.NewHub(s, ws.DefaultDepartureGrace), blobs, os.DirFS(t.TempDir())))
 	t.Cleanup(srv.Close)
-	return srv
+	return srv, s
 }
 
 func readNotice(t *testing.T, srv *httptest.Server) string {
@@ -64,7 +68,10 @@ func readNotice(t *testing.T, srv *httptest.Server) string {
 }
 
 func TestNotice_ServesWhatTheHostSet(t *testing.T) {
-	srv := noticeServer(t, "Back up at 9pm")
+	srv, s := noticeServer(t)
+	if err := s.SetBanner("Back up at 9pm"); err != nil {
+		t.Fatalf("SetBanner: %v", err)
+	}
 
 	if got := readNotice(t, srv); got != "Back up at 9pm" {
 		t.Fatalf("notice = %q, want the Host's message", got)
@@ -75,9 +82,36 @@ func TestNotice_ServesWhatTheHostSet(t *testing.T) {
 // every page load, and a 404 for the normal state would have every Host
 // reporting a bug from their browser console.
 func TestNotice_AnsweringEmptyIsNotAnError(t *testing.T) {
-	srv := noticeServer(t, "")
+	srv, _ := noticeServer(t)
 
 	if got := readNotice(t, srv); got != "" {
 		t.Fatalf("notice = %q, want empty", got)
+	}
+}
+
+// The reason getNotice reads the store on every request instead of
+// holding a value: `longtable set-banner`/`clear-banner` write to the
+// database of a server that is already running, and every later request
+// has to see the change without anyone restarting anything. One server,
+// never restarted, three different answers.
+func TestNotice_ChangesWithoutRestartingTheServer(t *testing.T) {
+	srv, s := noticeServer(t)
+
+	if got := readNotice(t, srv); got != "" {
+		t.Fatalf("notice = %q, want empty before anything is set", got)
+	}
+
+	if err := s.SetBanner("Maintenance 19 Aug 8-9pm EST"); err != nil {
+		t.Fatalf("SetBanner: %v", err)
+	}
+	if got := readNotice(t, srv); got != "Maintenance 19 Aug 8-9pm EST" {
+		t.Fatalf("notice = %q, want the message just set", got)
+	}
+
+	if err := s.SetBanner(""); err != nil {
+		t.Fatalf(`SetBanner(""): %v`, err)
+	}
+	if got := readNotice(t, srv); got != "" {
+		t.Fatalf("notice = %q, want empty after clearing", got)
 	}
 }

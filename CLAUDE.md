@@ -12,10 +12,10 @@ architecture and current state live here instead**, and keeping them true is par
 
 | Path | What lives there |
 | --- | --- |
-| `cmd/longtable/` | entrypoint: `serve` (default) plus a `room list` / `room reset-password` admin CLI. Every subcommand takes `-config` and nothing else — settings live in the file, including the database path the room CLI uses to find the same database the server has open |
-| `internal/api/` | HTTP routes: create/join room, GM login, asset upload + serving + per-room library listing, health check, the Host's banner (`GET /api/notice`), `GET /ws` upgrade, SPA fallback for the embedded frontend |
+| `cmd/longtable/` | entrypoint: `serve` (default), a `room list` / `room reset-password` admin CLI, and `set-banner` / `clear-banner`. Every subcommand takes `-config` and finds the database through it — `room` and the banner commands reach into the same file a running `serve` has open, live, rather than a path of their own |
+| `internal/api/` | HTTP routes: create/join room, GM login, asset upload + serving + per-room library listing, health check, the Host's banner (`GET /api/notice`, read fresh from the store on every request), `GET /ws` upgrade, SPA fallback for the embedded frontend |
 | `internal/ws/` | the real-time hub and the authority on room state — command/event protocol, permission checks, broadcast |
-| `internal/store/` | SQLite schema and every typed query (rooms, participants, scenes, tokens, fog, drawings, chat). `store.go` holds the `CREATE TABLE`s, plus `addMissingColumns` — the only way a column reaches a database that already exists, since `CREATE TABLE IF NOT EXISTS` won't. **No `CHECK` constraints**: a value set that can grow has to live in Go, and `TestSchema_HasNoCheckConstraints` enforces it. `fog.go` stores the *hidden* cells packed 32 to an integer — read its doc comment before touching fog anywhere |
+| `internal/store/` | SQLite schema and every typed query (rooms, participants, scenes, tokens, fog, drawings, chat, the Host's banner). `store.go` holds the `CREATE TABLE`s, plus `addMissingColumns` — the only way a column reaches a database that already exists, since `CREATE TABLE IF NOT EXISTS` won't. **No `CHECK` constraints**: a value set that can grow has to live in Go, and `TestSchema_HasNoCheckConstraints` enforces it. `fog.go` stores the *hidden* cells packed 32 to an integer — read its doc comment before touching fog anywhere |
 | `internal/imageproc/` | decodes and re-encodes every upload to WebP. Read its doc comment before touching it — the studio-swing trap in there is easy to reintroduce |
 | `internal/blobstore/` | re-encoded images on disk, addressed by content hash so identical uploads share a file |
 | `internal/auth/` | session tokens and bcrypt password hashing. No accounts — identity in a room is a *seat* (a `participant` row), and a device proves it holds one with a `session` token in `localStorage`. See [ADR-0008](planning/decisions/0008-seats-and-sessions.md) |
@@ -305,14 +305,20 @@ the line the typo is on, because the failure a config file invents is an edit th
 nothing. A key that's simply absent takes its default, which is what lets a later version add one
 without breaking every file already out there.
 
-**The Host's two settings that reach a room** are `banner` and `departure_grace`. The banner puts
-a message across the top of every page for everyone on the server, dismissable per browser and
-keyed by its own text, so changing it brings it back for people who dismissed the last one. A Host
-runs the server and needn't be at any table on it (`planning/roles.md`), which is why it's a
-setting rather than a screen. `departure_grace` is the same shape of decision: how long a dropped
+**`departure_grace` is the one persisted setting that reaches a room.** How long a dropped
 connection has to come back before the room is told, where the right answer is the hall's wifi
-rather than ours. Neither is re-read while the server is up — changing either means a restart, and
+rather than ours. It isn't re-read while the server is up — changing it means a restart, and
 `planning/backlog/host-config-file.md` records why live reload was left out.
+
+**The banner is deliberately not in that file.** `longtable set-banner "…"` and
+`longtable clear-banner` write straight to the running server's own database — the same one
+`room reset-password` already reaches into — rather than to `longtable.toml`, so a Host changes or
+clears the message on a server that's already up, and `GET /api/notice` (`internal/api/notice.go`)
+reads it fresh on every request rather than holding a value anywhere. It's dismissable per browser
+and keyed by its own text, so changing it brings it back for people who dismissed the last one. A
+Host runs the server and needn't be at any table on it (`planning/roles.md`), which is why it's a
+command rather than a screen — and a database row rather than a config-file key, since a config
+file is read once at startup and a Host wants this one changed without a restart.
 
 Known gaps, which is also roughly the queue: nothing rolls initiative for you — the tracker takes
 the number and `/roll 1d20+2` in chat is where it comes from; `Manage room` holds the

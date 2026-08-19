@@ -55,7 +55,7 @@ func TestLoadOrCreate_TheGeneratedFileExplainsEverySetting(t *testing.T) {
 		t.Fatalf("read: %v", err)
 	}
 	contents := string(data)
-	for _, key := range []string{"addr", "database", "assets", "banner", "departure_grace"} {
+	for _, key := range []string{"addr", "database", "assets", "departure_grace"} {
 		if !strings.Contains(contents, key+" = ") {
 			t.Errorf("generated file has no %q setting", key)
 		}
@@ -137,20 +137,27 @@ func TestLoad_RefusesWhatItCannotRun(t *testing.T) {
 // zero values — which is what lets a later version add one without
 // breaking every file already out there.
 func TestLoad_ReadsWhatIsThereAndDefaultsTheRest(t *testing.T) {
-	path := write(t, "banner = \"back at 9\"\ndeparture_grace = \"2m\"\n")
+	path := write(t, "departure_grace = \"2m\"\n")
 
 	cfg, err := Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
-	}
-	if cfg.Banner != "back at 9" {
-		t.Errorf("banner = %q", cfg.Banner)
 	}
 	if time.Duration(cfg.DepartureGrace) != 2*time.Minute {
 		t.Errorf("departure_grace = %s, want 2m", cfg.DepartureGrace)
 	}
 	if cfg.Addr != Defaults().Addr || cfg.Assets != Defaults().Assets {
 		t.Errorf("an unmentioned setting lost its default: %+v", cfg)
+	}
+}
+
+// banner used to be a file setting and moved to a flag before anything
+// shipped (see cmd/longtable) — so a file that still has the old key
+// fails exactly like any other typo, which is the point of
+// DisallowUnknownFields rather than a special case of it.
+func TestLoad_RefusesTheOldBannerKey(t *testing.T) {
+	if _, err := Load(write(t, "banner = \"back at 9\"\n")); err == nil {
+		t.Fatal("a file still carrying the removed banner key was accepted")
 	}
 }
 

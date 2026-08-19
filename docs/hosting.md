@@ -39,8 +39,7 @@ share: check it's actually on the network.
 
 The first time you run Longtable it writes a file called `longtable.toml` next
 to itself, filled with its defaults and a comment explaining each one. Edit that
-file and restart the server to change a setting. Nothing else configures the
-server: there are no options on the command line.
+file and restart the server to change a setting.
 
 Longtable writes that file once. It never rewrites it, so your own comments and
 layout stay as you left them.
@@ -50,7 +49,6 @@ layout stay as you left them.
 | `addr`            | `":8080"`            | The address to listen on. `"127.0.0.1:8080"` keeps the server to this machine. |
 | `database`        | `"longtable.db"`     | Where every room and everything in it is stored. This is the file to back up.  |
 | `assets`          | `"longtable-assets"` | The directory uploaded maps and token art go in.                               |
-| `banner`          | `""`                 | A message shown to everyone on this server. See below.                         |
 | `departure_grace` | `"30s"`              | How long someone may be disconnected before the room is told they left.        |
 
 Run a second server on the same machine by giving it its own file:
@@ -66,16 +64,8 @@ defaults.
 A setting Longtable doesn't recognise stops it starting, and it prints the line
 your typo is on. A setting you leave out takes its default.
 
-### A message for everyone on the server
-
-`banner` puts a line across the top of every page, in every room, until each
-person dismisses it. Use it for your own announcements:
-
-```toml
-banner = "Server going down for backup at 9pm"
-```
-
-Change the text and it comes back for the people who dismissed the last one.
+One setting isn't in this file: see **A message for everyone on the server**,
+below.
 
 ### Players dropping in and out
 
@@ -90,6 +80,30 @@ departure_grace = "2m"
 ```
 
 A player who closes their laptop still shows as connected until the wait is up.
+
+## A message for everyone on the server
+
+Put a line across the top of every page, in every room, until each person
+dismisses it:
+
+```bash
+longtable set-banner "Maintenance 19 Aug 8-9pm EST"
+```
+
+Take it down again with:
+
+```bash
+longtable clear-banner
+```
+
+Both work while the server is running. Nothing needs restarting, and the
+change reaches everyone the next time their page asks for it.
+
+Run them from the folder holding your `longtable.toml`, or add `-config
+path/to/longtable.toml`.
+
+Change the message and it comes back for anyone who already dismissed the
+last one.
 
 ## Getting a GM back into their room
 

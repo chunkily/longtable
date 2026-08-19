@@ -59,3 +59,16 @@ paragraph wanted for the banner. Out of scope on the GM's call, and it isn't fre
 has to be chosen (a signal, or watching the file) and half these settings can't change under a
 running server anyway: `addr` is bound and `database` is open. `banner` and `departure_grace` are
 the two that could, which is the shape a future item should start from.
+
+## Update, 2026-08-19 — banner moved back out
+
+This item's own opening paragraph argued for absorbing `-banner` on the reasoning that a
+re-readable file is what would let a Host edit the message without restarting. That reload never
+got built — the note directly above says so — and it turned out to be the wrong fix for the wrong
+layer anyway: `longtable set-banner`/`clear-banner` now write straight to the database instead,
+which needs no reload logic because the server was never holding a stale copy to begin with — see
+[host-banner-message](host-banner-message.md).
+
+`longtable.toml` now holds `addr`, `database`, `assets` and `departure_grace`. Everything else
+above — the strict unknown-key error, the once-written template, `-config`'s two behaviours —
+is unchanged and still describes the file as it stands.
