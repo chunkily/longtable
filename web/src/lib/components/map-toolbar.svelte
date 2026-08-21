@@ -58,35 +58,52 @@
 		{ value: 'hand', label: 'Hand', title: 'Pan the map and select tokens', icon: Hand },
 		{ value: 'draw', label: 'Draw', title: 'Draw on the map, and erase', icon: Pen },
 		{ value: 'measure', label: 'Measure', title: 'Measure distances and place areas', icon: Ruler },
-		{ value: 'fog', label: 'Fog', title: 'Reveal and hide the map', icon: Cloud },
-		{ value: 'ping', label: 'Ping', title: 'Ping the map', icon: MapPin }
+		{ value: 'ping', label: 'Ping', title: 'Ping the map', icon: MapPin },
+		{ value: 'fog', label: 'Fog', title: 'Reveal and hide the map', icon: Cloud }
 	];
 
-	// Fog is the GM's alone, as it always has been — the family is hidden
-	// outright rather than shown disabled, since a Player has nothing to
+	// Everyone's tools, then the GM's — a permission split rather than the
+	// gesture grouping above, which is why fog moved to the end of
+	// FAMILIES instead of sitting between measure and ping. Fog is hidden
+	// outright for a Player rather than shown disabled: there's nothing to
 	// gain from knowing the row is one shorter for them.
-	const families = $derived(FAMILIES.filter((f) => f.value !== 'fog' || isGM));
+	const playerFamilies = $derived(FAMILIES.filter((f) => f.value !== 'fog'));
+	const gmFamilies = $derived(isGM ? FAMILIES.filter((f) => f.value === 'fog') : []);
 </script>
+
+{#snippet familyButton(family: (typeof FAMILIES)[number])}
+	<Button
+		variant={activeFamily === family.value ? 'default' : 'ghost'}
+		size="sm"
+		aria-label={family.label}
+		aria-pressed={activeFamily === family.value}
+		title={family.title}
+		onclick={() => pickFamily(family.value)}
+	>
+		<family.icon class="h-4 w-4" />
+	</Button>
+{/snippet}
 
 <div class="flex flex-wrap items-start gap-2">
 	<div class="flex items-center gap-1 rounded-md border bg-background/95 p-1 shadow-sm">
-		{#each families as family (family.value)}
-			<Button
-				variant={activeFamily === family.value ? 'default' : 'ghost'}
-				size="sm"
-				aria-label={family.label}
-				aria-pressed={activeFamily === family.value}
-				title={family.title}
-				onclick={() => pickFamily(family.value)}
-			>
-				<family.icon class="h-4 w-4" />
-			</Button>
+		{#each playerFamilies as family (family.value)}
+			{@render familyButton(family)}
 		{/each}
 		<!-- New token opens a dialog rather than entering a mode, so it
-		     isn't a tool and doesn't get a family — but it's wanted close
-		     to hand, which is why it sits on this row anyway. -->
+		     isn't a tool and doesn't get a family — but it's available to
+		     everyone, so it folds into this cluster rather than earning a
+		     divider of its own. -->
 		{#if newToken}
 			<div class="ml-1 border-l pl-1">{@render newToken()}</div>
+		{/if}
+		<!-- Everything past this divider is the GM's alone; everything
+		     before it is every Room Member's. -->
+		{#if gmFamilies.length > 0}
+			<div class="ml-1 flex items-center gap-1 border-l pl-1">
+				{#each gmFamilies as family (family.value)}
+					{@render familyButton(family)}
+				{/each}
+			</div>
 		{/if}
 	</div>
 

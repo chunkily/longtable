@@ -233,8 +233,12 @@ during someone's window would never get the arrival that corrected it.
 
 **The room page is built around the map**: the canvas fills the window, with no page padding, no
 card and no header. The toolbar floats over its top-left as five tool *families* — hand, draw,
-measure, fog, ping — with `New token` alongside and a contextual strip below carrying only the
+measure, ping, fog — with `New token` alongside and a contextual strip below carrying only the
 active family's variants and settings (the eraser is inside draw; the templates inside measure).
+The row is two divided clusters rather than one flat line: everything a Player can use (the first
+four families plus New token) on the left, and GM-only tools (fog today, room for more later) past
+a second divider on the right — the split is about permission, not gesture, which is why fog sits
+last rather than between measure and ping.
 Everything else lives in a fixed full-height rail down the right: the selected token at the top
 (a plain shaded block holding its height when nothing is selected, so the rail doesn't jump),
 session info under it (room name, who you are, the socket status, and — only while this browser
