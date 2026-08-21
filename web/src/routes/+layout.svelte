@@ -30,7 +30,11 @@
      library adds its FOUC script through <svelte:head>, and a script
      inserted that way never executes. app.html carries the real one. -->
 <ModeWatcher modeStorageKey="longtable:theme" disableHeadScriptInjection />
-<Toaster />
+<!-- Bottom-centre rather than sonner's default bottom-right: that corner
+     is where the room's own menu icon sits (the foot of the side rail)
+     and where the home page's theme pill floats, so a toast landing
+     there covered whichever of those a click had just reached for. -->
+<Toaster position="bottom-center" />
 <!-- Above every page rather than inside one: it is the Host's, not a
      room's, and it is shown to people who have never joined anything.
 
