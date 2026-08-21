@@ -33,13 +33,17 @@ type Room struct {
 	// ADR-0007 is the reason it stays the default rather than becoming
 	// one.
 	OwnerOnlyMovement bool
-	CreatedAt         string
+	// Optional, separate from GMPasswordHash: this one gates joining as a
+	// Player rather than signing into the GM seat. Empty means unset — a
+	// link alone is enough to get in, same as before this existed.
+	JoinPasswordHash string
+	CreatedAt        string
 }
 
 // roomColumns is the select list every room read shares, so a new column
 // can't be added to one query and forgotten in another — which is
 // exactly how a setting ends up reading as its zero value on one path.
-const roomColumns = `id, slug, name, gm_password_hash, active_scene_id, owner_only_movement, created_at`
+const roomColumns = `id, slug, name, gm_password_hash, active_scene_id, owner_only_movement, join_password_hash, created_at`
 
 // CreateRoom creates a room and its founding GM participant in one
 // transaction, retrying on the rare slug collision.
@@ -119,7 +123,8 @@ func (s *Store) GetRoomByID(id string) (Room, error) {
 func (s *Store) scanRoom(row *sql.Row) (Room, error) {
 	var r Room
 	if err := row.Scan(
-		&r.ID, &r.Slug, &r.Name, &r.GMPasswordHash, &r.ActiveSceneID, &r.OwnerOnlyMovement, &r.CreatedAt,
+		&r.ID, &r.Slug, &r.Name, &r.GMPasswordHash, &r.ActiveSceneID, &r.OwnerOnlyMovement,
+		&r.JoinPasswordHash, &r.CreatedAt,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Room{}, ErrNotFound
@@ -145,7 +150,8 @@ func (s *Store) ListRooms() ([]Room, error) {
 	for rows.Next() {
 		var r Room
 		if err := rows.Scan(
-			&r.ID, &r.Slug, &r.Name, &r.GMPasswordHash, &r.ActiveSceneID, &r.OwnerOnlyMovement, &r.CreatedAt,
+			&r.ID, &r.Slug, &r.Name, &r.GMPasswordHash, &r.ActiveSceneID, &r.OwnerOnlyMovement,
+			&r.JoinPasswordHash, &r.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -157,6 +163,23 @@ func (s *Store) ListRooms() ([]Room, error) {
 // SetOwnerOnlyMovement turns the room's movement lock on or off.
 func (s *Store) SetOwnerOnlyMovement(roomID string, ownerOnly bool) error {
 	_, err := s.db.Exec(`UPDATE room SET owner_only_movement = ? WHERE id = ?`, ownerOnly, roomID)
+	return err
+}
+
+// SetJoinPassword sets, changes or clears the room's join password.
+// Empty clears it back to "anyone with the link may join" rather than
+// being rejected as too short — unlike the GM password, unset is a valid
+// state for this one rather than something to type your way out of.
+func (s *Store) SetJoinPassword(roomID, password string) error {
+	hash := ""
+	if password != "" {
+		h, err := auth.HashPassword(password)
+		if err != nil {
+			return fmt.Errorf("hash password: %w", err)
+		}
+		hash = h
+	}
+	_, err := s.db.Exec(`UPDATE room SET join_password_hash = ? WHERE id = ?`, hash, roomID)
 	return err
 }
 

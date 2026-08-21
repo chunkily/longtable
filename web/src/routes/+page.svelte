@@ -46,6 +46,18 @@
 	// The room's first seat, so its colour is picked on the same form as
 	// its name. Nobody else is here yet, so nothing is taken.
 	let password = $state('');
+	// Separate from the GM password above: this one gates joining as a
+	// Player rather than the GM seat, and is optional — the toggle
+	// defaults to "No" the same way a room's own setting does until a GM
+	// changes it, since a room made without touching this control should
+	// behave exactly like one always did. Set here or later from Manage
+	// room; there's no third place this lives.
+	let joinPasswordProtected = $state(false);
+	let joinPassword = $state('');
+	// The server's own rule, mirrored so the button says no before the
+	// round trip does (`minGMPasswordLength` in internal/api/rooms.go).
+	const MIN_PASSWORD = 4;
+	const joinPasswordReady = $derived(!joinPasswordProtected || joinPassword.length >= MIN_PASSWORD);
 	let creating = $state(false);
 
 	onMount(() => {
@@ -72,9 +84,15 @@
 
 	async function handleCreate(event: SubmitEvent) {
 		event.preventDefault();
+		if (!joinPasswordReady) return;
 		creating = true;
 		try {
-			const session = await createRoom(roomName, gmName, password);
+			const session = await createRoom(
+				roomName,
+				gmName,
+				password,
+				joinPasswordProtected ? joinPassword : undefined
+			);
 			saveSession(session);
 			await goto(resolve('/r/[slug]', { slug: session.roomSlug }));
 		} catch (err) {
@@ -256,7 +274,52 @@
 							to play. If you lose it, whoever runs the server can reset it.
 						</p>
 					</div>
-					<Button type="submit" disabled={creating} class="self-start" size="lg">
+					<!-- Separate from the GM password above, and the same toggle
+					     Manage room uses to change it later: a fact on screen
+					     rather than a sentence about what the off state means. -->
+					<div class="flex flex-col gap-2">
+						<Label id="join-password-toggle-label">Password protected?</Label>
+						<div class="flex gap-2" role="group" aria-labelledby="join-password-toggle-label">
+							<Button
+								type="button"
+								class="flex-1"
+								variant={joinPasswordProtected ? 'outline' : 'default'}
+								aria-pressed={!joinPasswordProtected}
+								onclick={() => {
+									joinPasswordProtected = false;
+									joinPassword = '';
+								}}
+							>
+								No
+							</Button>
+							<Button
+								type="button"
+								class="flex-1"
+								variant={joinPasswordProtected ? 'default' : 'outline'}
+								aria-pressed={joinPasswordProtected}
+								onclick={() => (joinPasswordProtected = true)}
+							>
+								Yes
+							</Button>
+						</div>
+						{#if joinPasswordProtected}
+							<Label for="join-password">Join password</Label>
+							<Input
+								id="join-password"
+								type="password"
+								bind:value={joinPassword}
+								minlength={MIN_PASSWORD}
+								required
+							/>
+							<p class="text-xs text-muted-foreground">A Player will need this to join.</p>
+						{/if}
+					</div>
+					<Button
+						type="submit"
+						disabled={creating || !joinPasswordReady}
+						class="self-start"
+						size="lg"
+					>
 						{creating ? 'Creating…' : 'Create room'}
 					</Button>
 				</form>

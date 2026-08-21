@@ -58,6 +58,10 @@ type createRoomRequest struct {
 	RoomName string `json:"roomName"`
 	GMName   string `json:"gmName"`
 	Password string `json:"password"`
+	// Optional, and separate from Password above: this one gates joining
+	// as a Player rather than the GM seat. Empty leaves it unset, same as
+	// a room that never touches this at all.
+	JoinPassword string `json:"joinPassword"`
 }
 
 // minGMPasswordLength is the whole of the password policy, and it is
@@ -98,12 +102,26 @@ func (srv *Server) createRoom(w http.ResponseWriter, r *http.Request) {
 	if rejectShortPassword(w, req.Password) {
 		return
 	}
+	// Checked before creating anything, so a room never exists half
+	// configured — a join password too short to have been accepted on
+	// its own is refused here rather than silently dropped.
+	if req.JoinPassword != "" && rejectShortPassword(w, req.JoinPassword) {
+		return
+	}
 
 	room, participant, err := srv.store.CreateRoom(req.RoomName, req.GMName, req.Password)
 	if err != nil {
 		slog.Error("api: create room failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to create room")
 		return
+	}
+
+	if req.JoinPassword != "" {
+		if err := srv.store.SetJoinPassword(room.ID, req.JoinPassword); err != nil {
+			slog.Error("api: set join password on create failed", "error", err)
+			writeError(w, http.StatusInternalServerError, "failed to create room")
+			return
+		}
 	}
 
 	writeJSON(w, http.StatusCreated, toSessionResponse(room, participant))
@@ -172,7 +190,49 @@ func (srv *Server) listSeats(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"roomName": room.Name,
 		"seats":    out,
+		// Whether the picker needs to ask for a password before joining —
+		// never the password itself. Already the kind of thing this
+		// endpoint tells a stranger with the link (see the type's own
+		// comment), not a new exposure.
+		"joinPasswordRequired": room.JoinPasswordHash != "",
 	})
+}
+
+// acceptsJoinPassword reports whether password is good enough to join
+// room as a Player — trivially true when the room has none set, so a
+// caller never has to branch on that itself.
+func acceptsJoinPassword(room store.Room, password string) bool {
+	return room.JoinPasswordHash == "" || auth.VerifyPassword(room.JoinPasswordHash, password)
+}
+
+type checkJoinPasswordRequest struct {
+	Password string `json:"password"`
+}
+
+// checkJoinPassword answers "is this right?" without joining anything,
+// so the pre-join screen can refuse a wrong password the moment it's
+// typed rather than after a Player has also picked a seat, a colour and
+// a name — all of which `joinRoom` would otherwise discard on a refusal.
+// Unauthenticated like listSeats, for the same reason: it has to answer
+// before there's a session to authenticate.
+func (srv *Server) checkJoinPassword(w http.ResponseWriter, r *http.Request) {
+	room, ok := srv.lookupRoom(w, r.PathValue("slug"))
+	if !ok {
+		return
+	}
+
+	var req checkJoinPasswordRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if !acceptsJoinPassword(room, req.Password) {
+		writeError(w, http.StatusForbidden, "incorrect room password")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 type joinRequest struct {
@@ -182,6 +242,10 @@ type joinRequest struct {
 	// Set to take an existing seat rather than make a new one. Empty is
 	// the "I'm new here" path, which is exactly what joining used to be.
 	ParticipantID string `json:"participantId"`
+	// Checked against the room's join password when one is set. Ignored
+	// otherwise, and never asked of a resuming sessionToken — that device
+	// already proved its seat the last time it joined.
+	JoinPassword string `json:"joinPassword"`
 }
 
 func (srv *Server) joinRoom(w http.ResponseWriter, r *http.Request) {
@@ -203,6 +267,15 @@ func (srv *Server) joinRoom(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, toSessionResponse(room, p))
 			return
 		}
+	}
+
+	// Gates both branches below — taking a seat and making one — but not
+	// the resume above: a device with a sessionToken already proved its
+	// seat, and this password gates joining, not being in the room. A GM
+	// adding or changing it doesn't evict anyone already seated.
+	if !acceptsJoinPassword(room, req.JoinPassword) {
+		writeError(w, http.StatusForbidden, "incorrect room password")
+		return
 	}
 
 	// Taking a seat someone already sat in. No secret and no approval —
@@ -425,6 +498,58 @@ func (srv *Server) setGMPassword(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to change the password")
 		return
 	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type setJoinPasswordRequest struct {
+	Password string `json:"password"`
+}
+
+// setJoinPassword sets, changes or clears the password a Player needs to
+// join this room. GM-only, and independent of the GM password: this one
+// gates joining rather than the GM seat.
+//
+// Empty is accepted rather than rejected by rejectShortPassword — unlike
+// the GM password, which always exists, "no password" is this setting's
+// own valid state, and it's how a GM removes one. The minimum length only
+// applies to an actual password being set.
+//
+// Broadcasts afterward because, unlike the GM password, whether one is
+// set is visible to the room (never the password itself) — the pre-join
+// seat list already has to say so — so a GM's own other tab watching
+// Manage room should see it flip without a reload.
+func (srv *Server) setJoinPassword(w http.ResponseWriter, r *http.Request) {
+	room, ok := srv.lookupRoom(w, r.PathValue("slug"))
+	if !ok {
+		return
+	}
+	if !srv.requireGM(w, r, room) {
+		return
+	}
+
+	var req setJoinPasswordRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Password != "" && rejectShortPassword(w, req.Password) {
+		return
+	}
+
+	if err := srv.store.SetJoinPassword(room.ID, req.Password); err != nil {
+		slog.Error("api: set join password failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to change the password")
+		return
+	}
+
+	room, err := srv.store.GetRoomByID(room.ID)
+	if err != nil {
+		slog.Error("api: lookup room after join password change failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to change the password")
+		return
+	}
+	srv.hub.BroadcastRoomUpdated(r.Context(), room)
 
 	w.WriteHeader(http.StatusNoContent)
 }

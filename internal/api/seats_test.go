@@ -73,8 +73,9 @@ func deleteWithToken(t *testing.T, url, token string) int {
 // boundaries around it: the GM seat, and another room's seats.
 
 type seatsBody struct {
-	RoomName string         `json:"roomName"`
-	Seats    []seatResponse `json:"seats"`
+	RoomName             string         `json:"roomName"`
+	Seats                []seatResponse `json:"seats"`
+	JoinPasswordRequired bool           `json:"joinPasswordRequired"`
 }
 
 func getSeats(t *testing.T, srv *httptest.Server, slug string) seatsBody {

@@ -418,6 +418,18 @@ func (h *Hub) RoomDeleted(ctx context.Context, roomID string) {
 	}
 }
 
+// BroadcastRoomUpdated tells a room about a setting that changed outside
+// the socket protocol — the join password, set over REST like the GM
+// password rather than through a command, because it's a credential
+// rather than table state. Unlike the GM password, whether one is *set*
+// is visible to the room (never the password itself), so a change still
+// needs telling — the same `room.updated` shape room.setOwnerOnlyMovement
+// broadcasts, built here from a room the caller already has rather than
+// re-reading it, since the REST handler already does that in one place.
+func (h *Hub) BroadcastRoomUpdated(ctx context.Context, room store.Room) {
+	h.broadcast(ctx, room.ID, "room.updated", map[string]any{"room": roomPayload(room)})
+}
+
 // broadcast sends an event to every client connected to roomID.
 func (h *Hub) broadcast(ctx context.Context, roomID, eventType string, payload any) {
 	data, err := marshalEnvelope(eventType, payload)

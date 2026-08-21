@@ -235,6 +235,28 @@ they were never told about turning up in a deletion is itself the leak.
 the next setting to land needs no new event and a reloading client sees one shape. It is built
 field by field, like `participantPayload`, so the password hash can't ride along to every client.
 
+The join password (`internal/api/rooms.go`'s `setJoinPassword`, `PUT /api/rooms/{slug}/join-password`)
+is that next setting, and it's set over REST rather than a command — it's a credential like the GM
+password, not table state. But unlike the GM password, whether one is *set* is visible to the room
+(`roomPayload`'s `joinPasswordSet`, never the hash or the password itself — the pre-join seat list
+already has to say so, over `joinPasswordRequired` on `GET /api/rooms/{slug}/seats`), so a change
+still needs telling the room: `Hub.BroadcastRoomUpdated` is the REST handler's way of sending the
+same `room.updated` a command handler would, built from a room it already has rather than needing
+one of its own. `POST /api/rooms/{slug}/join`'s `joinRequest` carries a `joinPassword` field,
+checked against the room's hash before either the seat-claim or the new-seat branch — but not
+before a resuming `sessionToken`, since that device already proved its seat and the setting gates
+joining, not being in the room. `createRoomRequest` carries the same `joinPassword` field, so a GM
+can set it up front rather than opening Manage room straight after — validated and applied after
+the room itself is created, so a room never exists half configured.
+
+`POST /api/rooms/{slug}/join-password/check` answers "is this right?" without joining anything —
+unauthenticated like `listSeats`, for the same reason. It exists because the pre-join screen asks
+the room's password on its own step, before a seat or a name, and a wrong guess there has to be
+refused immediately rather than surfacing only after `joinRoom` discards the rest of what was
+typed. It shares its check (`acceptsJoinPassword`) with `joinRoom`, so the two can't disagree —
+the real join still verifies for itself, since a GM could change the password in the gap between
+the two calls.
+
 `token.move` is open to everyone by default. When the room's `ownerOnlyMovement` is set, a non-GM
 may move only a token they own; the GM is outside it, or turning the lock on would take the
 monsters away from the only person who moves them. `mayMoveToken` loads nothing at all for a GM

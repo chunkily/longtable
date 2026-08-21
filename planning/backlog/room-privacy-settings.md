@@ -1,7 +1,7 @@
 ---
 title: Room join password
 created: 2026-07-29
-status: open
+status: done
 tags: [rooms]
 story: gm-set-room-join-password
 ---
@@ -41,3 +41,51 @@ for: add it there rather than inventing a second place for room settings to live
 ## Related user stories
 
 - [gm-set-room-join-password](../user-stories/gm-set-room-join-password.md)
+
+## What shipped
+
+A nullable-in-spirit `room.join_password_hash` (empty string means unset, migrated in for existing
+databases the same way `owner_only_movement` should have been — see `addedColumns` in
+`internal/store/store.go`), hashed like the GM password rather than compared in plain text, since
+this is the one control meant to survive the link itself leaking. `Store.SetJoinPassword` sets,
+changes or clears it; empty is accepted rather than run through `rejectShortPassword`, since unset
+is this setting's own valid state and not a typo to reject.
+
+Set from `Manage room` (`PUT /api/rooms/{slug}/join-password`, GM-only) in a new section between
+the GM password and Delete room, and from the create-room form too (`createRoomRequest.joinPassword`,
+validated and applied after the room itself exists, so a room never ends up half configured) — the
+same `Password protected?` toggle in both places. `No` doubles as removing a password that's set,
+since there's nothing to type on the way to turning it off, and `Yes` reveals the field to set or
+change one. No confirm box, unlike the GM password: getting this one wrong locks nobody out of
+anything, so there's nothing a second box would be guarding against.
+
+**The password lives on a pre-join step of its own, not a field on the seats screen.** "Which
+chair" and "what's the password" are two different questions, and the join screen already asks
+one at a time everywhere else. It gates both ways of becoming a Player at `POST /api/rooms/{slug}/join` —
+a fresh seat and claiming one already sat in — checked once, before either branch, and skipped
+entirely for a resuming `sessionToken`: the setting gates joining, not being in the room, so a GM
+adding one mid-session doesn't evict anyone already at the table. `GET /api/rooms/{slug}/seats`
+grew a `joinPasswordRequired` boolean (never the password) so the pre-join screen knows to route
+through a password step at all — `role` → `password` → `seats`, skipping straight to `seats` when
+none is required — rather than blending "which chair" and "what's the password" into one screen.
+
+**That step verifies as you type it, rather than waiting for the seat and the name to be filled in
+too.** `POST /api/rooms/{slug}/join-password/check` answers "is this right?" without joining
+anything — unauthenticated like `listSeats`, since it has to answer before there's a session —
+sharing its check (`acceptsJoinPassword`) with `joinRoom` so the two can't disagree. Without it, a
+wrong guess would only surface after a Player had also picked a seat, a colour and typed a name,
+all of which `joinRoom` would then discard on the refusal. The real join still verifies for
+itself rather than trusting the earlier check, since a GM could change the password in the gap
+between the two calls.
+
+Unlike the GM password, whether one is *set* is visible to the room — the seat list already has to
+say so unauthenticated, so it isn't a new exposure — and `roomPayload`'s `joinPasswordSet` carries
+it over `state.sync`/`room.updated` the same way `ownerOnlyMovement` does. The wrinkle: this
+setting is changed over REST rather than a WS command (it's a credential, like the GM password, not
+table state), so there's no command handler already broadcasting the result. `Hub.BroadcastRoomUpdated`
+is the new seam — the REST handler's way of sending the same event a command handler would, so a
+GM's own second tab watching Manage room updates live rather than on reload.
+
+Two pre-existing doc lines said "the room password" meaning the GM password, which stopped being
+unambiguous the moment a second, genuinely different room-scoped password existed — reworded to
+"the GM password" in `CLAUDE.md` rather than left to read as this one.

@@ -63,12 +63,20 @@ func NewRouter(
 	// room whose link the caller already holds, and thin on purpose —
 	// see listSeats.
 	mux.HandleFunc("GET /api/rooms/{slug}/seats", srv.listSeats)
+	// Checked before a Player has picked a seat or typed a name, so a
+	// wrong password is refused immediately rather than after the rest of
+	// the form. Unauthenticated for the same reason listSeats is.
+	mux.HandleFunc("POST /api/rooms/{slug}/join-password/check", srv.checkJoinPassword)
 	mux.HandleFunc("POST /api/rooms/{slug}/seats", srv.createSeat)
 	mux.HandleFunc("DELETE /api/rooms/{slug}/seats/{id}", srv.deleteSeat)
 	// Changing the room's own password, for a GM who is signed in. Named
 	// to match the gm-login it governs, and a PUT because it replaces the
 	// one value rather than adding anything.
 	mux.HandleFunc("PUT /api/rooms/{slug}/gm-password", srv.setGMPassword)
+	// Separate from the GM password above: this one gates joining as a
+	// Player rather than the GM seat. A PUT for the same reason — it
+	// replaces the one value (or clears it) rather than adding anything.
+	mux.HandleFunc("PUT /api/rooms/{slug}/join-password", srv.setJoinPassword)
 	// The one endpoint that ends a room. GM-only, and the only thing in
 	// the app with no undo behind it.
 	mux.HandleFunc("DELETE /api/rooms/{slug}", srv.deleteRoom)

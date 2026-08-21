@@ -280,6 +280,12 @@ export interface RoomSettings {
 	activeSceneId: string | null;
 	/** When set, only a token's owner (and the GM) may move it. */
 	ownerOnlyMovement: boolean;
+	/**
+	 * Whether a join password is currently required to join as a Player.
+	 * Never the password itself — just whether one exists, which the
+	 * pre-join seat list already tells a stranger with the link.
+	 */
+	joinPasswordSet: boolean;
 }
 
 interface StateSyncPayload {
@@ -434,6 +440,8 @@ export class RoomClient {
 	 * the first moments of every session.
 	 */
 	ownerOnlyMovement = $state(false);
+	/** Mirrors `RoomSettings.joinPasswordSet` — never the password itself. */
+	joinPasswordSet = $state(false);
 	you = $state<You | null>(null);
 
 	// Two lists rather than an "online" flag per row, because they come
@@ -1374,6 +1382,7 @@ export class RoomClient {
 				this.roomName = payload.room.name;
 				this.activeSceneId = payload.room.activeSceneId ?? null;
 				this.ownerOnlyMovement = payload.room.ownerOnlyMovement ?? false;
+				this.joinPasswordSet = payload.room.joinPasswordSet ?? false;
 				this.initiative = payload.initiative ?? { ...EMPTY_INITIATIVE };
 				this.you = payload.you;
 				// server returns newest-first; the log reads top-to-bottom.
@@ -1621,6 +1630,7 @@ export class RoomClient {
 				const payload = env.payload as { room: RoomSettings };
 				this.roomName = payload.room.name;
 				this.ownerOnlyMovement = payload.room.ownerOnlyMovement;
+				this.joinPasswordSet = payload.room.joinPasswordSet;
 				break;
 			}
 

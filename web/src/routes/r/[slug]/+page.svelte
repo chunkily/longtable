@@ -6,6 +6,7 @@
 	import { toast } from 'svelte-sonner';
 	import { mode } from 'mode-watcher';
 	import {
+		checkJoinPassword,
 		endSession,
 		gmLogin,
 		isNotFound,
@@ -62,17 +63,31 @@
 	// is which side of the screen you're on. A GM proves the room password
 	// and a Player picks a chair, which share nothing but a name box — so
 	// showing both at once meant every arrival read a form with two thirds
-	// of it addressed to somebody else.
+	// of it addressed to somebody else. A room's own join password, when
+	// one is set, is a question of its own for the same reason: it isn't
+	// "who are you", so it doesn't share a screen with picking a seat.
 	//
 	//   role ─┬─ gm
-	//         └─ seats ── name   ("I'm new here")
+	//         └─ password? ── seats ── name   ("I'm new here")
 	//
 	// Every step but the first can go back, so a wrong turn costs a click
-	// rather than a reload.
-	type JoinStep = 'role' | 'gm' | 'seats' | 'name';
+	// rather than a reload. `password?` is skipped entirely when the room
+	// has no join password set — the "Player" button on `role` goes
+	// straight to `seats` in that case.
+	type JoinStep = 'role' | 'gm' | 'password' | 'seats' | 'name';
 	let step = $state<JoinStep>('role');
 	let displayName = $state('');
 	let password = $state('');
+	// The room's own join password, separate from the GM password above
+	// (which stays in `password`) — checked against the server on its own
+	// step, before a seat or a name is ever asked for, so a wrong guess is
+	// refused immediately rather than after the rest of the form.
+	let joinPassword = $state('');
+	// Set on a wrong password, next to the field it's about rather than in
+	// a toast that takes itself away — see `planning/backlog/say-a-bad-code-is-bad.md`'s
+	// reasoning for the room-code box, which this follows.
+	let joinPasswordError = $state('');
+	let checkingJoinPassword = $state(false);
 	let joining = $state(false);
 
 	// The room's seats, for a device with no stored session. Only the
@@ -80,6 +95,10 @@
 	// through the password on the GM step instead.
 	let seats = $state<Seat[]>([]);
 	let seatsRoomName = $state('');
+	// Whether this room needs a password before anyone may join as a
+	// Player. Never the password itself — just whether the seats step
+	// should ask for one.
+	let joinPasswordRequired = $state(false);
 	// Whether the seat list has come back yet — which the seats step has
 	// to be able to tell apart from "this table has no seats". Offering
 	// "I'm new here" on its own while the answer is still in flight is
@@ -218,6 +237,7 @@
 			.then((res) => {
 				seatsRoomName = res.roomName;
 				seats = res.seats;
+				joinPasswordRequired = res.joinPasswordRequired;
 			})
 			.catch((err) => {
 				// A 404 here is the one failure worth stopping for: there is no
@@ -258,14 +278,33 @@
 		client = c;
 	}
 
-	// Taking a seat someone already sat in. No name to type and no
-	// password: the seat carries the name, and claiming is open by
-	// design (ADR-0007) — what you get back is a session of your own on
-	// a seat that already owns tokens.
+	// The room's own join password, checked on its own step before a seat
+	// or a name is ever asked for. Verifying rather than just stashing it
+	// and finding out later is what lets a wrong guess be refused here,
+	// next to the field, instead of after the rest of the form.
+	async function handlePasswordStep(event: SubmitEvent) {
+		event.preventDefault();
+		checkingJoinPassword = true;
+		joinPasswordError = '';
+		try {
+			await checkJoinPassword(slug, joinPassword);
+			step = 'seats';
+		} catch (err) {
+			joinPasswordError = err instanceof Error ? err.message : 'failed to check the password';
+		} finally {
+			checkingJoinPassword = false;
+		}
+	}
+
+	// Taking a seat someone already sat in. No name to type, and no
+	// password to ask again: the room's own step already checked it. The
+	// seat carries the name, and claiming is open by design (ADR-0007) —
+	// what you get back is a session of your own on a seat that already
+	// owns tokens.
 	async function handleClaimSeat(seat: Seat) {
 		joining = true;
 		try {
-			const s = await joinRoom(slug, { participantId: seat.participantId });
+			const s = await joinRoom(slug, { participantId: seat.participantId, joinPassword });
 			saveSession(s);
 			startSession(s);
 		} catch (err) {
@@ -282,7 +321,7 @@
 			const s =
 				step === 'gm'
 					? await gmLogin(slug, displayName, password)
-					: await joinRoom(slug, { displayName, color: chosenColor });
+					: await joinRoom(slug, { displayName, color: chosenColor, joinPassword });
 			saveSession(s);
 			startSession(s);
 		} catch (err) {
@@ -459,7 +498,13 @@
 					{#if step === 'role'}
 						<p class="text-sm text-muted-foreground">How are you joining this table?</p>
 						<div class="flex gap-2">
-							<Button type="button" class="flex-1" onclick={() => (step = 'seats')}>Player</Button>
+							<Button
+								type="button"
+								class="flex-1"
+								onclick={() => (step = joinPasswordRequired ? 'password' : 'seats')}
+							>
+								Player
+							</Button>
 							<!-- The GM seat is the one exception to open-claim: it's a
 						     role boundary, so it goes through the room password
 						     rather than being a chair anyone can sit in. -->
@@ -472,13 +517,41 @@
 								I'm the GM
 							</Button>
 						</div>
-					{:else if step === 'seats'}
+					{:else if step === 'password'}
 						{@render back('role')}
+						<!-- Its own step rather than a field on the seats screen: it
+					     isn't "who are you", and checked against the server here
+					     so a wrong guess is refused before a seat or a name is ever
+					     asked for, not after. -->
+						<form class="flex flex-col gap-4" onsubmit={handlePasswordStep}>
+							<div class="flex flex-col gap-2">
+								<Label for="join-password">Room password</Label>
+								<Input
+									id="join-password"
+									type="password"
+									bind:value={joinPassword}
+									aria-invalid={joinPasswordError ? 'true' : undefined}
+									oninput={() => (joinPasswordError = '')}
+									autocomplete="current-password"
+									required
+								/>
+							</div>
+							{#if joinPasswordError}
+								<p class="text-sm font-medium text-destructive" role="alert">
+									{joinPasswordError}
+								</p>
+							{/if}
+							<Button type="submit" disabled={checkingJoinPassword}>
+								{checkingJoinPassword ? 'Checking…' : 'Continue'}
+							</Button>
+						</form>
+					{:else if step === 'seats'}
+						{@render back(joinPasswordRequired ? 'password' : 'role')}
 						<!-- Seats come before the name box, because on a device that
 					     doesn't remember you taking one is almost always what you
 					     want: it brings back the tokens you own and your name,
 					     where joining fresh would leave them behind on a chair
-					     nobody is sitting in. Open-claim, no password — see
+					     nobody is sitting in. Open-claim, no approval — see
 					     ADR-0008 and ADR-0007. -->
 						{#if !seatsLoaded}
 							<p class="text-sm text-muted-foreground">Looking for the seats at this table…</p>

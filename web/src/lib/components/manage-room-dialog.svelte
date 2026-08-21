@@ -4,10 +4,10 @@
 	// Seats used to be the bulk of this and are their own dialog now
 	// (`seats-dialog.svelte`), because reading the roster isn't a GM power
 	// and this dialog is. What's left is what only a GM can do: the
-	// movement lock, the room's own password, and deleting the room. Room
-	// privacy is still its own open backlog item.
+	// movement lock, the room's join password, the GM password, and
+	// deleting the room.
 	import { toast } from 'svelte-sonner';
-	import { deleteRoom, setGMPassword } from '$lib/api';
+	import { deleteRoom, setGMPassword, setJoinPassword } from '$lib/api';
 	import type { RoomClient } from '$lib/room.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -49,6 +49,18 @@
 	const passwordReady = $derived(
 		newPassword.length >= MIN_PASSWORD && newPassword === repeatPassword
 	);
+	// Not typed twice, unlike the GM password above: getting this one
+	// wrong costs nobody their seat, it's just a room setting to change
+	// again — so there's nothing a second box would be guarding against.
+	let newJoinPassword = $state('');
+	const joinPasswordReady = $derived(newJoinPassword.length >= MIN_PASSWORD);
+	// Whether the "Password protected?" toggle is showing the password
+	// form — reset from the room's actual setting on open, but tracked
+	// separately from it so clicking "Yes" can reveal the form before
+	// anything is actually saved. Clicking "No" is the opposite case: it
+	// both hides the form and clears a password that was actually set,
+	// which is why that click alone reaches for `saveJoinPassword`.
+	let wantsJoinPassword = $state(false);
 	// The same arm-then-fire the seat bins use, and the only one in the
 	// app protecting something with no undo at all.
 	let confirmingDelete = $state(false);
@@ -60,6 +72,8 @@
 			// looks like the current one and it is not.
 			newPassword = '';
 			repeatPassword = '';
+			newJoinPassword = '';
+			wantsJoinPassword = room.joinPasswordSet;
 		}
 	});
 
@@ -81,6 +95,37 @@
 		} finally {
 			busy = false;
 		}
+	}
+
+	// Also used to clear the password (an empty string), which is why
+	// this doesn't go through joinPasswordReady the way saving a new one
+	// does — that's only a gate on the "Save" button, not on removal.
+	async function saveJoinPassword(newValue: string) {
+		busy = true;
+		try {
+			await setJoinPassword(roomSlug, sessionToken, newValue);
+			newJoinPassword = '';
+			toast.success(newValue ? 'Password set' : 'Password removed');
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : 'failed to change the password');
+		} finally {
+			busy = false;
+		}
+	}
+
+	function handleJoinPassword(event: SubmitEvent) {
+		event.preventDefault();
+		if (!joinPasswordReady) return;
+		saveJoinPassword(newJoinPassword);
+	}
+
+	// "No" is more than a UI toggle: unlike "Yes", which only reveals a
+	// form there's nothing to save yet, an actually-set password has to
+	// be cleared on the spot — there's no separate "Save" click to defer
+	// to once the form protecting it is gone.
+	function selectNoJoinPassword() {
+		wantsJoinPassword = false;
+		if (room.joinPasswordSet) saveJoinPassword('');
 	}
 
 	async function handleDelete() {
@@ -115,7 +160,7 @@
 			<Dialog.Description>These apply to the whole room, not just this scene.</Dialog.Description>
 		</Dialog.Header>
 
-		<!-- Three sections, each announced by a heading over a hairline. It
+		<!-- Four sections, each announced by a heading over a hairline. It
 		     read as one long column of controls before that: the password
 		     boxes carried field labels and nothing said where the password
 		     *began*, so the form under "Moving tokens" looked like more of the
@@ -194,6 +239,57 @@
 					</p>
 					<Button type="submit" class="self-start" disabled={busy || !passwordReady}>Save</Button>
 				</form>
+			</section>
+
+			<!-- Separate from the GM password above: this one gates joining as
+			     a Player rather than the GM seat. A toggle rather than a
+			     description of the off state, so the current setting is a fact
+			     on screen rather than a sentence to parse — "No" doubles as the
+			     old Remove password button, since there's nothing to type on
+			     the way to turning it off. -->
+			<section class="flex flex-col gap-2 border-t pt-4">
+				<h3 class="text-sm font-medium">Room join password</h3>
+				<Label id="join-password-toggle-label">Password protected?</Label>
+				<div class="flex gap-2" role="group" aria-labelledby="join-password-toggle-label">
+					<Button
+						type="button"
+						class="flex-1"
+						variant={wantsJoinPassword ? 'outline' : 'default'}
+						aria-pressed={!wantsJoinPassword}
+						disabled={busy}
+						onclick={selectNoJoinPassword}
+					>
+						No
+					</Button>
+					<Button
+						type="button"
+						class="flex-1"
+						variant={wantsJoinPassword ? 'default' : 'outline'}
+						aria-pressed={wantsJoinPassword}
+						disabled={busy}
+						onclick={() => (wantsJoinPassword = true)}
+					>
+						Yes
+					</Button>
+				</div>
+				{#if wantsJoinPassword}
+					<form class="flex flex-col gap-2" onsubmit={handleJoinPassword}>
+						<Label for="new-join-password"
+							>{room.joinPasswordSet ? 'New password' : 'Password'}</Label
+						>
+						<Input
+							id="new-join-password"
+							type="password"
+							bind:value={newJoinPassword}
+							minlength={MIN_PASSWORD}
+							autocomplete="new-password"
+						/>
+						<Button type="submit" class="self-start" disabled={busy || !joinPasswordReady}
+							>Save</Button
+						>
+					</form>
+				{/if}
+				<p class="text-xs text-muted-foreground">Nobody already signed in is affected by this.</p>
 			</section>
 
 			<!-- Last, and set apart, because it is the one thing in this app

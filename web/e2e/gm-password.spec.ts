@@ -19,20 +19,26 @@ test('a GM changes the room password, and the next GM login needs the new one', 
 	await openRoomMenu(page);
 	await page.getByRole('button', { name: 'Manage room' }).click();
 
+	// Scoped to its own section: the room's separate join password lives
+	// in the same dialog and its field carries the same "New password"
+	// label — the heading above each says whose, same as the two Save
+	// buttons, so a query has to say which section it means.
+	const section = page.locator('section').filter({ hasText: 'GM password' });
+
 	// Mismatched halves can't be saved, which is the whole reason there
 	// are two boxes: a typo here isn't recoverable from inside the room.
-	await page.getByLabel('New password').fill(NEW);
-	await page.getByLabel('Confirm password').fill('a whole new passwrod');
+	await section.getByLabel('New password').fill(NEW);
+	await section.getByLabel('Confirm password').fill('a whole new passwrod');
 	await expect(page.getByText('Both boxes have to match.')).toBeVisible();
-	await expect(page.getByRole('button', { name: 'Save' })).toBeDisabled();
+	await expect(section.getByRole('button', { name: 'Save' })).toBeDisabled();
 
-	await page.getByLabel('Confirm password').fill(NEW);
+	await section.getByLabel('Confirm password').fill(NEW);
 	await expect(page.getByText('Both boxes have to match.')).toHaveCount(0);
-	await page.getByRole('button', { name: 'Save' }).click();
+	await section.getByRole('button', { name: 'Save' }).click();
 	await expect(page.getByText('Password changed')).toBeVisible();
 	// Emptied on the way out, so what is on screen is never mistaken for
 	// the password the room is now holding.
-	await expect(page.getByLabel('New password')).toHaveValue('');
+	await expect(section.getByLabel('New password')).toHaveValue('');
 	await page.getByRole('button', { name: 'Close' }).click();
 
 	// Nobody is signed out by their own hygiene: this device's session is

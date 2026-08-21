@@ -69,6 +69,7 @@ var addedColumns = []struct{ table, column, definition string }{
 	{"drawing", "filled", "INTEGER NOT NULL DEFAULT 0"},
 	{"drawing", "stroke_width", "REAL NOT NULL DEFAULT 3"},
 	{"participant", "color", "TEXT NOT NULL DEFAULT ''"},
+	{"room", "join_password_hash", "TEXT NOT NULL DEFAULT ''"},
 }
 
 func (s *Store) addMissingColumns() error {
@@ -130,6 +131,12 @@ func (s *Store) createTables() error {
 			-- including a future one — is open rather than accidentally
 			-- locked, which is the direction that fails safely.
 			owner_only_movement  INTEGER NOT NULL DEFAULT 0,
+			-- Optional and unset by default: '' means anyone with the room's
+			-- link may join as a Player, same as before this existed. Hashed
+			-- like gm_password_hash rather than compared in plain text, since
+			-- this is the one control meant to survive the link itself
+			-- leaking somewhere it shouldn't.
+			join_password_hash   TEXT NOT NULL DEFAULT '',
 			-- The initiative tracker's turn and round. Two scalars rather
 			-- than a table of their own: a room runs one encounter at a
 			-- time, so this is one row's worth of state and a second table

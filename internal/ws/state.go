@@ -26,6 +26,11 @@ func roomPayload(room store.Room) map[string]any {
 		// off to is deleted underneath it.
 		"activeSceneId":     room.ActiveSceneID,
 		"ownerOnlyMovement": room.OwnerOnlyMovement,
+		// Whether one is set, never the hash and never the password itself —
+		// the same thing the pre-join seat list already tells a stranger
+		// with the link (that endpoint has to, to know whether to ask), so
+		// there's nothing here a connected client couldn't already see.
+		"joinPasswordSet": room.JoinPasswordHash != "",
 	}
 }
 

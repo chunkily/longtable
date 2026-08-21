@@ -114,10 +114,19 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 // No colour here, or on gmLogin below: the GM's is a fixed black rather
 // than one of the sixteen, so there is nothing to send. The server stores
 // none for a GM seat either.
-export function createRoom(roomName: string, gmName: string, password: string): Promise<Session> {
+//
+// `joinPassword` is optional and separate from `password` (the GM
+// password, required): it's the same setting Manage room changes later,
+// just set up front instead of in a second trip through that dialog.
+export function createRoom(
+	roomName: string,
+	gmName: string,
+	password: string,
+	joinPassword?: string
+): Promise<Session> {
 	return apiFetch('/api/rooms', {
 		method: 'POST',
-		body: JSON.stringify({ roomName, gmName, password })
+		body: JSON.stringify({ roomName, gmName, password, joinPassword })
 	});
 }
 
@@ -145,7 +154,9 @@ export interface Seat {
  * it answers before you have a session — reaching it means already
  * holding the room's link.
  */
-export function listSeats(slug: string): Promise<{ roomName: string; seats: Seat[] }> {
+export function listSeats(
+	slug: string
+): Promise<{ roomName: string; seats: Seat[]; joinPasswordRequired: boolean }> {
 	return apiFetch(`/api/rooms/${encodeURIComponent(slug)}/seats`);
 }
 
@@ -158,10 +169,21 @@ export function listSeats(slug: string): Promise<{ roomName: string; seats: Seat
  *   device's own session on it.
  * - `displayName` — "I'm new here": a fresh seat, exactly what joining
  *   used to be.
+ *
+ * `joinPassword` is checked against the room's join password when one
+ * is set (`joinPasswordRequired` on `listSeats`), for either of the
+ * first two — never for a resuming `sessionToken`, which already proved
+ * its seat.
  */
 export function joinRoom(
 	slug: string,
-	opts: { displayName?: string; color?: string; sessionToken?: string; participantId?: string }
+	opts: {
+		displayName?: string;
+		color?: string;
+		sessionToken?: string;
+		participantId?: string;
+		joinPassword?: string;
+	}
 ): Promise<Session> {
 	return apiFetch(`/api/rooms/${encodeURIComponent(slug)}/join`, {
 		method: 'POST',
@@ -219,6 +241,41 @@ export function setGMPassword(slug: string, sessionToken: string, password: stri
 	return apiFetch(`/api/rooms/${encodeURIComponent(slug)}/gm-password`, {
 		method: 'PUT',
 		headers: { Authorization: `Bearer ${sessionToken}` },
+		body: JSON.stringify({ password })
+	});
+}
+
+/**
+ * Sets, changes or clears the password a Player needs to join this room.
+ * Independent of the GM password — this one gates joining, not the GM
+ * seat. An empty string clears it back to "anyone with the link may
+ * join", which is this setting's own valid state rather than a typo.
+ */
+export function setJoinPassword(
+	slug: string,
+	sessionToken: string,
+	password: string
+): Promise<void> {
+	return apiFetch(`/api/rooms/${encodeURIComponent(slug)}/join-password`, {
+		method: 'PUT',
+		headers: { Authorization: `Bearer ${sessionToken}` },
+		body: JSON.stringify({ password })
+	});
+}
+
+/**
+ * Checks a join password without joining anything, unauthenticated like
+ * `listSeats` — it answers before there's a session to authenticate.
+ * Rejects (an `ApiError`) on a wrong password; resolves on a right one,
+ * or when the room has none set at all.
+ *
+ * What lets the pre-join screen refuse a wrong password the moment it's
+ * typed, rather than after a Player has also picked a seat, a colour and
+ * a name — all of which `joinRoom` would otherwise have to discard.
+ */
+export function checkJoinPassword(slug: string, password: string): Promise<void> {
+	return apiFetch(`/api/rooms/${encodeURIComponent(slug)}/join-password/check`, {
+		method: 'POST',
 		body: JSON.stringify({ password })
 	});
 }

@@ -1429,6 +1429,57 @@ describe('RoomClient', () => {
 		});
 	});
 
+	// Whether a join password is currently required — never the password
+	// itself. Set over REST rather than a command (see internal/api's
+	// setJoinPassword), but it still reaches an open room the same way
+	// ownerOnlyMovement does, over room.updated.
+	describe('joinPasswordSet', () => {
+		it('defaults to false when state.sync omits it', () => {
+			const { client, socket } = connectedClient();
+			socket.emit({
+				type: 'state.sync',
+				payload: {
+					room: { slug: 'abc123', name: 'Room' },
+					you: { participantId: 'p1', displayName: 'A', role: 'gm' }
+				}
+			});
+
+			expect(client.joinPasswordSet).toBe(false);
+		});
+
+		it('picks up the flag from state.sync', () => {
+			const { client, socket } = connectedClient();
+			socket.emit({
+				type: 'state.sync',
+				payload: {
+					room: { slug: 'abc123', name: 'Room', joinPasswordSet: true },
+					you: { participantId: 'p1', displayName: 'A', role: 'gm' }
+				}
+			});
+
+			expect(client.joinPasswordSet).toBe(true);
+		});
+
+		it('updates live on room.updated, for a GM watching Manage room in another tab', () => {
+			const { client, socket } = connectedClient();
+			socket.emit({
+				type: 'state.sync',
+				payload: {
+					room: { slug: 'abc123', name: 'Room', joinPasswordSet: false },
+					you: { participantId: 'p1', displayName: 'A', role: 'gm' }
+				}
+			});
+			expect(client.joinPasswordSet).toBe(false);
+
+			socket.emit({
+				type: 'room.updated',
+				payload: { room: { slug: 'abc123', name: 'Room', joinPasswordSet: true } }
+			});
+
+			expect(client.joinPasswordSet).toBe(true);
+		});
+	});
+
 	it('replaces a token it already holds on token.updated', () => {
 		const { client, socket } = roomWithTokens([goblin, { ...goblin, id: 't2' }]);
 
