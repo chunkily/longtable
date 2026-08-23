@@ -44,12 +44,14 @@ file and restart the server to change a setting.
 Longtable writes that file once. It never rewrites it, so your own comments and
 layout stay as you left them.
 
-| Setting           | Default              | What it does                                                                   |
-| ----------------- | -------------------- | ------------------------------------------------------------------------------ |
-| `addr`            | `":8080"`            | The address to listen on. `"127.0.0.1:8080"` keeps the server to this machine. |
-| `database`        | `"longtable.db"`     | Where every room and everything in it is stored. This is the file to back up.  |
-| `assets`          | `"longtable-assets"` | The directory uploaded maps and token art go in.                               |
-| `departure_grace` | `"30s"`              | How long someone may be disconnected before the room is told they left.        |
+| Setting                     | Default              | What it does                                                                   |
+| --------------------------- | -------------------- | ------------------------------------------------------------------------------ |
+| `addr`                      | `":8080"`            | The address to listen on. `"127.0.0.1:8080"` keeps the server to this machine. |
+| `database`                  | `"longtable.db"`     | Where every room and everything in it is stored. This is the file to back up.  |
+| `assets`                    | `"longtable-assets"` | The directory uploaded maps and token art go in.                               |
+| `departure_grace`           | `"30s"`              | How long someone may be disconnected before the room is told they left.        |
+| `uploads.max_asset_size`    | `"25 MiB"`           | The largest a single map or token upload may be.                               |
+| `uploads.max_total_storage` | `"10 GiB"`           | The most this server will ever store, across every room combined.              |
 
 Run a second server on the same machine by giving it its own file:
 
@@ -80,6 +82,22 @@ departure_grace = "2m"
 ```
 
 A player who closes their laptop still shows as connected until the wait is up.
+
+### Upload limits
+
+Every upload is checked against two limits: how big any one upload may be, and
+how much this server will ever store in total.
+
+The total counts each picture once, no matter how many rooms use it — two
+rooms with the same map only cost the space for one copy. An upload that
+would push the total past its limit is refused even if it's well under the
+per-upload limit on its own.
+
+```toml
+[uploads]
+max_asset_size = "50 MiB"
+max_total_storage = "20 GiB"
+```
 
 ## A message for everyone on the server
 

@@ -37,6 +37,17 @@ func (s *Store) GetAsset(id string) (Asset, error) {
 	))
 }
 
+// TotalAssetBytes sums the stored size of every distinct asset on the
+// server — one row per content hash, so a file shared by five rooms is
+// counted once. That's what makes it the right number to hold a Host's
+// total-storage limit against: it's what's actually on disk, not what
+// every room's library adds up to.
+func (s *Store) TotalAssetBytes() (int64, error) {
+	var total int64
+	err := s.db.QueryRow(`SELECT COALESCE(SUM(byte_size), 0) FROM asset`).Scan(&total)
+	return total, err
+}
+
 func (s *Store) scanAsset(row *sql.Row) (Asset, error) {
 	var a Asset
 	if err := row.Scan(&a.ID, &a.ContentHash, &a.Filename, &a.MimeType, &a.ByteSize, &a.CreatedAt); err != nil {

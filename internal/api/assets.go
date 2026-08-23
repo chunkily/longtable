@@ -6,17 +6,18 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/dustin/go-humanize"
+
 	"longtable/internal/imageproc"
 	"longtable/internal/store"
 )
-
-const maxAssetUploadBytes = 25 << 20 // 25 MiB — generous for map/token art
 
 // maxAttributionLength bounds the free-text credit field. Long enough
 // for a name, a licence and a URL; short enough that it can't be used as
@@ -102,9 +103,10 @@ func (srv *Server) uploadAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	r.Body = http.MaxBytesReader(w, r.Body, maxAssetUploadBytes)
-	if err := r.ParseMultipartForm(maxAssetUploadBytes); err != nil {
-		writeError(w, http.StatusBadRequest, "upload too large or malformed (25MiB max)")
+	r.Body = http.MaxBytesReader(w, r.Body, srv.limits.MaxAssetBytes)
+	if err := r.ParseMultipartForm(srv.limits.MaxAssetBytes); err != nil {
+		writeError(w, http.StatusBadRequest,
+			fmt.Sprintf("upload too large or malformed (%s max)", humanize.IBytes(uint64(srv.limits.MaxAssetBytes))))
 		return
 	}
 
@@ -139,6 +141,10 @@ func (srv *Server) uploadAsset(w http.ResponseWriter, r *http.Request) {
 			slog.Error("api: re-encode upload failed", "error", err)
 			writeError(w, http.StatusInternalServerError, "failed to process image")
 		}
+		return
+	}
+
+	if ok := srv.checkTotalStorage(w, image); !ok {
 		return
 	}
 
@@ -459,6 +465,43 @@ func (srv *Server) requireParticipant(w http.ResponseWriter, r *http.Request, ro
 	}
 	if _, err := srv.store.GetParticipantByToken(room.ID, token); err != nil {
 		writeError(w, http.StatusUnauthorized, "invalid session")
+		return false
+	}
+	return true
+}
+
+// checkTotalStorage refuses an upload that would push the server's
+// total asset storage past its configured limit, writing the response
+// and returning false when it does.
+//
+// Dedup-aware: content already on disk under this hash — whether from
+// this room or another — costs nothing more to add here, so re-uploading
+// the same map to align it, or picking art another room already has,
+// never trips this even at the limit. It's checked separately from
+// storeImage, before either side effect (the blob write, the asset row)
+// happens, so a rejected upload leaves nothing behind.
+func (srv *Server) checkTotalStorage(w http.ResponseWriter, image imageproc.Result) bool {
+	hash := sha256.Sum256(image.Data)
+	contentHash := hex.EncodeToString(hash[:])
+
+	if _, err := srv.store.FindAssetByHash(contentHash); err == nil {
+		return true // already stored; this upload adds no new bytes
+	} else if !errors.Is(err, store.ErrNotFound) {
+		slog.Error("api: checking for existing asset failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to process image")
+		return false
+	}
+
+	total, err := srv.store.TotalAssetBytes()
+	if err != nil {
+		slog.Error("api: reading total asset storage failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to process image")
+		return false
+	}
+
+	if total+int64(len(image.Data)) > srv.limits.MaxTotalStorage {
+		writeError(w, http.StatusInsufficientStorage,
+			fmt.Sprintf("this server has reached its %s storage limit", humanize.IBytes(uint64(srv.limits.MaxTotalStorage))))
 		return false
 	}
 	return true

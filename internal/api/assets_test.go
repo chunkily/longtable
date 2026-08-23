@@ -212,6 +212,61 @@ func TestUploadAsset_ConcurrentIdenticalUploadsAllSucceed(t *testing.T) {
 	}
 }
 
+// The per-asset limit rejects an upload before it's decoded at all: a
+// MaxAssetBytes tight enough that even the multipart envelope around a
+// tiny fixture doesn't fit.
+func TestUploadAsset_RejectsPastPerAssetLimit(t *testing.T) {
+	srv, _ := newTestServerWithLimits(t, UploadLimits{MaxAssetBytes: 50, MaxTotalStorage: 1 << 30})
+	created := createTestRoom(t, srv)
+
+	resp := uploadTestAsset(t, srv, created.RoomSlug, created.SessionToken, "map.png",
+		testPNG(t, 24, 24, color.RGBA{R: 10, G: 20, B: 200, A: 255}))
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", resp.StatusCode)
+	}
+}
+
+// The total-storage limit is checked against what's actually on disk,
+// not what any one room's library shows — and content this server
+// already holds costs nothing more to add, even while sitting right at
+// the cap.
+func TestUploadAsset_RejectsPastTotalStorageLimit(t *testing.T) {
+	// A generous first server just to learn how large this fixture's
+	// re-encoded WebP comes out — the limit below is sized from that,
+	// rather than guessed at.
+	warmup, _ := newTestServer(t)
+	warmupRoom := createTestRoom(t, warmup)
+	content := testPNG(t, 64, 64, color.RGBA{R: 200, G: 30, B: 30, A: 255})
+	var uploaded assetPayloadT
+	decodeJSONBody(t, uploadTestAsset(t, warmup, warmupRoom.RoomSlug, warmupRoom.SessionToken, "a.png", content), &uploaded)
+	if uploaded.ByteSize <= 0 {
+		t.Fatalf("warmup upload reported ByteSize = %d", uploaded.ByteSize)
+	}
+
+	srv, _ := newTestServerWithLimits(t, UploadLimits{MaxAssetBytes: 25 << 20, MaxTotalStorage: uploaded.ByteSize})
+	created := createTestRoom(t, srv)
+
+	// Fills the budget exactly.
+	first := uploadTestAsset(t, srv, created.RoomSlug, created.SessionToken, "a.png", content)
+	if first.StatusCode != http.StatusCreated {
+		t.Fatalf("first upload status = %d, want 201", first.StatusCode)
+	}
+
+	// Different bytes would push past the limit and are refused.
+	other := testPNG(t, 64, 64, color.RGBA{R: 30, G: 200, B: 30, A: 255})
+	second := uploadTestAsset(t, srv, created.RoomSlug, created.SessionToken, "b.png", other)
+	if second.StatusCode != http.StatusInsufficientStorage {
+		t.Fatalf("second upload status = %d, want 507", second.StatusCode)
+	}
+
+	// The same content again is a no-op on disk, so it isn't charged a
+	// second time even though the server is sitting right at the cap.
+	third := uploadTestAsset(t, srv, created.RoomSlug, created.SessionToken, "a-again.png", content)
+	if third.StatusCode != http.StatusCreated {
+		t.Fatalf("re-uploading identical content status = %d, want 201", third.StatusCode)
+	}
+}
+
 func TestUploadAsset_MissingSessionToken(t *testing.T) {
 	srv, _ := newTestServer(t)
 	created := createTestRoom(t, srv)

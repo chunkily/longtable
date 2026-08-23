@@ -1,7 +1,7 @@
 ---
 title: Host configures asset size limits
 created: 2026-07-29
-status: incomplete
+status: done
 ---
 
 As a Host

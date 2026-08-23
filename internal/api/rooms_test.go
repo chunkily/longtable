@@ -17,11 +17,26 @@ import (
 	"longtable/internal/ws"
 )
 
+// testUploadLimits is generous enough that no existing test's uploads
+// come near it — the tests that actually exercise a limit build their
+// own tight UploadLimits instead, via newTestServerWithLimits.
+var testUploadLimits = UploadLimits{
+	MaxAssetBytes:   25 << 20, // matches the ceiling this server shipped with
+	MaxTotalStorage: 1 << 30,
+}
+
 // newTestServer wires a real Store (temp SQLite file) and blobstore
 // (temp dir) into the full router, so these tests exercise the actual
 // HTTP handlers end-to-end. The embedded frontend FS is an empty temp
 // dir — fine, since none of these tests touch the SPA fallback route.
 func newTestServer(t *testing.T) (*httptest.Server, *store.Store) {
+	t.Helper()
+	return newTestServerWithLimits(t, testUploadLimits)
+}
+
+// newTestServerWithLimits is newTestServer with the upload limits a
+// test cares about exercising, rather than the generous defaults.
+func newTestServerWithLimits(t *testing.T, limits UploadLimits) (*httptest.Server, *store.Store) {
 	t.Helper()
 
 	sqlDB, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
@@ -42,7 +57,7 @@ func newTestServer(t *testing.T) (*httptest.Server, *store.Store) {
 
 	hub := ws.NewHub(s, ws.DefaultDepartureGrace)
 	frontend := os.DirFS(t.TempDir())
-	router := NewRouter(s, hub, blobs, frontend)
+	router := NewRouter(s, hub, blobs, frontend, limits)
 
 	srv := httptest.NewServer(router)
 	t.Cleanup(srv.Close)

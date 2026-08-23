@@ -58,6 +58,17 @@ assets = "%s"
 # nobody sees anything. On a bad network, try "2m". A real departure
 # then takes that long to show.
 departure_grace = "%s"
+
+[uploads]
+# The largest a single map or token upload may be. An upload past this
+# is rejected outright.
+max_asset_size = "%s"
+
+# The most this server will ever store across every room's uploads
+# combined — content shared by several rooms only counts once. An
+# upload that would push the total past this is rejected, even if it's
+# well within max_asset_size on its own.
+max_total_storage = "%s"
 `
 
 // create writes the default file. O_EXCL rather than a plain create: two
@@ -81,7 +92,8 @@ func create(path string) error {
 func defaultFileContents() string {
 	d := Defaults()
 	return fmt.Sprintf(template,
-		escape(d.Addr), escape(d.Database), escape(d.Assets), d.DepartureGrace)
+		escape(d.Addr), escape(d.Database), escape(d.Assets), d.DepartureGrace,
+		d.Uploads.MaxAssetSize, d.Uploads.MaxTotalStorage)
 }
 
 // escape makes a value safe inside a TOML basic string. None of the

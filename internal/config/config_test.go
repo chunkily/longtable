@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dustin/go-humanize"
+
 	"longtable/internal/ws"
 )
 
@@ -55,7 +57,7 @@ func TestLoadOrCreate_TheGeneratedFileExplainsEverySetting(t *testing.T) {
 		t.Fatalf("read: %v", err)
 	}
 	contents := string(data)
-	for _, key := range []string{"addr", "database", "assets", "departure_grace"} {
+	for _, key := range []string{"addr", "database", "assets", "departure_grace", "max_asset_size", "max_total_storage"} {
 		if !strings.Contains(contents, key+" = ") {
 			t.Errorf("generated file has no %q setting", key)
 		}
@@ -120,12 +122,16 @@ func TestLoad_RefusesAnUnknownSetting(t *testing.T) {
 
 func TestLoad_RefusesWhatItCannotRun(t *testing.T) {
 	for name, contents := range map[string]string{
-		"broken TOML":                "addr = \n",
-		"a duration that is not one": "departure_grace = \"soon\"\n",
-		"a negative duration":        "departure_grace = \"-5s\"\n",
-		"an empty database path":     "database = \"\"\n",
-		"an empty address":           "addr = \"\"\n",
-		"an empty assets directory":  "assets = \"\"\n",
+		"broken TOML":                         "addr = \n",
+		"a duration that is not one":          "departure_grace = \"soon\"\n",
+		"a negative duration":                 "departure_grace = \"-5s\"\n",
+		"an empty database path":              "database = \"\"\n",
+		"an empty address":                    "addr = \"\"\n",
+		"an empty assets directory":           "assets = \"\"\n",
+		"a size that is not one":              "uploads.max_asset_size = \"a lot\"\n",
+		"a zero asset size":                   "uploads.max_asset_size = \"0\"\n",
+		"a zero total storage":                "uploads.max_total_storage = \"0\"\n",
+		"total storage under the asset limit": "uploads.max_asset_size = \"1 GiB\"\nuploads.max_total_storage = \"1 MiB\"\n",
 	} {
 		if _, err := Load(write(t, contents)); err == nil {
 			t.Errorf("%s was accepted", name)
@@ -148,6 +154,25 @@ func TestLoad_ReadsWhatIsThereAndDefaultsTheRest(t *testing.T) {
 	}
 	if cfg.Addr != Defaults().Addr || cfg.Assets != Defaults().Assets {
 		t.Errorf("an unmentioned setting lost its default: %+v", cfg)
+	}
+}
+
+// ByteSize is the same idea as Duration, for the same reason: a Host
+// writes what they mean ("500 MiB") rather than doing the arithmetic
+// themselves, and either unit family is accepted since nothing here
+// assumes which one a Host reaches for.
+func TestLoad_ReadsUploadLimits(t *testing.T) {
+	path := write(t, "uploads.max_asset_size = \"10 MiB\"\nuploads.max_total_storage = \"2 GB\"\n")
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Uploads.MaxAssetSize != ByteSize(10*humanize.MiByte) {
+		t.Errorf("max_asset_size = %s, want 10 MiB", cfg.Uploads.MaxAssetSize)
+	}
+	if cfg.Uploads.MaxTotalStorage != ByteSize(2*humanize.GByte) {
+		t.Errorf("max_total_storage = %s, want 2 GB", cfg.Uploads.MaxTotalStorage)
 	}
 }
 

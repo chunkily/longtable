@@ -40,6 +40,33 @@ func TestFindAssetByHash_NotFound(t *testing.T) {
 	}
 }
 
+func TestTotalAssetBytes(t *testing.T) {
+	s := newTestStore(t)
+
+	total, err := s.TotalAssetBytes()
+	if err != nil {
+		t.Fatalf("TotalAssetBytes: %v", err)
+	}
+	if total != 0 {
+		t.Fatalf("total = %d, want 0 for an empty asset table", total)
+	}
+
+	if _, err := s.CreateAsset("hash-a", "a.png", "image/png", 1000); err != nil {
+		t.Fatalf("CreateAsset: %v", err)
+	}
+	if _, err := s.CreateAsset("hash-b", "b.png", "image/png", 2500); err != nil {
+		t.Fatalf("CreateAsset: %v", err)
+	}
+
+	total, err = s.TotalAssetBytes()
+	if err != nil {
+		t.Fatalf("TotalAssetBytes: %v", err)
+	}
+	if total != 3500 {
+		t.Fatalf("total = %d, want 3500", total)
+	}
+}
+
 func TestCreateAsset_DuplicateHashRejected(t *testing.T) {
 	s := newTestStore(t)
 

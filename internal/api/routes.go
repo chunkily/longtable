@@ -17,13 +17,24 @@ type Server struct {
 	hub      *ws.Hub
 	blobs    *blobstore.Store
 	frontend fs.FS
+	limits   UploadLimits
+}
+
+// UploadLimits bounds what an upload may cost the Host's disk. Plain
+// int64s rather than the config package's own ByteSize: this package
+// doesn't otherwise know about config, and cmd/longtable is the one
+// place that already has to convert between the two, for DepartureGrace
+// just above it.
+type UploadLimits struct {
+	MaxAssetBytes   int64
+	MaxTotalStorage int64
 }
 
 // NewRouter wires the whole HTTP surface.
 func NewRouter(
-	s *store.Store, hub *ws.Hub, blobs *blobstore.Store, frontend fs.FS,
+	s *store.Store, hub *ws.Hub, blobs *blobstore.Store, frontend fs.FS, limits UploadLimits,
 ) http.Handler {
-	srv := &Server{store: s, hub: hub, blobs: blobs, frontend: frontend}
+	srv := &Server{store: s, hub: hub, blobs: blobs, frontend: frontend, limits: limits}
 
 	mux := http.NewServeMux()
 

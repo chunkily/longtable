@@ -22,6 +22,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/dustin/go-humanize"
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -50,20 +51,51 @@ func (d *Duration) UnmarshalText(text []byte) error {
 
 func (d Duration) String() string { return time.Duration(d).String() }
 
+// ByteSize is a count of bytes written the way a person writes one —
+// `"25 MiB"`, `"5 GB"` — for the same reason Duration exists: TOML has
+// no size type, and a bare number would leave a Host doing the
+// arithmetic by hand to know what they'd typed.
+type ByteSize int64
+
+func (b *ByteSize) UnmarshalText(text []byte) error {
+	parsed, err := humanize.ParseBytes(string(text))
+	if err != nil {
+		return err
+	}
+	*b = ByteSize(parsed)
+	return nil
+}
+
+// String renders in IEC units (MiB, GiB) rather than SI (MB, GB) to
+// match how the doc comments and this file's own defaults talk about
+// sizes — and because "MB" is ambiguous between the two in a way nobody
+// editing a config file benefits from.
+func (b ByteSize) String() string { return humanize.IBytes(uint64(b)) }
+
 // Config is the whole of a Longtable server's settings. The banner
 // isn't one of them — see the package doc for why.
 //
-// Flat keys rather than TOML tables, while there is one group of
-// settings to put in them. The first setting that doesn't belong beside
-// these — upload limits, most likely — is when a `[section]` starts
-// earning its nesting. Note for whoever adds one: TOML puts every
-// top-level key *above* the first table header, so the generated file
-// has to keep that order.
+// Flat keys, plus the one `[section]`: upload limits turned out to be
+// the settings that didn't belong beside these, so they nest under
+// `Uploads` instead of flattening into `max_asset_size` and
+// `max_total_storage` at the top level. TOML puts every top-level key
+// *above* the first table header, so the generated file keeps `Uploads`
+// last.
 type Config struct {
-	Addr           string   `toml:"addr"`
-	Database       string   `toml:"database"`
-	Assets         string   `toml:"assets"`
-	DepartureGrace Duration `toml:"departure_grace"`
+	Addr           string       `toml:"addr"`
+	Database       string       `toml:"database"`
+	Assets         string       `toml:"assets"`
+	DepartureGrace Duration     `toml:"departure_grace"`
+	Uploads        UploadLimits `toml:"uploads"`
+}
+
+// UploadLimits bounds what an upload can cost a Host's disk. Both guard
+// different things: MaxAssetSize stops any one upload being unreasonably
+// large, MaxTotalStorage stops the sum of everything ever uploaded from
+// growing without bound. Enforced in internal/api's upload handler.
+type UploadLimits struct {
+	MaxAssetSize    ByteSize `toml:"max_asset_size"`
+	MaxTotalStorage ByteSize `toml:"max_total_storage"`
 }
 
 // Defaults is what a server runs on when its file says nothing, and what
@@ -80,6 +112,15 @@ func Defaults() Config {
 		Database:       "longtable.db",
 		Assets:         "longtable-assets",
 		DepartureGrace: Duration(30 * time.Second),
+		Uploads: UploadLimits{
+			// Matches the ceiling this server enforced before it was
+			// configurable — generous for map/token art.
+			MaxAssetSize: ByteSize(25 * humanize.MiByte),
+			// Enough for a well-stocked room or two before a Host has to
+			// think about it, without leaving a fresh install able to
+			// swallow a disk on its own.
+			MaxTotalStorage: ByteSize(10 * humanize.GiByte),
+		},
 	}
 }
 
@@ -177,6 +218,12 @@ func (c Config) validate(path string) error {
 		return fmt.Errorf("%s: assets can't be empty. It's the directory uploaded images go in", path)
 	case time.Duration(c.DepartureGrace) <= 0:
 		return fmt.Errorf("%s: departure_grace has to be longer than zero, like \"30s\"", path)
+	case c.Uploads.MaxAssetSize <= 0:
+		return fmt.Errorf("%s: uploads.max_asset_size has to be more than zero, like \"25 MiB\"", path)
+	case c.Uploads.MaxTotalStorage <= 0:
+		return fmt.Errorf("%s: uploads.max_total_storage has to be more than zero, like \"10 GiB\"", path)
+	case c.Uploads.MaxTotalStorage < c.Uploads.MaxAssetSize:
+		return fmt.Errorf("%s: uploads.max_total_storage can't be smaller than uploads.max_asset_size — nothing could ever be uploaded", path)
 	}
 	return nil
 }

@@ -99,7 +99,11 @@ func serve(cfg config.Config) error {
 	}
 
 	hub := ws.NewHub(s, time.Duration(cfg.DepartureGrace))
-	router := api.NewRouter(s, hub, blobs, frontend)
+	limits := api.UploadLimits{
+		MaxAssetBytes:   int64(cfg.Uploads.MaxAssetSize),
+		MaxTotalStorage: int64(cfg.Uploads.MaxTotalStorage),
+	}
+	router := api.NewRouter(s, hub, blobs, frontend, limits)
 
 	slog.Info("longtable: listening", "addr", cfg.Addr, "db", cfg.Database, "assets", cfg.Assets)
 	logReachableURLs(cfg.Addr)

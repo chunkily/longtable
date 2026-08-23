@@ -314,6 +314,16 @@ connection has to come back before the room is told, where the right answer is t
 rather than ours. It isn't re-read while the server is up — changing it means a restart, and
 `planning/backlog/host-config-file.md` records why live reload was left out.
 
+**Upload sizes are two more.** `[uploads]` holds `max_asset_size` (25 MiB by default, the ceiling
+this server always enforced, now a Host's to change) and `max_total_storage` (10 GiB by default) —
+the first `[section]` the file has, since neither setting belongs beside `addr` and `database`.
+Both are a `config.ByteSize`, parsed and printed the way `Duration` handles `"30s"`, so a Host
+writes `"2 GiB"` rather than counting zeroes. The total is checked against what the whole server
+actually has on disk (`store.TotalAssetBytes`, a `SUM` over the global, content-addressed `asset`
+table) rather than any one room's library, and the check is dedup-aware — content the server
+already holds costs nothing more to add, so re-aligning a map that's already uploaded never trips
+it even sitting right at the cap. Enforced in `internal/api/assets.go`, ahead of `storeImage`.
+
 **The banner is deliberately not in that file.** `longtable set-banner "…"` and
 `longtable clear-banner` write straight to the running server's own database — the same one
 `room reset-password` already reaches into — rather than to `longtable.toml`, so a Host changes or
@@ -328,8 +338,10 @@ Known gaps, which is also roughly the queue: nothing rolls initiative for you �
 the number and `/roll 1d20+2` in chat is where it comes from; `Manage room` holds the
 movement lock, the room password and deleting the room, and is still waiting on room privacy and
 a switch to turn Player token creation off. Nothing caps how many tokens one Player may have standing. Fog has no automatic vision from tokens, no prebuilt releases, no way for a Host
-to remove a moderated asset server-wide or cap upload sizes per room (a room removing something
-from its own library is a different, smaller thing, and does exist). The
+to remove a moderated asset server-wide (a room removing something from its own library is a
+different, smaller thing, and does exist) or to block a re-upload of content it already removed —
+deleting an asset's row today just lets the same bytes back in under a new one, since dedup only
+checks what's currently live. The
 theme control isn't on the pre-join screen or the assets page — both are passed through rather
 than sat in, and both are one step from somewhere that has it.
 

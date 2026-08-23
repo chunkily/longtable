@@ -41,7 +41,7 @@ func noticeServer(t *testing.T) (*httptest.Server, *store.Store) {
 		t.Fatalf("new blobstore: %v", err)
 	}
 
-	srv := httptest.NewServer(NewRouter(s, ws.NewHub(s, ws.DefaultDepartureGrace), blobs, os.DirFS(t.TempDir())))
+	srv := httptest.NewServer(NewRouter(s, ws.NewHub(s, ws.DefaultDepartureGrace), blobs, os.DirFS(t.TempDir()), testUploadLimits))
 	t.Cleanup(srv.Close)
 	return srv, s
 }
