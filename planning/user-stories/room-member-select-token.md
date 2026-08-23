@@ -1,7 +1,7 @@
 ---
 title: Room Member selects a token to see it highlighted and its details
 created: 2026-07-31
-status: incomplete
+status: done
 ---
 
 As a Room Member
@@ -21,6 +21,25 @@ So that I can keep track of which token I'm looking at without losing it among e
 - [ ] Selection is purely local — nothing is sent to other Room Members, and it isn't persisted
       across a reload
 
-Marked `incomplete` as of 2026-08-05: everything is built except the initiative-tracker linkage
-(second criterion), which can't exist until [initiative-tracker](../backlog/initiative-tracker.md)
-does. Flip to `done` once that lands and this criterion is wired up.
+## Verified
+
+This was `incomplete` from 2026-08-05 on one missing criterion: the initiative-tracker linkage,
+which couldn't exist until [initiative-tracker](../backlog/initiative-tracker.md) did. That
+landed, and the linkage came with it — `web/src/lib/components/initiative-panel.svelte` sets
+`selectedTokenId` from an entry's own button, so picking a combatant rings the token it stands
+for. The other five were already true and were re-checked rather than assumed:
+
+- Clicking a token selects it, and anything that isn't a token — bare grid, the map image, a
+  drawing — clears the selection, both off the one stage handler in `game-canvas.svelte`.
+- The ring is two concentric dashed circles sharing a dash pattern, black underneath and pale
+  yellow (`#fde68a`) on top, rotating slowly. The two-layer arrangement is what makes it read on
+  a lit tavern floor and in a night-time dungeon both; the dash is fitted as a whole number of
+  periods per circumference, which is load-bearing and explained in a comment.
+- The details section is a fixed block above chat that keeps its height and goes `bg-muted` when
+  nothing is selected, so the rail doesn't jump — that's the placeholder state the fourth
+  criterion asks for.
+- Selection is deliberately not `$state` and is never sent or stored, so it dies with a reload.
+
+Worth knowing for whoever touches this next: selecting a token also raises it to the top of the
+render stack, which this story never asked for and which arrived later. That order is local to the
+browser too, and a reload puts everything back in creation order.
