@@ -125,11 +125,13 @@ test('aligning a map bakes the offset into the image and pre-fills the scene gri
 
 	// Alignment belongs to maps, so it's the Maps tab that offers it — it
 	// used to be the other way round, with aligning the thing that made
-	// something a map.
+	// something a map. Staging a map is the whole of reaching the aligner
+	// now: there's no "Align to grid" button to press, because there's no
+	// longer a path past it.
 	await page.getByRole('tab', { name: /^Maps/ }).click();
 	await page.getByLabel('Choose images to add').setInputFiles(fixture('swamp.png'));
 	await page.getByLabel('Name').fill('Swamp');
-	await page.getByRole('button', { name: 'Align to grid' }).click();
+	await expect(page.getByLabel('Square size (px)')).toBeVisible();
 
 	// 8px squares starting 1px in. The fixtures are 8x8 and the server
 	// floors a square at 8px — anything smaller is a measurement nobody
@@ -172,6 +174,57 @@ test('aligning a map bakes the offset into the image and pre-fills the scene gri
 	await expect(page.getByLabel('Grid size (px)')).toHaveValue('8');
 	// Dimensions still come from the image itself — now the padded one.
 	await expect(page.getByLabel('Width (px)')).toHaveValue('15');
+});
+
+// The grid the aligner draws has to keep describing the art underneath it
+// at every zoom step, and this is the only place that can be checked: the
+// scale comes off a ResizeObserver, which needs a browser that actually
+// composites frames. `grid-zoom.test.ts` covers the arithmetic; this
+// covers whether the number reaching the CSS is the real one.
+test('the alignment preview zooms, and the grid keeps describing the art at every step', async ({
+	page
+}) => {
+	await createRoom(page, 'Zoomed Alignment');
+	await openAssetsPage(page);
+
+	await page.getByRole('tab', { name: /^Maps/ }).click();
+	await page.getByLabel('Choose images to add').setInputFiles(fixture('wide-map.png'));
+	await expect(page.getByRole('button', { name: 'Fit' })).toHaveAttribute('aria-pressed', 'true');
+
+	// The overlay draws its squares at gridSize * scale, and `scale` has to
+	// come from what the image *came out as* rather than what it was asked
+	// for. The two differ whenever a scrollbar takes width out of a 100%,
+	// and a grid scaled by the wrong one slides off the art it describes —
+	// by most of a square at the far edge of a thirty-square map.
+	const measured = () =>
+		page.evaluate(() => {
+			const img = document.querySelector<HTMLImageElement>('img[alt="The map being aligned"]')!;
+			const overlay = Array.from(
+				img.parentElement!.querySelectorAll<HTMLElement>('div[aria-hidden]')
+			).find((el) => el.style.backgroundImage)!;
+			const gridSize = Number(
+				document.querySelector<HTMLInputElement>('input[id$="-grid-size"]')!.value
+			);
+			const shown = img.getBoundingClientRect().width;
+			return {
+				shown,
+				natural: img.naturalWidth,
+				drawn: parseFloat(getComputedStyle(overlay).backgroundSize),
+				expected: gridSize * (shown / img.naturalWidth)
+			};
+		});
+
+	const fit = await measured();
+	expect(fit.drawn).toBeCloseTo(fit.expected, 1);
+
+	await page.getByRole('button', { name: '200%' }).click();
+	const zoomed = await measured();
+
+	// Native scale doubled, which is what being able to inspect the art
+	// closely enough to judge a few pixels of offset amounts to.
+	expect(zoomed.shown).toBeCloseTo(zoomed.natural * 2, 1);
+	expect(zoomed.shown).not.toBeCloseTo(fit.shown, 1);
+	expect(zoomed.drawn).toBeCloseTo(zoomed.expected, 1);
 });
 
 // Adding the same bytes twice makes one entry, not two — and the second

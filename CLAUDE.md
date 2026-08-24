@@ -47,6 +47,7 @@ architecture and current state live here instead**, and keeping them true is par
 | `web/src/routes/r/[slug]/+page.svelte` | the room page — join form, then the full-bleed shell: map, floating toolbar, side rail (or bottom sheet) |
 | `web/e2e/fixtures/` | everything the specs are built on, so `e2e/` itself is just the tests: the `table` fixture (a room, a scene, a GM, and teardown that survives a failure), the canvas helpers, the room-chrome helpers (including `createRoom`, which every spec goes through), and the upload images. Its README is the starting point for a new spec |
 | `web/src/routes/r/[slug]/assets/+page.svelte` | the assets page — the only way art enters a room's library, and the only way one leaves: tabbed by token/map, with name, credit, grid alignment, search |
+| `web/src/lib/components/grid-aligner.svelte`, `grid-zoom.ts` | pushing a map's own squares onto the grid before it's uploaded, and the display maths behind the preview's zoom. Everything in the component is in *natural* image pixels and everything on screen goes through `scale` — mixing the two up is the bug it is easiest to introduce, which is why the arithmetic sits in a tested `.ts` the way `pinch.ts` and `pan.ts` do |
 | `web/e2e/` | Playwright specs; several read canvas pixels because Konva has no DOM |
 | `planning/` | backlog, user stories, ADRs (`decisions/`), role glossary |
 
@@ -262,7 +263,13 @@ assets page at `/r/{slug}/assets`. That page is tabbed by kind, Tokens and Maps,
 governs all of it: what the library grid shows, and what anything added from there is filed as —
 chosen before the file dialog opens rather than asked for afterwards. An upload is named
 (defaulting to the filename minus its extension), credited, and — for a map — aligned to the grid
-before it's added. **The tab it was staged under is simply what it's filed as** — nothing reads
+before it's added. **Alignment isn't optional and isn't a button**: staging a map shows the
+aligner, and there is no path from there to `Add to library` that goes around it, since a map
+nobody checked is a bug that only surfaces later as fog and tokens sitting half a square out. Its
+preview zooms — `Fit`, `100%`, `200%` — because fit alone cannot show a few pixels of offset on a
+map dozens of squares across, where a 70px square draws at about 17px and the grid becomes a
+smear. The display maths is `web/src/lib/grid-zoom.ts`, and read it before touching the overlay:
+a numeric zoom is its own scale while fit has to be measured, and the reasons are recorded there. **The tab it was staged under is simply what it's filed as** — nothing reads
 the image's shape to question that, and `planning/backlog/split-token-and-map-libraries.md`
 records what was there and why it went. Name, credit and kind are all editable
 afterwards, and an asset can be removed from a room's library (the shared file survives, and

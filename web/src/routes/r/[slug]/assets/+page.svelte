@@ -63,7 +63,6 @@
 		 * made before picking rather than a default they have to notice.
 		 */
 		kind: AssetKind;
-		aligning: boolean;
 		gridSize: number;
 		originX: number;
 		originY: number;
@@ -150,7 +149,6 @@
 				name: defaultName(file.name),
 				attribution: '',
 				kind: activeKind,
-				aligning: false,
 				gridSize: 70,
 				originX: 0,
 				originY: 0,
@@ -184,11 +182,12 @@
 
 		item.uploading = true;
 		try {
-			// Only a map that was actually aligned carries grid figures; token
-			// art has no grid to measure, and `aligning` can only be on for a
-			// map, but reading both makes that a fact of this call rather
-			// than of the toggle's bookkeeping.
-			const aligned = item.kind === 'map' && item.aligning;
+			// Every map carries grid figures now, because every map goes
+			// through the aligner — there is no skip. An untouched one sends
+			// the defaults, which is a zero offset and the same 70px square a
+			// scene would have assumed anyway, so the honest answer and the
+			// old silent one agree. Token art has no grid to measure.
+			const aligned = item.kind === 'map';
 			const asset = await uploadAsset(slug, session.sessionToken, item.file, {
 				name: item.name,
 				attribution: item.attribution,
@@ -365,7 +364,12 @@
 							</div>
 						</div>
 
-						{#if item.kind === 'map' && item.aligning}
+						<!-- Always, for a map. This sat behind an "Align to grid"
+						     button that defaulted to off, so the easy path was the one
+						     that skipped it — and a map nobody aligned is a bug that
+						     only shows up later, as fog and tokens sitting half a
+						     square out from the art. -->
+						{#if item.kind === 'map'}
 							<GridAligner
 								src={item.url}
 								idPrefix="staged-{item.id}"
@@ -382,21 +386,6 @@
 							<span class="text-sm text-muted-foreground">
 								Adding as {item.kind === 'map' ? 'a map' : 'token art'}
 							</span>
-							{#if item.kind === 'map'}
-								<Button
-									type="button"
-									variant={item.aligning ? 'secondary' : 'outline'}
-									size="sm"
-									onclick={() => (item.aligning = !item.aligning)}
-								>
-									{item.aligning ? 'Skip alignment' : 'Align to grid'}
-								</Button>
-								{#if item.aligning}
-									<span class="text-xs text-muted-foreground">
-										{item.gridSize}px squares
-									</span>
-								{/if}
-							{/if}
 							<span class="flex-1"></span>
 							<!-- "Discard", not "Remove": the library tiles below have a
 							     Remove of their own now, and the two undo very different
