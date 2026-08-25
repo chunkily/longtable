@@ -173,9 +173,12 @@ ambiguous, say which reading you took and why.
 
 ## Decisions
 
-`decisions/NNNN-slug.md`, numbered in order (0001–0008 so far: self-hosted multi-room, Go backend,
+`decisions/NNNN-slug.md`, numbered in order (0001–0009 so far: self-hosted multi-room, Go backend,
 SQLite, Svelte+Konva, WebP re-encoding, config file format, the table is trusted, seats and
-sessions). Write one when choosing between technologies or committing to an architecture, not for
+sessions, the admin UI and settings in the database). A superseded ADR keeps its number and its
+text and gains a note at the top pointing forward — 0006 is the worked example, since 0009 deleted
+the config file it chose a format for and the argument it makes is still the debt that replaced
+it. Write one when choosing between technologies or committing to an architecture, not for
 ordinary implementation choices — those belong in the code comment next to the thing they explain,
 which is this codebase's habit.
 

@@ -1,8 +1,16 @@
 # ADR-0006: TOML for the host config file
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-0009](0009-admin-ui-and-database-config.md)
 **Date:** 2026-07-29
 **Deciders:** Developer
+
+> **Superseded 2026-08-25.** There is no config file any more: settings moved into the database,
+> edited from an admin UI and a `longtable config` CLI. Nothing below was wrong about TOML — the
+> comparison against JSON, YAML and `.env` still holds, and the reason a marshaller was never used
+> is the reason a settings UI could not have edited this file. What changed is the premise in the
+> Context: that the file "is meant to be hand-edited by Hosts". A Host who double-clicks a binary
+> is not that person, and ADR-0009 records what replaced it. Kept in full, because the argument
+> for comments is exactly the debt the UI and CLI now have to pay.
 
 ## Context
 
