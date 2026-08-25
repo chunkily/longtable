@@ -10,6 +10,8 @@
 //	longtable set-banner [-config longtable.toml] <message>
 //	longtable clear-banner [-config longtable.toml]
 //
+// `longtable -h` prints the same list.
+//
 // Every setting lives in the config file, which the server writes for
 // itself the first time it runs. `-config` is the only flag any
 // subcommand takes: see internal/config for why.
@@ -27,6 +29,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	assets "longtable"
@@ -39,17 +42,110 @@ import (
 	"longtable/internal/ws"
 )
 
+// usage is what `longtable -h` prints.
+//
+// Written out here rather than assembled from the flag package's own
+// output, which only ever knows about one subcommand's flags: asked
+// "what can this do?", it answers with a single -config line and no
+// mention that `room` or `set-banner` exist at all.
+//
+// Each command's arguments are shown next to it, because the flag
+// package can't: `longtable set-banner -h` lists -config and stops,
+// which reads as "takes no arguments" for the two commands that need
+// one.
+const usage = `Longtable is a self-hosted virtual tabletop for D&D.
+
+Usage:
+  longtable [command] [-config longtable.toml]
+
+With no command, Longtable starts the server.
+
+Commands:
+  serve                            Start the server.
+  room list                        List every room on this server.
+  room reset-password <room-code>  Set a new GM password for a room.
+  set-banner <message>             Show a message across the top of every page.
+  clear-banner                     Take that message down.
+
+Flags:
+  -config <path>                   The settings file to read. Default: longtable.toml
+`
+
+// isHelpArg covers the three spellings people actually type. `help` is
+// in there because it is a command in most CLIs, and it would otherwise
+// be ignored as a stray argument and start a server.
+func isHelpArg(arg string) bool {
+	return arg == "-h" || arg == "--help" || arg == "help"
+}
+
+// route is what a set of arguments asks for.
+//
+// Split out of main and given no side effects so the one rule here that
+// is easy to get wrong can be tested without starting a server: which
+// arguments mean "serve" and which mean "you typed something wrong".
+// Those two sit closer together than they look — a bare `longtable`
+// serves, and so does `longtable -config other.toml`, but `longtable
+// serv` must not.
+type route string
+
+const (
+	routeHelp        route = "help"
+	routeServe       route = "serve"
+	routeRoom        route = "room"
+	routeSetBanner   route = "set-banner"
+	routeClearBanner route = "clear-banner"
+	routeUnknown     route = "unknown"
+)
+
+func routeFor(args []string) route {
+	if len(args) == 0 {
+		// The double-click case. docs/hosting.md tells a Host to run the
+		// binary and nothing else, so this has to stay the default.
+		return routeServe
+	}
+
+	switch {
+	case isHelpArg(args[0]):
+		return routeHelp
+	case args[0] == "serve":
+		return routeServe
+	case args[0] == "room":
+		return routeRoom
+	case args[0] == "set-banner":
+		return routeSetBanner
+	case args[0] == "clear-banner":
+		return routeClearBanner
+	case strings.HasPrefix(args[0], "-"):
+		// A flag with no command in front of it belongs to serve, which is
+		// what `longtable -config other.toml` has always meant.
+		return routeServe
+	default:
+		return routeUnknown
+	}
+}
+
 func main() {
 	args := os.Args[1:]
 
 	var err error
-	switch {
-	case len(args) > 0 && args[0] == "room":
+	switch routeFor(args) {
+	case routeHelp:
+		// Never an error: someone who typed --help asked a question and
+		// got an answer, so it goes to stdout and exits 0.
+		fmt.Print(usage)
+	case routeRoom:
 		err = runRoomCommand(args[1:])
-	case len(args) > 0 && args[0] == "set-banner":
+	case routeSetBanner:
 		err = runSetBanner(args[1:])
-	case len(args) > 0 && args[0] == "clear-banner":
+	case routeClearBanner:
 		err = runClearBanner(args[1:])
+	case routeUnknown:
+		// Refused rather than served. A mistyped command used to fall
+		// through to `serve` and come up looking like a normal start,
+		// which is the same failure the config parser refuses to make:
+		// the Host asked for something, got a running server, and nothing
+		// anywhere said the thing they typed doesn't exist.
+		err = fmt.Errorf("unknown command %q. Run longtable -h to see the commands", args[0])
 	default:
 		if len(args) > 0 && args[0] == "serve" {
 			args = args[1:]
@@ -71,7 +167,7 @@ func main() {
 
 func runServe(args []string) error {
 	fset := flag.NewFlagSet("serve", flag.ExitOnError)
-	configPath := addConfigFlag(fset)
+	configPath := addConfigFlag(fset, "longtable [serve] [-config path]")
 	fset.Parse(args)
 
 	cfg, err := loadConfig(*configPath)
@@ -112,7 +208,18 @@ func serve(cfg config.Config) error {
 
 // addConfigFlag registers the one flag every subcommand has: settings
 // live in the file, and this says which file.
-func addConfigFlag(fset *flag.FlagSet) *string {
+//
+// synopsis is the command's own usage line, and it is here rather than
+// left to the flag package because that prints the flags and nothing
+// else — a command with a required argument comes out looking like a
+// command with none. Passing it in also means the same string can be
+// the error text when the argument is missing, so the two can't
+// disagree about what the command takes.
+func addConfigFlag(fset *flag.FlagSet, synopsis string) *string {
+	fset.Usage = func() {
+		fmt.Fprintf(fset.Output(), "Usage: %s\n\nFlags:\n", synopsis)
+		fset.PrintDefaults()
+	}
 	return fset.String("config", config.DefaultPath, "path to the settings file")
 }
 

@@ -10,6 +10,8 @@ After running it, you can visit the application in a browser at
 
 From here you can create a room, share your screen and get to playing!
 
+Run `longtable -h` in a terminal to see everything else it can do.
+
 Every room has a six-character **room code**, like `7wdbtb`. It's the end of the
 room's address, and it's what other people type into **Join a room**. Rooms
 aren't listed anywhere, so the code is the only way in.

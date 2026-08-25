@@ -16,14 +16,15 @@ import (
 // file, never a path of their own, so a Host can't end up setting the
 // banner in a database the running server has never opened.
 func runSetBanner(args []string) error {
+	const synopsis = "longtable set-banner [-config path] <message>"
 	fset := flag.NewFlagSet("set-banner", flag.ExitOnError)
-	configPath := addConfigFlag(fset)
+	configPath := addConfigFlag(fset, synopsis)
 	fset.Parse(args)
 	if fset.NArg() != 1 {
 		// The message has to come after any flags, the same rule
 		// room reset-password's room code follows: a flag is only parsed
 		// as a flag when it precedes the positional argument.
-		return fmt.Errorf("usage: longtable set-banner [-config path] <message>")
+		return fmt.Errorf("usage: %s", synopsis)
 	}
 
 	cfg, err := loadConfig(*configPath)
@@ -35,7 +36,7 @@ func runSetBanner(args []string) error {
 
 func runClearBanner(args []string) error {
 	fset := flag.NewFlagSet("clear-banner", flag.ExitOnError)
-	configPath := addConfigFlag(fset)
+	configPath := addConfigFlag(fset, "longtable clear-banner [-config path]")
 	fset.Parse(args)
 
 	cfg, err := loadConfig(*configPath)

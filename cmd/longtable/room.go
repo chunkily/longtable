@@ -21,15 +21,27 @@ import (
 // naming one database is how a Host ends up resetting a password in a
 // file the running server has never opened, and being told the room
 // doesn't exist.
+// roomUsage covers both halves of `room`, since neither subcommand is
+// much use without knowing the other exists.
+const roomUsage = `Usage:
+  longtable room list [-config path]
+  longtable room reset-password [-config path] <room-code>`
+
 func runRoomCommand(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: longtable room <list|reset-password> [flags]")
+		return errors.New(roomUsage)
+	}
+	// `room` has subcommands of its own, so it is the one place where
+	// "what can this do?" has a second answer worth printing.
+	if isHelpArg(args[0]) {
+		fmt.Println(roomUsage)
+		return nil
 	}
 
 	switch args[0] {
 	case "list":
 		fset := flag.NewFlagSet("room list", flag.ExitOnError)
-		configPath := addConfigFlag(fset)
+		configPath := addConfigFlag(fset, "longtable room list [-config path]")
 		fset.Parse(args[1:])
 		cfg, err := loadConfig(*configPath)
 		if err != nil {
@@ -38,13 +50,14 @@ func runRoomCommand(args []string) error {
 		return roomList(cfg.Database)
 
 	case "reset-password":
+		const synopsis = "longtable room reset-password [-config path] <room-code>"
 		fset := flag.NewFlagSet("room reset-password", flag.ExitOnError)
-		configPath := addConfigFlag(fset)
+		configPath := addConfigFlag(fset, synopsis)
 		fset.Parse(args[1:])
 		if fset.NArg() != 1 {
 			// The flag must come before the room code: `-config path` is
 			// parsed as a flag only if it precedes the positional argument.
-			return fmt.Errorf("usage: longtable room reset-password [-config path] <room-code>")
+			return fmt.Errorf("usage: %s", synopsis)
 		}
 		cfg, err := loadConfig(*configPath)
 		if err != nil {
