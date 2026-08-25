@@ -280,6 +280,16 @@ test('clicking away from an edited form asks, with one dialog on screen', async 
 	// Discarding from the question throws the edit away, like every other
 	// way out of the editor.
 	await clickAway(gm.page);
+	// Same wait as the two blocks either side, and for the same reason —
+	// this was the last gesture in the file still clicking straight out of
+	// clickAway, and it turned the e2e job red. Throttled to 20x, the
+	// question opens ~120ms before the form finishes leaving, and the
+	// button moves a pixel when it finally does: Playwright resolves the
+	// button in that window, waits for it to hold still, and the node goes
+	// out from under it — "element was detached from the DOM, retrying",
+	// then the test times out. Waiting for the form's `Name` to unmount is
+	// the signal that the swap is over and the layout has settled.
+	await expect(gm.page.getByLabel('Name')).toHaveCount(0);
 	await gm.page.getByRole('button', { name: 'Discard changes' }).click();
 	await expect(detailsPanel(gm.page)).toContainText('Goblin');
 
