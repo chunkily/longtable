@@ -1,7 +1,7 @@
 ---
 title: Host configures the server in a browser
 created: 2026-08-25
-status: incomplete
+status: done
 ---
 
 As a Host
@@ -28,3 +28,15 @@ got wrong.
 The fifth is the rule from [ADR-0009](../decisions/0009-admin-ui-and-database-config.md) stated
 from the Host's side: the screen and the CLI are two views of the same settings, and a setting
 that exists only on the screen has abandoned every Host running headless.
+
+## Verified
+
+All five, on [admin-settings-page](../backlog/admin-settings-page.md).
+
+The second is met in the honest direction rather than the flattering one: nothing is live yet, so
+every save says a restart is needed. The criterion asks for a change to take effect without one
+"unless that setting genuinely needs a restart", and today they all do — `Setting.Live` is false
+across the registry, and the page reports that rather than implying otherwise.
+
+The fifth holds by construction: the page renders from the same registry the CLI reads, so a
+setting cannot appear on one and not the other.

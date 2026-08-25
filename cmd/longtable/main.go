@@ -270,7 +270,7 @@ func serve(s *store.Store, cfg config.Config, dbPath string) error {
 			// Longtable itself. Two addresses is two things to confuse, and the
 			// Host who lands on the wrong one should find the way over rather
 			// than a dead end.
-			handler := admin.New(s.AdminToken, cfg.AdminAddr, browsableURL(cfg.Addr))
+			handler := admin.New(s.AdminToken, cfg.AdminAddr, browsableURL(cfg.Addr), s)
 			failed <- fmt.Errorf("admin listener: %w", http.ListenAndServe(cfg.AdminAddr, handler))
 		}()
 	}

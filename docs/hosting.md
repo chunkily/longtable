@@ -46,8 +46,11 @@ starts it prints a link with a token in it, like
 INFO longtable: set up at url="http://127.0.0.1:8081/?token=k3f9…"
 ```
 
-Open that and you're in. If the line has scrolled away, or the window closed,
-ask for it again:
+Open that and you're in. It lists every setting with what it does, and saving
+tells you if a change needs a restart. Everything on it is also available from
+the command line — see **Settings** below.
+
+If the line has scrolled away, or the window closed, ask for it again:
 
 ```bash
 longtable admin

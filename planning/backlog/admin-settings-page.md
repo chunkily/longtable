@@ -1,7 +1,7 @@
 ---
 title: The admin settings page
 created: 2026-08-25
-status: open
+status: done
 tags: [host, ui, admin]
 story: host-configures-server-in-browser
 ---
@@ -29,15 +29,51 @@ the form from the registry is what makes that structural instead of a thing to r
 - [ ] The token is exchanged for a session on arrival and the query string dropped, so it doesn't
       sit in history or leak in a referrer
 
-Not settled: whether this is a route in the existing SvelteKit app or a small separate page.
+~~Not settled: whether this is a route in the existing SvelteKit app or a small separate page.
 Serving it from the main frontend means the admin bundle ships to every Player too, and it has to
 be reachable on a *different port* from the game — which the SPA's routing and the embed both have
 opinions about. Worth deciding before wiring anything, the way
-[options-page](options-page.md) asked for a mock-up first.
+[options-page](options-page.md) asked for a mock-up first.~~ — **settled below.**
 
 Note [options-page](options-page.md) is `dropped` and does **not** cover this: it was about a Room
 Member's device-level theme control, a different role and a different kind of setting. It does not
 argue against a Host-facing settings screen.
+
+## What shipped
+
+`internal/admin/page.go` and `settings.go`: a `GET /` that renders every registry row as a form
+field, and a `POST /` that validates and saves.
+
+**Server-rendered HTML and a plain form, not a SvelteKit route** — the question the item left open.
+Three reasons, and the third decided it: the admin listener is a different port, so serving the SPA
+from it would ship the admin bundle to every Player for a screen none of them can open; a settings
+form needs no interactivity worth a build step; and the validation rules live in
+`internal/config`'s registry, so a form that posts and comes back with the message beside the field
+runs the *same* `Parse` that `longtable config set` does, rather than a second implementation in
+TypeScript that drifts from it. The page renders from the registry, so adding a setting there adds
+it here with nothing else to touch.
+
+Decisions worth not re-making:
+
+- **Nothing is written until the whole form is good.** A half-applied save leaves a server in a
+  state nobody asked for and no screen describing, and the cross-setting rules can't be judged
+  field by field anyway.
+- **What was typed comes back in the box on an error.** Handing back the stored value instead
+  would throw away the work and leave the complaint pointing at something invisible — which is the
+  entire reason validation moved off startup.
+- **Only changed fields are written.** Saving every field would store all six on first save and
+  lose the distinction `config list` reports between a setting somebody chose and one still on its
+  default.
+- **Post/redirect/get**, so a refresh doesn't save again; the confirmation and the "needs a
+  restart" note ride back on the query string.
+- **A cross-setting fault goes at the top, not beside a field** — neither value is wrong on its
+  own, and there is no one field for "these two are on the same port" to sit next to.
+- `admin_addr` is editable *from the page it serves*, which can turn that page off. Allowed: the
+  CLI puts it back, and the registry's `Warn` is rendered under the field so the consequence is
+  visible before the click rather than after.
+
+Fifteen tests in `internal/admin`, including that an unauthenticated POST changes nothing — the
+half of the guard easiest to forget once a form exists.
 
 ## Related user stories
 

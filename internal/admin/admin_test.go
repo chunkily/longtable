@@ -13,6 +13,35 @@ const (
 	adminAddr = "127.0.0.1:8081"
 )
 
+// fakeSettings stands in for the store, so the admin surface can be
+// tested without a database.
+type fakeSettings struct {
+	values map[string]string
+	failOn string
+}
+
+func (f *fakeSettings) Settings() (map[string]string, error) {
+	if f.failOn == "read" {
+		return nil, errors.New("database is gone")
+	}
+	out := map[string]string{}
+	for k, v := range f.values {
+		out[k] = v
+	}
+	return out, nil
+}
+
+func (f *fakeSettings) SetSetting(key, value string) error {
+	if f.failOn == "write" {
+		return errors.New("disk is full")
+	}
+	if f.values == nil {
+		f.values = map[string]string{}
+	}
+	f.values[key] = value
+	return nil
+}
+
 // fixed is a token that never changes, for the tests that aren't about
 // rotation.
 func fixed(token string) func() (string, error) {
@@ -36,7 +65,7 @@ func get(t *testing.T, handler http.Handler, target, host string, cookies ...*ht
 }
 
 func TestGuard_TokenGetsYouIn(t *testing.T) {
-	handler := New(fixed(token), adminAddr, "http://127.0.0.1:8080")
+	handler := New(fixed(token), adminAddr, "http://127.0.0.1:8080", &fakeSettings{})
 
 	resp := get(t, handler, "/?token="+token, adminAddr)
 	if resp.StatusCode != http.StatusSeeOther {
@@ -79,7 +108,7 @@ func TestGuard_TokenGetsYouIn(t *testing.T) {
 }
 
 func TestGuard_RefusesEverythingElse(t *testing.T) {
-	handler := New(fixed(token), adminAddr, "http://127.0.0.1:8080")
+	handler := New(fixed(token), adminAddr, "http://127.0.0.1:8080", &fakeSettings{})
 
 	for name, request := range map[string]func() *http.Response{
 		"no token at all": func() *http.Response {
@@ -105,7 +134,7 @@ func TestGuard_RefusesEverythingElse(t *testing.T) {
 // point a name it controls at 127.0.0.1 and talk to this server, and the
 // one thing it cannot do is forge the Host header the browser sends.
 func TestGuard_RefusesAHostHeaderItDoesNotServe(t *testing.T) {
-	handler := New(fixed(token), adminAddr, "http://127.0.0.1:8080")
+	handler := New(fixed(token), adminAddr, "http://127.0.0.1:8080", &fakeSettings{})
 
 	for _, host := range []string{
 		"evil.example.com:8081",
@@ -124,7 +153,7 @@ func TestGuard_RefusesAHostHeaderItDoesNotServe(t *testing.T) {
 // A Host reaches their own machine by several names, and all of them are
 // the same machine.
 func TestGuard_AcceptsEveryNameForThisMachine(t *testing.T) {
-	handler := New(fixed(token), adminAddr, "http://127.0.0.1:8080")
+	handler := New(fixed(token), adminAddr, "http://127.0.0.1:8080", &fakeSettings{})
 
 	for _, host := range []string{"127.0.0.1:8081", "localhost:8081", "[::1]:8081"} {
 		resp := get(t, handler, "/?token="+token, host)
@@ -138,7 +167,7 @@ func TestGuard_AcceptsEveryNameForThisMachine(t *testing.T) {
 // asked for: their own name works, and the loopback shorthand no longer
 // does, because it isn't what this is served on any more.
 func TestGuard_MatchesTheConfiguredHostWhenItIsNotLoopback(t *testing.T) {
-	handler := New(fixed(token), "192.168.1.23:8081", "http://127.0.0.1:8080")
+	handler := New(fixed(token), "192.168.1.23:8081", "http://127.0.0.1:8080", &fakeSettings{})
 
 	if resp := get(t, handler, "/?token="+token, "192.168.1.23:8081"); resp.StatusCode != http.StatusSeeOther {
 		t.Errorf("the configured address was refused: %d", resp.StatusCode)
@@ -151,7 +180,7 @@ func TestGuard_MatchesTheConfiguredHostWhenItIsNotLoopback(t *testing.T) {
 // A server whose token has somehow not been minted must not be an open
 // door — an empty stored token would otherwise match an empty cookie.
 func TestGuard_AnEmptyTokenLetsNobodyIn(t *testing.T) {
-	handler := New(fixed(""), adminAddr, "http://127.0.0.1:8080")
+	handler := New(fixed(""), adminAddr, "http://127.0.0.1:8080", &fakeSettings{})
 
 	if resp := get(t, handler, "/", adminAddr, &http.Cookie{Name: cookieName, Value: ""}); resp.StatusCode == http.StatusOK {
 		t.Fatal("an empty token was accepted")
@@ -168,7 +197,7 @@ func TestGuard_AnEmptyTokenLetsNobodyIn(t *testing.T) {
 // rotating because they leaked it.
 func TestGuard_RotationTakesEffectImmediately(t *testing.T) {
 	current := "first-token"
-	handler := New(func() (string, error) { return current, nil }, adminAddr, "http://127.0.0.1:8080")
+	handler := New(func() (string, error) { return current, nil }, adminAddr, "http://127.0.0.1:8080", &fakeSettings{})
 
 	// A Host is in, holding a cookie.
 	resp := get(t, handler, "/?token="+current, adminAddr)
@@ -203,7 +232,7 @@ func TestGuard_RotationTakesEffectImmediately(t *testing.T) {
 
 // A database that cannot be read is not a reason to let someone in.
 func TestGuard_ARefusedReadIsNotAPass(t *testing.T) {
-	handler := New(func() (string, error) { return "", errors.New("database is gone") }, adminAddr, "http://127.0.0.1:8080")
+	handler := New(func() (string, error) { return "", errors.New("database is gone") }, adminAddr, "http://127.0.0.1:8080", &fakeSettings{})
 
 	if resp := get(t, handler, "/?token=anything", adminAddr); resp.StatusCode != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500", resp.StatusCode)
