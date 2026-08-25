@@ -32,7 +32,18 @@ If these features are important to you, you might want to look elsewhere!
 
 ## Quickstart
 
-TODO: Populate this section in the future when releases are ready.
+Download the release for your machine from
+[Releases](https://github.com/chunkily/longtable/releases), unpack it, and run `longtable`. There
+is nothing to install — no runtime, no compiler, no libraries.
+
+Then open [http://localhost:8080](http://localhost:8080) and create a room.
+
+Longtable keeps everything in the folder you run it from: the rooms and their contents in
+`longtable.db`, uploaded art in `longtable-assets/`, and its settings in `longtable.toml`. Put it
+in a folder of its own.
+
+Everyone else joins over your network. The server prints the addresses to hand them when it
+starts. See [hosting](docs/hosting.md) for that and for the settings.
 
 ## Documentation
 

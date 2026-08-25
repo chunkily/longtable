@@ -344,7 +344,9 @@ file is read once at startup and a Host wants this one changed without a restart
 Known gaps, which is also roughly the queue: nothing rolls initiative for you — the tracker takes
 the number and `/roll 1d20+2` in chat is where it comes from; `Manage room` holds the
 movement lock, the room password and deleting the room, and is still waiting on room privacy and
-a switch to turn Player token creation off. Nothing caps how many tokens one Player may have standing. Fog has no automatic vision from tokens, no prebuilt releases, no way for a Host
+a switch to turn Player token creation off. Nothing caps how many tokens one Player may have standing. Fog has no automatic vision from tokens. **Nothing is released yet** — the workflow that
+would publish binaries exists and fires on a `v*` tag, so what's missing is the first tag rather
+than the machinery, and the binary itself is known to run with nothing installed. There is no way for a Host
 to remove a moderated asset server-wide (a room removing something from its own library is a
 different, smaller thing, and does exist) or to block a re-upload of content it already removed —
 deleting an asset's row today just lets the same bytes back in under a new one, since dedup only
@@ -405,6 +407,13 @@ Scope the Go commands to `./internal/... ./cmd/...`, not `./...`: the repo root 
 `web/node_modules`, which the go tool would walk looking for packages. CI (`.github/workflows/ci.yml`)
 runs all of the above, with `-race` on the Go tests — `-race` needs cgo, so it can't run on this
 Windows box, but it does run on Linux CI.
+
+**A `v*` tag cuts a release.** `.github/workflows/release.yml` cross-compiles six targets from one
+Linux runner with `CGO_ENABLED=0` — which is what ADR-0005 bought by keeping cgo out of the build
+— packages each with the README, the licence and `docs/hosting.md`, and publishes them with `gh`.
+It gates itself by *calling* `ci.yml` (which carries a `workflow_call:` trigger for that), so the
+checks a release waits for can't drift from the ones a pull request sees. Add a check to `ci.yml`
+and the release waits for it too; don't copy checks into the release file.
 
 ## Before touching a shared port
 

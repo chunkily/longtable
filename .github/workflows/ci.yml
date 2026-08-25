@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Called by release.yml, which gates a tagged release on these same
+  # checks. Calling this file rather than repeating its steps there is
+  # what stops the two drifting: there is one copy of what "CI passes"
+  # means, and a check added here is a check a release waits for.
+  workflow_call:
 
 jobs:
   backend:

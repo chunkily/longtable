@@ -1,0 +1,140 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  # The gate. A tag that fails the checks a pull request would have failed
+  # must not become a download, and calling ci.yml rather than restating
+  # it means the release waits for whatever CI means today — including
+  # checks added to it after this file was written.
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    needs: ci
+    runs-on: ubuntu-latest
+    # Only this job writes anything. The gate above runs with the default
+    # read-only token.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # Built once, ahead of every target. assets.go embeds web/build, so
+      # no Go build works until this has run — and building it here rather
+      # than per-target is what makes every distributable carry the same
+      # frontend by construction instead of by six builds happening to
+      # agree.
+      - working-directory: web
+        run: npm ci
+      - working-directory: web
+        run: npm run build
+
+      # One Linux job looping over the targets, not a matrix of six
+      # runners. Nothing here needs a native one: ADR-0005 chose a
+      # WASM-embedded libwebp over cgo bindings precisely so CGO_ENABLED=0
+      # cross-compiles everywhere from a single box, and that is the
+      # workflow it was choosing for.
+      - name: Build the distributables
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          set -euo pipefail
+          version="$GITHUB_REF_NAME"
+          mkdir -p dist
+
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
+            os="${target%/*}"
+            arch="${target#*/}"
+            staging="$(mktemp -d)"
+            name="longtable_${version}_${os}_${arch}"
+
+            # Everything goes in a folder named after the release rather
+            # than loose in the archive. The server writes longtable.toml,
+            # its database and its asset directory into whatever directory
+            # it is run from, so an archive that unpacks flat puts a Host's
+            # rooms wherever they happened to extract it — usually
+            # Downloads.
+            payload="$staging/$name"
+            mkdir -p "$payload/docs"
+
+            binary="longtable"
+            [ "$os" = windows ] && binary="longtable.exe"
+
+            # -tags nodynamic keeps the WebP encoder on its transpiled-Go
+            # path rather than reaching for a system libwebp, which is the
+            # same tag CI builds with and the only one a Host's machine
+            # can be assumed to satisfy.
+            GOOS="$os" GOARCH="$arch" go build -tags nodynamic -o "$payload/$binary" ./cmd/longtable
+
+            # Set rather than inherited. go build already produces 0755 on
+            # a Linux runner, so this looks redundant right up until it
+            # isn't: the bit is invisible in the archive listing unless
+            # something checks, and the way a Host finds out it was missing
+            # is "permission denied" on a fresh download.
+            chmod 755 "$payload/$binary"
+
+            # The hosting guide travels with the binary. A Host who has
+            # just downloaded a zip is exactly the person who needs it,
+            # and asking them to go and find it defeats the point.
+            cp README.md LICENSE "$payload/"
+            cp docs/hosting.md "$payload/docs/"
+
+            if [ "$os" = windows ]; then
+              (cd "$staging" && zip -qr "$GITHUB_WORKSPACE/dist/$name.zip" "$name")
+            else
+              # tar rather than zip, to carry that mode across. A release
+              # asset is just bytes, and a zipped Unix binary arrives
+              # without permission to run.
+              tar -czf "dist/$name.tar.gz" -C "$staging" "$name"
+
+              # Read back rather than trusted. A mode is invisible in a
+              # release listing, so a tarball whose binary can't be run
+              # looks perfect from here and fails in a Host's terminal,
+              # once, on the download they just made. Cheap to assert and
+              # not cheap to discover.
+              #
+              # Listed into a variable rather than piped into grep, which
+              # matters under `set -o pipefail`: `grep -q` stops reading at
+              # the first match, and a tar big enough to still be writing
+              # then takes SIGPIPE and reports 141 — failing the pipeline
+              # precisely when the assertion *passed*.
+              listing="$(tar -tvzf "dist/$name.tar.gz")"
+              if ! grep -q "^-rwxr-xr-x.*/${binary}\$" <<<"$listing"; then
+                echo "::error::$name.tar.gz carries a non-executable $binary"
+                exit 1
+              fi
+            fi
+          done
+
+          # Named explicitly rather than globbed, so the file can't end up
+          # listing itself.
+          (cd dist && sha256sum longtable_* > SHA256SUMS)
+          ls -l dist
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # gh rather than a third-party release action: it is already on
+          # the runner, and everything else this repo depends on is
+          # actions/*.
+          args=(--title "$GITHUB_REF_NAME" --generate-notes)
+          # A tag with a hyphen — v1.0.0-rc1 — publishes as a prerelease,
+          # which is what stops a candidate becoming the download the
+          # project's front page offers.
+          case "$GITHUB_REF_NAME" in
+            *-*) args+=(--prerelease) ;;
+          esac
+          gh release create "$GITHUB_REF_NAME" dist/* "${args[@]}"
