@@ -10,6 +10,12 @@ The headless half of first-run setup: a NAS, a Pi, a VPS over SSH — the case
 [first-run-opens-the-browser](first-run-opens-the-browser.md) cannot serve. Needs
 [settings-in-database](settings-in-database.md) for something to write into.
 
+**One of two paths through the same questions.** [first-run-wizard](first-run-wizard.md) is the
+other, in a browser, and the two must ask the same set — the way to guarantee that is for both to
+be driven from `internal/config`'s registry rather than each carrying its own list. This one has
+no equivalent of that item's express route, because a Host in a terminal can already skip the
+whole thing by not running it: the server starts either way.
+
 **Lower priority than it first looks, and worth starting after the browser path rather than
 before.** If the admin UI ships first, the browser open *is* the first-run experience for the
 Hosts this whole direction is aimed at, and the terminal prompt is a fallback for people who are

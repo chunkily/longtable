@@ -24,7 +24,9 @@ Four guards, and the third is not optional:
       dropped. No default browser, or an `xdg-open` that sits there, must cost nothing — the
       console line stays the real answer and this is the convenience on top of it
 - [ ] **First run only**, keyed on an explicit `setup.completed` setting rather than the database
-      looking empty. A server that opened a browser on every restart is one people learn to dread
+      looking empty. A server that opened a browser on every restart is one people learn to dread.
+      [first-run-wizard](first-run-wizard.md) needs the same marker for the same reason — whichever
+      lands first should introduce it
 - [ ] **A flag suppresses it**, because `web/e2e/run-app.mjs` wipes its database on every run and
       is therefore *always* a first run — 174 specs would each launch a browser. Containers,
       services and anyone scripting a deployment need the same switch

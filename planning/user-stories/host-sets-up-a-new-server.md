@@ -15,7 +15,10 @@ So that I can get a table running without knowing what TOML is
 - [ ] On a machine with a desktop, that screen opens in my browser by itself
 - [ ] If it can't — no desktop, no default browser, a machine I reached over SSH — the server
       still starts, and still tells me where to go
-- [ ] I can reach a working server by answering nothing at all: every default is a valid choice
+- [ ] I can reach a working server by answering nothing at all: every default is a valid choice,
+      and there is one obvious way to take all of them at once rather than confirming each
+- [ ] If I do want to change something, I am asked about it rather than shown a form of every
+      setting there is
 - [ ] It happens once. Later starts don't reopen anything
 - [ ] Nothing about this blocks a server that is started by a script, a service or a container
 
@@ -27,5 +30,13 @@ it is meant for them, and get it into a browser correctly, and every one of thos
 lose them.
 
 The fifth is what keeps this from becoming a nuisance for the Host who already knows what they
-are doing, and the sixth is not hypothetical — the e2e harness wipes its database on every run,
+are doing, and the seventh is not hypothetical — the e2e harness wipes its database on every run,
 so it is a first-time setup 174 times a run.
+
+The express route is not a shortcut past a decision; it *is* the decision. The defaults are
+already the right answer for someone running a game on their own machine, and a wizard that makes
+a person confirm six of them has charged them for nothing.
+
+Where this story stops is the moment setup is finished — being landed on a working table is
+[host-finishes-setup-and-starts-playing](host-finishes-setup-and-starts-playing.md), which is
+where the hard part lives.
