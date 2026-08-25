@@ -7,6 +7,7 @@ import {
 	dragToken,
 	inkAt,
 	watchInkAt,
+	watchInkBetween,
 	type Point
 } from './fixtures/map';
 import type { Page } from '@playwright/test';
@@ -26,17 +27,25 @@ test('a token someone else moves slides rather than jumping', async ({ table }) 
 	const gm = table.gm;
 
 	const from = await createToken(gm.page, 'Goblin');
-	// Far enough that the two probes can't overlap, and that the slide
-	// lasts long enough to be caught in the middle of.
-	const to: Point = { x: from.x - 4 * GRID, y: from.y };
+	// Six squares rather than four: the slide is a fixed 220ms whatever
+	// the distance, so a longer path doesn't buy more frames — it buys a
+	// larger share of them landing clear of both ends, where the watcher
+	// below can see them.
+	const to: Point = { x: from.x - 6 * GRID, y: from.y };
 	const midpoint: Point = { x: (from.x + to.x) / 2, y: from.y };
 
 	await expect.poll(() => probe(player.page, from)).toBeGreaterThan(0);
 
-	// Watching the halfway square before anything moves. Nothing has ever
-	// been drawn there, so any ink at all means the token passed through
-	// rather than teleporting over it.
-	const transit = await watchInkAt(player.page, midpoint);
+	// Watching the whole space between the squares before anything moves.
+	// Nothing has ever been drawn there, so any ink at all means the token
+	// passed through rather than teleporting over it.
+	//
+	// This watched a 20px box on the midpoint until it was measured: only
+	// one painted frame per move ever landed in it, even on an idle
+	// machine, which made the assertion a margin of one and cost the suite
+	// a failure every run or two. The band asks the same question of every
+	// frame that crosses instead of the one that lands in the middle.
+	const transit = await watchInkBetween(player.page, from, to);
 
 	// Drag it on the GM's map. The player only learns about it from the
 	// broadcast, which is the case that used to teleport.
@@ -48,7 +57,7 @@ test('a token someone else moves slides rather than jumping', async ({ table }) 
 	expect(await probe(player.page, midpoint)).toBe(0);
 
 	// ...having been seen in between on the way, which is the whole claim.
-	expect(await transit.stop()).toBe(true);
+	expect((await transit.stop()).seen).toBe(true);
 });
 
 // Whoever did the dragging has already watched the token travel under
@@ -79,7 +88,12 @@ test('the person dragging does not see it slide again on the echo', async ({ tab
 	await gm.page.mouse.up();
 
 	await gm.page.waitForTimeout(600);
-	expect(await rubberBand.stop()).toBe(false);
+	const settled = await rubberBand.stop();
+	// The watcher has to have been awake for "it never came back" to mean
+	// anything: a watch that sampled nothing reports exactly the same
+	// thing as one that watched a token stay put.
+	expect(settled.frames).toBeGreaterThan(0);
+	expect(settled.seen).toBe(false);
 	expect(await probe(gm.page, to)).toBeGreaterThan(0);
 	expect(await probe(gm.page, midpoint)).toBe(0);
 });

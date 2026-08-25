@@ -133,7 +133,7 @@ modules, the first two newer than most of the specs:
   snapshot in `test-results/<test>/error-context.md` before theorising.** It renders what was
   actually on screen, and would have answered that one in one round instead of three.
 - **`e2e/fixtures/map.ts`** — everything about the canvas: `LAYER`, `layerInk`, `inkAt`/`tokenInkAt`,
-  `canvasBox`, `spawnCentre`, `dragToken`, `settleAt`, `watchInkAt`, `createToken`, `selectToken`,
+  `canvasBox`, `spawnCentre`, `dragToken`, `settleAt`, `watchInkAt`, `watchInkBetween`, `createToken`, `selectToken`,
   `openEditor`, `saveEditor`, `detailsPanel`, `trackerBox`. The waits in here are the ones that
   were right; the flaky specs were the copies that guessed. `createToken` returns the point the
   token landed on and waits for ink *there* rather than anywhere on the layer, and `selectToken`
@@ -142,7 +142,18 @@ modules, the first two newer than most of the specs:
   entirely — and **several watches on one page are safe**: each takes its own slot, which they
   didn't before, so the second used to reset the first's result and the first `stop()` switched
   both loops off. That failed in the dangerous direction, since a spec asserting "this never
-  appeared" passes when its watcher was turned off early.
+  appeared" passes when its watcher was turned off early — which is also why `stop()` reports a
+  frame count beside its answer, and why any "must not appear" assertion should check
+  `frames > 0` before trusting the silence.
+  **For "did it travel", reach for `watchInkBetween` rather than `watchInkAt` on a midpoint.** A
+  slide is a fixed 220ms however far it goes, so a move is about thirteen painted frames and
+  easing spends most of them near the ends: measured, exactly *one* frame per move landed within
+  20px of the midpoint on an idle machine, and none at all under load. Watching the band between
+  the two squares asks the same question of every frame that crosses. The general rule, and the
+  cause of three flakes in this suite now, is in
+  `planning/backlog/margin-of-one-frame-assertions.md` — when an assertion is about something
+  transient, count how many frames satisfy it before trusting it, with
+  `Emulation.setCPUThrottlingRate` over CDP to make the count honest.
 - **`e2e/fixtures/room.ts`** — getting into a room and driving its chrome: `createRoom`,
   `selectTool`, the menu, the join flow.
 

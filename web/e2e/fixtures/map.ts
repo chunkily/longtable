@@ -138,6 +138,38 @@ export async function settleAt(page: Page, point: Point) {
 }
 
 /**
+ * Watch the space *between* two squares for any ink at all, for as long
+ * as something might cross it.
+ *
+ * Use this rather than `watchInkAt` on a midpoint when the claim is "it
+ * travelled" rather than "it was exactly here". A slide is a fixed 220ms
+ * however far it goes, so there are only about thirteen painted frames
+ * in the whole move and easing spends most of them near the ends.
+ * Measured on an idle machine, exactly **one** of those frames landed
+ * within 20px of the midpoint — so a midpoint probe is a margin-of-one
+ * assertion, and it failed roughly once a suite. Watching the whole band
+ * between the squares tests the same claim against every frame that
+ * crosses it instead of the one that happens to land in the middle.
+ *
+ * The band stops a square short of each end, so a token sitting still at
+ * either end never registers — that clearance is what the midpoint probe
+ * was buying with its narrowness, and it is kept here by geometry rather
+ * than by being small.
+ */
+export async function watchInkBetween(page: Page, from: Point, to: Point, layer = LAYER.tokens) {
+	const horizontal = Math.abs(to.x - from.x) >= Math.abs(to.y - from.y);
+	// Inset along the axis being travelled; on the other axis there is no
+	// travel to inset, so cover a square's worth of token instead.
+	const inset = { x: horizontal ? GRID : GRID / 2, y: horizontal ? GRID / 2 : GRID };
+	const left = Math.min(from.x, to.x) + (horizontal ? inset.x : -inset.x);
+	const right = Math.max(from.x, to.x) - (horizontal ? inset.x : -inset.x);
+	const top = Math.min(from.y, to.y) + (horizontal ? -inset.y : inset.y);
+	const bottom = Math.max(from.y, to.y) - (horizontal ? -inset.y : inset.y);
+
+	return watchInkInRect(page, { left, top, width: right - left, height: bottom - top }, layer);
+}
+
+/**
  * Watches one spot on a layer on every animation frame until stopped,
  * and reports whether ink ever appeared there.
  *
@@ -147,8 +179,43 @@ export async function settleAt(page: Page, point: Point) {
  * which passed when the spec ran alone and failed under a loaded
  * four-worker run. Sampling per frame inside the page sees all ~13
  * frames of it.
+ *
+ * For "did it travel", use `watchInkBetween`: a point this small on a
+ * moving thing's path is a margin-of-one assertion, and the measurement
+ * is in that function's comment.
  */
 export async function watchInkAt(page: Page, point: Point, layer = LAYER.tokens, radius = 20) {
+	return watchInkInRect(
+		page,
+		{ left: point.x - radius, top: point.y - radius, width: radius * 2, height: radius * 2 },
+		layer
+	);
+}
+
+interface Rect {
+	left: number;
+	top: number;
+	width: number;
+	height: number;
+}
+
+/**
+ * Sample a rectangle every frame until stopped, reporting whether
+ * anything was ever painted in it.
+ *
+ * Sampling on `requestAnimationFrame` is not a detail: it is once per
+ * painted frame, which is the most often the pixels can change. It also
+ * means a watch only sees what the page actually rendered — an animation
+ * starved of frames genuinely never paints the intermediate positions,
+ * and no faster sampler would find them.
+ *
+ * `stop()` reports the frame count as well as the answer, because a
+ * watch that never ran reports "never seen" — which is a *pass* for
+ * every assertion of the form "this must not appear". Those are the
+ * assertions that quietly stop testing anything, so they should check
+ * `frames` too.
+ */
+async function watchInkInRect(page: Page, rect: Rect, layer: number) {
 	// Each watch gets its own slot on the page. They used to share one
 	// pair of globals, which is fine for one watch and quietly wrong for
 	// two: the second reset the first's result, and the first `stop()`
@@ -158,9 +225,12 @@ export async function watchInkAt(page: Page, point: Point, layer = LAYER.tokens,
 	const key = `__inkWatch${watchers++}`;
 
 	await page.evaluate(
-		({ key, layer, x, y, radius }) => {
-			const slots = window as unknown as Record<string, { seen: boolean; watching: boolean }>;
-			const slot = { seen: false, watching: true };
+		({ key, layer, rect }) => {
+			const slots = window as unknown as Record<
+				string,
+				{ seen: boolean; frames: number; watching: boolean }
+			>;
+			const slot = { seen: false, frames: 0, watching: true };
 			slots[key] = slot;
 
 			const canvas = document.querySelectorAll('canvas')[layer] as HTMLCanvasElement;
@@ -169,11 +239,12 @@ export async function watchInkAt(page: Page, point: Point, layer = LAYER.tokens,
 
 			const sample = () => {
 				if (!slot.watching) return;
+				slot.frames++;
 				const data = context.getImageData(
-					(x - radius) * dpr,
-					(y - radius) * dpr,
-					radius * 2 * dpr,
-					radius * 2 * dpr
+					rect.left * dpr,
+					rect.top * dpr,
+					rect.width * dpr,
+					rect.height * dpr
 				).data;
 				for (let i = 3; i < data.length; i += 4) {
 					if (data[i] > 0) {
@@ -185,15 +256,18 @@ export async function watchInkAt(page: Page, point: Point, layer = LAYER.tokens,
 			};
 			requestAnimationFrame(sample);
 		},
-		{ key, layer, x: point.x, y: point.y, radius }
+		{ key, layer, rect }
 	);
 
 	return {
 		stop: () =>
 			page.evaluate((key) => {
-				const slots = window as unknown as Record<string, { seen: boolean; watching: boolean }>;
+				const slots = window as unknown as Record<
+					string,
+					{ seen: boolean; frames: number; watching: boolean }
+				>;
 				slots[key].watching = false;
-				return slots[key].seen;
+				return { seen: slots[key].seen, frames: slots[key].frames };
 			}, key)
 	};
 }

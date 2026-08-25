@@ -99,6 +99,11 @@ test('nobody else sees the ghost or the line', async ({ table }) => {
 	await gm.page.mouse.up();
 	await expect.poll(() => inkAt(player.page, LAYER.tokens, to)).toBeGreaterThan(0);
 
-	expect(await ghost.stop()).toBe(false);
-	expect(await line.stop()).toBe(false);
+	const ghostSeen = await ghost.stop();
+	const lineSeen = await line.stop();
+	// Both are "this must never appear", which is the assertion a watcher
+	// that never ran passes for free — so check it was awake first.
+	expect(ghostSeen.frames).toBeGreaterThan(0);
+	expect(ghostSeen.seen).toBe(false);
+	expect(lineSeen.seen).toBe(false);
 });
