@@ -12,6 +12,8 @@ import (
 func TestUsage_NamesEveryCommand(t *testing.T) {
 	for _, command := range []string{
 		"serve",
+		"config list",
+		"config set",
 		"room list",
 		"room reset-password",
 		"set-banner",
@@ -24,11 +26,11 @@ func TestUsage_NamesEveryCommand(t *testing.T) {
 }
 
 // The gap this whole thing exists to close: the flag package answers -h
-// with the flags of one FlagSet, so `-config` was the entire published
+// with the flags of one FlagSet, so `-db` alone was the entire published
 // surface of a CLI with five commands.
 func TestUsage_SaysMoreThanTheConfigFlag(t *testing.T) {
-	if !strings.Contains(usage, "-config") {
-		t.Error("help doesn't mention the one flag there is")
+	if !strings.Contains(usage, "-db") {
+		t.Error("help doesn't mention the flag that says which database")
 	}
 	if strings.Count(usage, "\n") < 10 {
 		t.Errorf("help is too short to be listing commands:\n%s", usage)
@@ -36,7 +38,7 @@ func TestUsage_SaysMoreThanTheConfigFlag(t *testing.T) {
 }
 
 // A command that needs an argument has to show it. This is the half the
-// flag package cannot do: it prints -config and stops, which reads as
+// flag package cannot do: it prints -db and stops, which reads as
 // "takes no arguments" for exactly the two commands that do.
 func TestUsage_ShowsTheArgumentsCommandsRequire(t *testing.T) {
 	for _, placeholder := range []string{"<room-code>", "<message>"} {
@@ -58,7 +60,7 @@ func TestIsHelpArg(t *testing.T) {
 	}
 	// "serve" is the one that matters here: it is what a bare run means,
 	// and treating it as help would stop the server starting.
-	for _, arg := range []string{"serve", "room", "set-banner", "-config", "", "helper"} {
+	for _, arg := range []string{"serve", "room", "config", "set-banner", "-db", "", "helper"} {
 		if isHelpArg(arg) {
 			t.Errorf("%q should not be read as a request for help", arg)
 		}
@@ -90,14 +92,15 @@ func TestRouteFor(t *testing.T) {
 		// reject anything it doesn't recognise.
 		{"no arguments at all", nil, routeServe},
 		{"an explicit serve", []string{"serve"}, routeServe},
-		{"serve with its flag", []string{"serve", "-config", "other.toml"}, routeServe},
+		{"serve with its flag", []string{"serve", "-db", "other.db"}, routeServe},
 		// A flag with no command in front of it has always been serve's.
-		{"a bare flag", []string{"-config", "other.toml"}, routeServe},
-		{"a bare flag, long form", []string{"--config", "other.toml"}, routeServe},
+		{"a bare flag", []string{"-db", "other.db"}, routeServe},
+		{"a bare flag, long form", []string{"--db", "other.db"}, routeServe},
 
 		{"room", []string{"room", "list"}, routeRoom},
 		{"set-banner", []string{"set-banner", "back at 9"}, routeSetBanner},
 		{"clear-banner", []string{"clear-banner"}, routeClearBanner},
+		{"config", []string{"config", "list"}, routeConfig},
 
 		{"-h", []string{"-h"}, routeHelp},
 		{"--help", []string{"--help"}, routeHelp},
@@ -107,10 +110,21 @@ func TestRouteFor(t *testing.T) {
 		{"a misspelled command", []string{"serv"}, routeUnknown},
 		{"a command that doesn't exist", []string{"rooms"}, routeUnknown},
 		{"the wrong case", []string{"Room"}, routeUnknown},
-		{"a stray word before a flag", []string{"srv", "-config", "other.toml"}, routeUnknown},
+		{"a stray word before a flag", []string{"srv", "-db", "other.db"}, routeUnknown},
 	} {
 		if got := routeFor(tc.args); got != tc.want {
 			t.Errorf("%s: routeFor(%q) = %q, want %q", tc.name, tc.args, got, tc.want)
+		}
+	}
+}
+
+// The top-level help names the two settings commands anyone runs daily
+// and points at "longtable config -h" for the rest, so that is where the
+// other four have to actually be.
+func TestConfigUsage_NamesEverySettingsCommand(t *testing.T) {
+	for _, command := range []string{"list", "get", "set", "unset", "export", "import"} {
+		if !strings.Contains(configUsage, "config "+command) {
+			t.Errorf("config help doesn't mention %q", command)
 		}
 	}
 }

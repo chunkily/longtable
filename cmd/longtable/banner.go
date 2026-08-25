@@ -16,9 +16,9 @@ import (
 // file, never a path of their own, so a Host can't end up setting the
 // banner in a database the running server has never opened.
 func runSetBanner(args []string) error {
-	const synopsis = "longtable set-banner [-config path] <message>"
+	const synopsis = "longtable set-banner [-db path] <message>"
 	fset := flag.NewFlagSet("set-banner", flag.ExitOnError)
-	configPath := addConfigFlag(fset, synopsis)
+	dbPath := addDBFlag(fset, synopsis)
 	fset.Parse(args)
 	if fset.NArg() != 1 {
 		// The message has to come after any flags, the same rule
@@ -27,23 +27,15 @@ func runSetBanner(args []string) error {
 		return fmt.Errorf("usage: %s", synopsis)
 	}
 
-	cfg, err := loadConfig(*configPath)
-	if err != nil {
-		return err
-	}
-	return setBanner(cfg.Database, fset.Arg(0))
+	return setBanner(*dbPath, fset.Arg(0))
 }
 
 func runClearBanner(args []string) error {
 	fset := flag.NewFlagSet("clear-banner", flag.ExitOnError)
-	configPath := addConfigFlag(fset, "longtable clear-banner [-config path]")
+	dbPath := addDBFlag(fset, "longtable clear-banner [-db path]")
 	fset.Parse(args)
 
-	cfg, err := loadConfig(*configPath)
-	if err != nil {
-		return err
-	}
-	return setBanner(cfg.Database, "")
+	return setBanner(*dbPath, "")
 }
 
 func setBanner(dbPath, message string) error {

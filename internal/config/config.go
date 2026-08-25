@@ -1,229 +1,341 @@
-// Package config is the Host's settings file: everything the server can
-// be told, and the only place it can be told any of it.
+// Package config is the registry of everything a Host can configure:
+// every setting there is, what it defaults to, what it means, and the
+// rules a value has to pass before it is stored.
 //
-// There are no setting flags and no environment variables. One file
-// means a Host reads their own server's configuration by opening it,
-// rather than by finding whichever shell script or service unit is
-// actually starting the process — which is the thing that goes missing
-// when somebody else takes over hosting, or when it's been six months.
-// `-config` names a different file; that is the whole of the command
-// line.
+// It holds no values of its own and reads nothing. Settings live in the
+// database ([ADR-0009]), and this package is the leaf that says what a
+// setting *is* — so `longtable config`, the admin UI's fields and help
+// text, the comments in an exported file, and the validation on the way
+// in all read one table. That is what keeps the CLI and the UI from
+// drifting into two different ideas of what can be configured.
 //
-// The Host's banner isn't here — see cmd/longtable's `set-banner` and
-// `clear-banner`. It's server *state*, changed while the process is
-// running, rather than a setting the process starts with; this package
-// is only ever read once, at startup, which is the wrong shape for
-// something a Host wants to change without a restart.
+// Two things are deliberately not here. The database's own location
+// cannot be a setting, because nothing could read it — it is the `-db`
+// flag. And the Host's banner is server state rather than configuration:
+// see cmd/longtable's `set-banner`, and the note in settings-in-database
+// about whether it should move.
+//
+// [ADR-0009]: ../../planning/decisions/0009-admin-ui-and-database-config.md
 package config
 
 import (
-	"errors"
 	"fmt"
-	"os"
+	"strings"
 	"time"
 
 	"github.com/dustin/go-humanize"
-	"github.com/pelletier/go-toml/v2"
 )
 
-// DefaultPath is where the server looks when nobody says otherwise: the
-// working directory, beside the database and asset directory it also
-// defaults to, so everything one server owns sits in one folder the Host
-// chose.
-const DefaultPath = "longtable.toml"
-
 // Duration is a time.Duration written the way a person writes one —
-// `"30s"`, `"2m"`. TOML has no duration type, and a bare number would
-// have to mean nanoseconds or seconds by convention, which is exactly
-// the sort of thing a Host would have to leave the file to look up.
+// `"30s"`, `"2m"`. A bare number would have to mean nanoseconds or
+// seconds by convention, which is exactly the sort of thing a Host would
+// have to go and look up.
 type Duration time.Duration
-
-func (d *Duration) UnmarshalText(text []byte) error {
-	parsed, err := time.ParseDuration(string(text))
-	if err != nil {
-		// time's own message quotes the input and names the units it
-		// knows, which is more use to a Host than anything shorter.
-		return err
-	}
-	*d = Duration(parsed)
-	return nil
-}
 
 func (d Duration) String() string { return time.Duration(d).String() }
 
 // ByteSize is a count of bytes written the way a person writes one —
-// `"25 MiB"`, `"5 GB"` — for the same reason Duration exists: TOML has
-// no size type, and a bare number would leave a Host doing the
-// arithmetic by hand to know what they'd typed.
+// `"25 MiB"`, `"5 GB"` — for the same reason Duration exists: nobody
+// should be counting zeroes to say how big an upload may be.
 type ByteSize int64
 
-func (b *ByteSize) UnmarshalText(text []byte) error {
-	parsed, err := humanize.ParseBytes(string(text))
-	if err != nil {
-		return err
+// String renders in IEC units (MiB, GiB) rather than SI, because "MB" is
+// ambiguous between the two in a way nobody choosing a limit benefits
+// from.
+func (b ByteSize) String() string { return humanize.IBytes(uint64(b)) }
+
+// Config is a server's settings once they have been read and resolved —
+// what the rest of the program is handed. Anything missing from the
+// database takes the registry's default, which is what lets a version
+// add a setting without every existing database having to know about it.
+type Config struct {
+	Addr           string
+	Assets         string
+	DepartureGrace Duration
+	Uploads        UploadLimits
+}
+
+// UploadLimits bounds what an upload can cost a Host's disk.
+// MaxAssetSize stops any one upload being unreasonably large;
+// MaxTotalStorage stops the sum of everything ever uploaded from growing
+// without bound.
+type UploadLimits struct {
+	MaxAssetSize    ByteSize
+	MaxTotalStorage ByteSize
+}
+
+// Setting is one thing a Host can change, and the only place its
+// default, its meaning and its rules live.
+type Setting struct {
+	// Key is what a Host types and what the database stores. Dotted
+	// rather than nested, because that is how the value was already
+	// spelled when written inline in the file this replaced.
+	Key string
+
+	// Default is the canonical rendering of the value used when the
+	// database says nothing.
+	Default string
+
+	// Summary is the one line that used to be a comment above the setting
+	// in longtable.toml. Deleting that file made this the only place a
+	// Host is told what a setting does, so it is not decoration — see
+	// ADR-0006, which chose a commentable format for exactly this and is
+	// superseded by the decision that created this package.
+	Summary string
+
+	// Live settings take effect when they are written. The rest need a
+	// restart, and both the CLI and the UI have to say so rather than
+	// letting a save imply a change that hasn't happened.
+	//
+	// Everything is false today. Live is per-setting plumbing — the
+	// banner manages it by re-reading on every request — and claiming it
+	// before the plumbing exists would be the one lie a settings screen
+	// must not tell.
+	Live bool
+
+	// Parse validates a raw value and returns the form to store, so what
+	// `set` accepts is what `get` prints back: "26214400" comes out
+	// "25 MiB".
+	Parse func(raw string) (string, error)
+
+	// apply puts an already-canonical value into a Config. Unexported
+	// because nothing outside resolves a single setting on its own.
+	apply func(c *Config, canonical string) error
+}
+
+// Registry is every setting there is, in the order a Host should meet
+// them. Adding a row is the whole of adding a setting: the CLI, an
+// export and the admin UI all read this.
+var Registry = []Setting{
+	stringSetting(
+		"addr", ":8080",
+		`The address to listen on. ":8080" means every address this machine has, which is what lets other people reach you over the network. Use "127.0.0.1:8080" to keep the server to this machine only.`,
+		func(c *Config, v string) { c.Addr = v },
+	),
+	stringSetting(
+		"assets", "longtable-assets",
+		"The directory uploaded maps and token art go in. This is the second half of a backup — the database does not contain it.",
+		func(c *Config, v string) { c.Assets = v },
+	),
+	durationSetting(
+		"departure_grace", 30*time.Second,
+		`How long someone may be disconnected before the room is told they left. A phone locking its screen is back well inside 30 seconds and nobody sees anything. On a bad network, try "2m".`,
+		func(c *Config, v Duration) { c.DepartureGrace = v },
+	),
+	byteSizeSetting(
+		"uploads.max_asset_size", 25*humanize.MiByte,
+		"The largest a single map or token upload may be.",
+		func(c *Config, v ByteSize) { c.Uploads.MaxAssetSize = v },
+	),
+	byteSizeSetting(
+		"uploads.max_total_storage", 10*humanize.GiByte,
+		"The most this server will ever store across every room's uploads combined. Art shared by several rooms only counts once.",
+		func(c *Config, v ByteSize) { c.Uploads.MaxTotalStorage = v },
+	),
+}
+
+// Lookup finds a setting by key.
+func Lookup(key string) (Setting, bool) {
+	for _, s := range Registry {
+		if s.Key == key {
+			return s, true
+		}
 	}
-	*b = ByteSize(parsed)
+	return Setting{}, false
+}
+
+// Keys is every setting's key, in registry order.
+func Keys() []string {
+	keys := make([]string, 0, len(Registry))
+	for _, s := range Registry {
+		keys = append(keys, s.Key)
+	}
+	return keys
+}
+
+// Resolve turns stored values into a Config, filling anything absent
+// from the registry's defaults.
+//
+// An unknown key in the map is ignored rather than refused. Refusal is
+// the job of the write path, where a person is present to be told; a key
+// left behind by an older version must not stop a server starting.
+func Resolve(values map[string]string) (Config, error) {
+	var c Config
+	for _, s := range Registry {
+		raw, ok := values[s.Key]
+		if !ok || raw == "" {
+			raw = s.Default
+		}
+		if err := s.apply(&c, raw); err != nil {
+			// Only reachable if something wrote past Parse — a hand-edited
+			// database, most likely. Name the key, since the value alone
+			// gives a Host nothing to go on.
+			return Config{}, fmt.Errorf("%s: %w", s.Key, err)
+		}
+	}
+	return c, nil
+}
+
+// Defaults is what a server runs on when the database says nothing.
+//
+// Derived from the registry rather than written out a second time, so a
+// default cannot disagree with the description printed beside it.
+func Defaults() Config {
+	c, err := Resolve(nil)
+	if err != nil {
+		// A registry whose own defaults don't parse is a programming
+		// error, not a Host's. TestRegistry_DefaultsAreValid says so
+		// before this can reach anyone.
+		panic("config: registry defaults do not parse: " + err.Error())
+	}
+	return c
+}
+
+// Validate catches what no single setting can judge on its own.
+//
+// Run on the way in as well as at startup, so a value that cannot work
+// is refused while the person who typed it is still looking at it —
+// which is the main thing the database bought over a file, where the
+// same mistake surfaced as a server that wouldn't boot.
+func (c Config) Validate() error {
+	// Plain sentences: a Host reads these. See the longtable-copy skill.
+	if c.Uploads.MaxTotalStorage < c.Uploads.MaxAssetSize {
+		return fmt.Errorf(
+			"uploads.max_total_storage can't be smaller than uploads.max_asset_size (%s). Nothing could ever be uploaded",
+			c.Uploads.MaxAssetSize)
+	}
 	return nil
 }
 
-// String renders in IEC units (MiB, GiB) rather than SI (MB, GB) to
-// match how the doc comments and this file's own defaults talk about
-// sizes — and because "MB" is ambiguous between the two in a way nobody
-// editing a config file benefits from.
-func (b ByteSize) String() string { return humanize.IBytes(uint64(b)) }
-
-// Config is the whole of a Longtable server's settings. The banner
-// isn't one of them — see the package doc for why.
+// Suggest names the setting a mistyped key was probably meant to be, or
+// "" when nothing is close.
 //
-// Flat keys, plus the one `[section]`: upload limits turned out to be
-// the settings that didn't belong beside these, so they nest under
-// `Uploads` instead of flattening into `max_asset_size` and
-// `max_total_storage` at the top level. TOML puts every top-level key
-// *above* the first table header, so the generated file keeps `Uploads`
-// last.
-type Config struct {
-	Addr           string       `toml:"addr"`
-	Database       string       `toml:"database"`
-	Assets         string       `toml:"assets"`
-	DepartureGrace Duration     `toml:"departure_grace"`
-	Uploads        UploadLimits `toml:"uploads"`
+// The file this replaced refused an unknown key and drew the line it was
+// on, and its own comment called that "the one failure a config file
+// invents that a command line never had". Deleting the file must not
+// delete the guarantee.
+func Suggest(key string) string {
+	best, bestDistance := "", 0
+	for _, candidate := range Keys() {
+		d := distance(key, candidate)
+		// Three edits is about where a suggestion stops being helpful and
+		// starts being a guess.
+		if d > 3 {
+			continue
+		}
+		if best == "" || d < bestDistance {
+			best, bestDistance = candidate, d
+		}
+	}
+	return best
 }
 
-// UploadLimits bounds what an upload can cost a Host's disk. Both guard
-// different things: MaxAssetSize stops any one upload being unreasonably
-// large, MaxTotalStorage stops the sum of everything ever uploaded from
-// growing without bound. Enforced in internal/api's upload handler.
-type UploadLimits struct {
-	MaxAssetSize    ByteSize `toml:"max_asset_size"`
-	MaxTotalStorage ByteSize `toml:"max_total_storage"`
+// distance is Levenshtein, one row at a time.
+func distance(a, b string) int {
+	prev := make([]int, len(b)+1)
+	curr := make([]int, len(b)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(a); i++ {
+		curr[0] = i
+		for j := 1; j <= len(b); j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			curr[j] = min(prev[j]+1, min(curr[j-1]+1, prev[j-1]+cost))
+		}
+		prev, curr = curr, prev
+	}
+	return prev[len(b)]
 }
 
-// Defaults is what a server runs on when its file says nothing, and what
-// the generated file is written from — one source for both, so a fresh
-// file can't drift from the behaviour it describes.
-//
-// DepartureGrace mirrors ws.DefaultDepartureGrace rather than importing
-// it: this package is a leaf, and pulling the hub in for one constant
-// would drag the store and the socket library into anything that reads a
-// setting. The test beside this file fails if the two ever disagree.
-func Defaults() Config {
-	return Config{
-		Addr:           ":8080",
-		Database:       "longtable.db",
-		Assets:         "longtable-assets",
-		DepartureGrace: Duration(30 * time.Second),
-		Uploads: UploadLimits{
-			// Matches the ceiling this server enforced before it was
-			// configurable — generous for map/token art.
-			MaxAssetSize: ByteSize(25 * humanize.MiByte),
-			// Enough for a well-stocked room or two before a Host has to
-			// think about it, without leaving a fresh install able to
-			// swallow a disk on its own.
-			MaxTotalStorage: ByteSize(10 * humanize.GiByte),
+// The three constructors below exist so a registry entry says what a
+// setting is and nothing about how its type is handled. Each builds both
+// Parse and apply from one parser, which is what stops the two
+// disagreeing about what a valid value is.
+
+func stringSetting(key, def, summary string, assign func(*Config, string)) Setting {
+	return Setting{
+		Key: key, Default: def, Summary: summary,
+		Parse: func(raw string) (string, error) {
+			raw = strings.TrimSpace(raw)
+			if raw == "" {
+				return "", fmt.Errorf("%s can't be empty", key)
+			}
+			return raw, nil
+		},
+		apply: func(c *Config, canonical string) error {
+			if strings.TrimSpace(canonical) == "" {
+				return fmt.Errorf("can't be empty")
+			}
+			assign(c, canonical)
+			return nil
 		},
 	}
 }
 
-// Load reads the config at path, which has to be there.
-//
-// For a path a Host named themselves. Somebody who types `-config
-// server.toml` has a file in mind, and creating a fresh default one at a
-// mistyped path would look exactly like their settings being ignored:
-// the server starts, and everything they configured is quietly gone.
-func Load(path string) (Config, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return Config{}, fmt.Errorf("no config file at %s", path)
+func durationSetting(key string, def time.Duration, summary string, assign func(*Config, Duration)) Setting {
+	parse := func(raw string) (time.Duration, error) {
+		d, err := time.ParseDuration(strings.TrimSpace(raw))
+		if err != nil {
+			// time's own message names the units it knows, which is more
+			// use than anything shorter would be.
+			return 0, fmt.Errorf("%q isn't a length of time. Try %q", raw, "30s")
 		}
-		return Config{}, fmt.Errorf("reading %s: %w", path, err)
+		if d <= 0 {
+			return 0, fmt.Errorf("has to be longer than zero, like %q", "30s")
+		}
+		return d, nil
 	}
-	return parse(path, data)
+	return Setting{
+		Key: key, Default: Duration(def).String(), Summary: summary,
+		Parse: func(raw string) (string, error) {
+			d, err := parse(raw)
+			if err != nil {
+				return "", err
+			}
+			return Duration(d).String(), nil
+		},
+		apply: func(c *Config, canonical string) error {
+			d, err := parse(canonical)
+			if err != nil {
+				return err
+			}
+			assign(c, Duration(d))
+			return nil
+		},
+	}
 }
 
-// LoadOrCreate reads the config at path, writing one full of defaults
-// first if there is nothing there.
-//
-// For the default location only, where a missing file means a server
-// that has never been configured rather than a Host pointing at the
-// wrong thing. The file it writes is the documentation a Host sees
-// first, so it carries a comment per setting.
-func LoadOrCreate(path string) (Config, error) {
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		if err := create(path); err != nil {
-			return Config{}, err
+func byteSizeSetting(key string, def uint64, summary string, assign func(*Config, ByteSize)) Setting {
+	parse := func(raw string) (ByteSize, error) {
+		n, err := humanize.ParseBytes(strings.TrimSpace(raw))
+		if err != nil {
+			return 0, fmt.Errorf("%q isn't a size. Try %q or %q", raw, "25 MiB", "2 GB")
 		}
-		return Defaults(), nil
-	}
-	if err != nil {
-		return Config{}, fmt.Errorf("reading %s: %w", path, err)
-	}
-	return parse(path, data)
-}
-
-// parse turns a file's bytes into settings, refusing anything it can't
-// account for.
-//
-// **An unknown key is an error, not something to ignore.** A Host who
-// mistypes `departure_grase` otherwise edits the file, restarts, and
-// watches the setting do nothing, with the server logging its usual
-// cheerful startup line — the one failure a config file introduces that
-// a command line never had. Startup is the moment they are watching, so
-// it is the moment to say so.
-//
-// A key that is simply *absent* takes its default and says nothing.
-// That is what lets a version add a setting without breaking every file
-// already out there, and it is why the generated file is written once
-// and never rewritten.
-func parse(path string, data []byte) (Config, error) {
-	cfg := Defaults()
-
-	dec := toml.NewDecoder(newReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&cfg); err != nil {
-		var unknown *toml.StrictMissingError
-		if errors.As(err, &unknown) {
-			// String() draws the offending line with the key underlined,
-			// which is the difference between a Host finding their typo and
-			// hunting for it.
-			return Config{}, fmt.Errorf("%s: unknown setting\n%s", path, unknown.String())
+		if n == 0 {
+			return 0, fmt.Errorf("has to be more than zero, like %q", "25 MiB")
 		}
-		var decErr *toml.DecodeError
-		if errors.As(err, &decErr) {
-			// String() carries the summary under the line it points at, so
-			// wrapping the error as well would say it twice.
-			return Config{}, fmt.Errorf("%s:\n%s", path, decErr.String())
-		}
-		return Config{}, fmt.Errorf("%s: %w", path, err)
+		return ByteSize(n), nil
 	}
-
-	return cfg, cfg.validate(path)
-}
-
-// validate catches the values that parse cleanly and can't be run with.
-// Each one would otherwise fail much later and somewhere less obvious —
-// an empty database path as a confusing SQLite error, a zero grace
-// period as everybody's badge flickering on the first phone to sleep.
-func (c Config) validate(path string) error {
-	// Plain sentences, no em dashes: a Host reads these, and the register
-	// for that is docs/, not the comments around them. See the
-	// longtable-copy skill.
-	switch {
-	case c.Addr == "":
-		return fmt.Errorf("%s: addr can't be empty. It's the address to listen on, like \":8080\"", path)
-	case c.Database == "":
-		return fmt.Errorf("%s: database can't be empty. It's the path to the SQLite file", path)
-	case c.Assets == "":
-		return fmt.Errorf("%s: assets can't be empty. It's the directory uploaded images go in", path)
-	case time.Duration(c.DepartureGrace) <= 0:
-		return fmt.Errorf("%s: departure_grace has to be longer than zero, like \"30s\"", path)
-	case c.Uploads.MaxAssetSize <= 0:
-		return fmt.Errorf("%s: uploads.max_asset_size has to be more than zero, like \"25 MiB\"", path)
-	case c.Uploads.MaxTotalStorage <= 0:
-		return fmt.Errorf("%s: uploads.max_total_storage has to be more than zero, like \"10 GiB\"", path)
-	case c.Uploads.MaxTotalStorage < c.Uploads.MaxAssetSize:
-		return fmt.Errorf("%s: uploads.max_total_storage can't be smaller than uploads.max_asset_size — nothing could ever be uploaded", path)
+	return Setting{
+		Key: key, Default: ByteSize(def).String(), Summary: summary,
+		Parse: func(raw string) (string, error) {
+			n, err := parse(raw)
+			if err != nil {
+				return "", err
+			}
+			return n.String(), nil
+		},
+		apply: func(c *Config, canonical string) error {
+			n, err := parse(canonical)
+			if err != nil {
+				return err
+			}
+			assign(c, n)
+			return nil
+		},
 	}
-	return nil
 }

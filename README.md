@@ -39,7 +39,7 @@ is nothing to install — no runtime, no compiler, no libraries.
 Then open [http://localhost:8080](http://localhost:8080) and create a room.
 
 Longtable keeps everything in the folder you run it from: the rooms and their contents in
-`longtable.db`, uploaded art in `longtable-assets/`, and its settings in `longtable.toml`. Put it
+`longtable.db` — which also holds its settings — and uploaded art in `longtable-assets/`. Put it
 in a folder of its own.
 
 Everyone else joins over your network. The server prints the addresses to hand them when it

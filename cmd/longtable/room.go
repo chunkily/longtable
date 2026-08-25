@@ -24,8 +24,8 @@ import (
 // roomUsage covers both halves of `room`, since neither subcommand is
 // much use without knowing the other exists.
 const roomUsage = `Usage:
-  longtable room list [-config path]
-  longtable room reset-password [-config path] <room-code>`
+  longtable room list [-db path]
+  longtable room reset-password [-db path] <room-code>`
 
 func runRoomCommand(args []string) error {
 	if len(args) == 0 {
@@ -41,29 +41,21 @@ func runRoomCommand(args []string) error {
 	switch args[0] {
 	case "list":
 		fset := flag.NewFlagSet("room list", flag.ExitOnError)
-		configPath := addConfigFlag(fset, "longtable room list [-config path]")
+		dbPath := addDBFlag(fset, "longtable room list [-db path]")
 		fset.Parse(args[1:])
-		cfg, err := loadConfig(*configPath)
-		if err != nil {
-			return err
-		}
-		return roomList(cfg.Database)
+		return roomList(*dbPath)
 
 	case "reset-password":
-		const synopsis = "longtable room reset-password [-config path] <room-code>"
+		const synopsis = "longtable room reset-password [-db path] <room-code>"
 		fset := flag.NewFlagSet("room reset-password", flag.ExitOnError)
-		configPath := addConfigFlag(fset, synopsis)
+		dbPath := addDBFlag(fset, synopsis)
 		fset.Parse(args[1:])
 		if fset.NArg() != 1 {
 			// The flag must come before the room code: `-config path` is
 			// parsed as a flag only if it precedes the positional argument.
 			return fmt.Errorf("usage: %s", synopsis)
 		}
-		cfg, err := loadConfig(*configPath)
-		if err != nil {
-			return err
-		}
-		return roomResetPassword(cfg.Database, fset.Arg(0))
+		return roomResetPassword(*dbPath, fset.Arg(0))
 
 	default:
 		return fmt.Errorf("unknown room subcommand %q (want \"list\" or \"reset-password\")", args[0])

@@ -354,6 +354,28 @@ func (s *Store) createTables() error {
 		);
 		INSERT INTO banner (message)
 		SELECT '' WHERE NOT EXISTS (SELECT 1 FROM banner);
+
+		-- Everything a Host can configure, replacing the longtable.toml
+		-- this server used to read at startup (ADR-0009). Written from the
+		-- admin UI and from 'longtable config', both of which validate
+		-- through internal/config's registry first.
+		--
+		-- Values are TEXT whatever they describe, and the value set is not
+		-- constrained here: internal/config.Registry is the authority on
+		-- what a key means and what a valid value looks like, for the same
+		-- reason every other enum in this schema is enforced in Go — a
+		-- CHECK cannot be widened without rebuilding the table, and an
+		-- error raised in Go can say something useful to whoever typed it.
+		--
+		-- Only settings somebody has actually set are in here. Anything
+		-- absent takes the registry's default, which is what lets a later
+		-- version add a setting without every database already out there
+		-- having to know about it.
+		CREATE TABLE IF NOT EXISTS setting (
+			key        TEXT PRIMARY KEY,
+			value      TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		);
 	`)
 	return err
 }

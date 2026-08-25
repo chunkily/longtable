@@ -1,8 +1,6 @@
 package config
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -12,185 +10,182 @@ import (
 	"longtable/internal/ws"
 )
 
-func write(t *testing.T, contents string) string {
-	t.Helper()
-
-	path := filepath.Join(t.TempDir(), "longtable.toml")
-	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	return path
-}
-
-// The generated file is the only documentation of these settings a Host
-// is guaranteed to see, so it has to describe the server they are
-// actually running. Reading it back is the check that it does.
-func TestLoadOrCreate_WritesAFileThatMeansTheDefaults(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "longtable.toml")
-
-	created, err := LoadOrCreate(path)
-	if err != nil {
-		t.Fatalf("LoadOrCreate: %v", err)
-	}
-	if created != Defaults() {
-		t.Fatalf("returned %+v, want the defaults %+v", created, Defaults())
-	}
-
-	reread, err := Load(path)
-	if err != nil {
-		t.Fatalf("reading back the generated file: %v", err)
-	}
-	if reread != Defaults() {
-		t.Fatalf("the generated file means %+v, want the defaults %+v", reread, Defaults())
-	}
-}
-
-// ADR-0006 chose TOML over JSON for exactly one reason.
-func TestLoadOrCreate_TheGeneratedFileExplainsEverySetting(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "longtable.toml")
-	if _, err := LoadOrCreate(path); err != nil {
-		t.Fatalf("LoadOrCreate: %v", err)
-	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read: %v", err)
-	}
-	contents := string(data)
-	for _, key := range []string{"addr", "database", "assets", "departure_grace", "max_asset_size", "max_total_storage"} {
-		if !strings.Contains(contents, key+" = ") {
-			t.Errorf("generated file has no %q setting", key)
+// The registry is the only description of a setting there is now that
+// the config file is gone, so a row that can't describe itself is a
+// setting a Host meets with no explanation at all.
+func TestRegistry_EverySettingDescribesItself(t *testing.T) {
+	for _, s := range Registry {
+		if s.Key == "" {
+			t.Fatal("a setting has no key")
+		}
+		if s.Summary == "" {
+			t.Errorf("%s has no summary, and the summary is what the config file's comment used to be", s.Key)
+		}
+		if s.Parse == nil || s.apply == nil {
+			t.Errorf("%s can't be parsed or applied", s.Key)
+		}
+		if s.Default == "" {
+			t.Errorf("%s has no default", s.Key)
 		}
 	}
-	if strings.Count(contents, "#") < 5 {
-		t.Errorf("generated file has fewer comments than settings:\n%s", contents)
+}
+
+// Defaults() panics if this is ever false, so it is worth failing here
+// first, where the message says which setting.
+func TestRegistry_DefaultsAreValid(t *testing.T) {
+	for _, s := range Registry {
+		canonical, err := s.Parse(s.Default)
+		if err != nil {
+			t.Errorf("%s: default %q doesn't pass its own Parse: %v", s.Key, s.Default, err)
+			continue
+		}
+		// A default that isn't already canonical would print back
+		// differently from how it was written, which is the sort of thing
+		// that makes a settings screen look broken.
+		if canonical != s.Default {
+			t.Errorf("%s: default %q canonicalises to %q", s.Key, s.Default, canonical)
+		}
+	}
+	if err := Defaults().Validate(); err != nil {
+		t.Errorf("the defaults don't satisfy their own cross-setting rules: %v", err)
 	}
 }
 
-// A second run reads the Host's file. It must not be rewritten — their
-// comments and their ordering are theirs.
-func TestLoadOrCreate_LeavesAnExistingFileAlone(t *testing.T) {
-	path := write(t, "# my own note\naddr = \":9000\"\n")
-
-	cfg, err := LoadOrCreate(path)
-	if err != nil {
-		t.Fatalf("LoadOrCreate: %v", err)
-	}
-	if cfg.Addr != ":9000" {
-		t.Errorf("addr = %q, want the file's :9000", cfg.Addr)
-	}
-	// Everything it didn't mention still works.
-	if cfg.Database != Defaults().Database {
-		t.Errorf("database = %q, want the default %q", cfg.Database, Defaults().Database)
-	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read: %v", err)
-	}
-	if !strings.Contains(string(data), "# my own note") {
-		t.Errorf("the Host's own comment was rewritten away:\n%s", data)
+// Keys are typed by people and stored as text; a dot means something to
+// the export's sectioning, and spaces or capitals would make a key that
+// only sometimes matches what was typed.
+func TestRegistry_KeysAreTypeable(t *testing.T) {
+	seen := map[string]bool{}
+	for _, key := range Keys() {
+		if seen[key] {
+			t.Errorf("%s appears twice", key)
+		}
+		seen[key] = true
+		if key != strings.ToLower(key) || strings.ContainsAny(key, " \t") {
+			t.Errorf("%q should be lowercase with no spaces", key)
+		}
 	}
 }
 
-// A path a Host typed themselves is a file they believe in. Creating a
-// fresh one there looks identical to their settings being ignored.
-func TestLoad_RefusesAPathThatIsNotThere(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "nope.toml")
-
-	if _, err := Load(path); err == nil {
-		t.Fatal("Load succeeded on a missing file, want an error")
-	}
-	if _, err := os.Stat(path); err == nil {
-		t.Fatal("Load created the file it was asked to read")
-	}
-}
-
-// The failure a config file introduces that a command line never had:
-// an edit that silently does nothing.
-func TestLoad_RefusesAnUnknownSetting(t *testing.T) {
-	path := write(t, "addr = \":8080\"\ndeparture_grase = \"2s\"\n")
-
-	_, err := Load(path)
-	if err == nil {
-		t.Fatal("a mistyped setting was accepted")
-	}
-	if !strings.Contains(err.Error(), "departure_grase") {
-		t.Errorf("the error doesn't name the offending key: %v", err)
-	}
-}
-
-func TestLoad_RefusesWhatItCannotRun(t *testing.T) {
-	for name, contents := range map[string]string{
-		"broken TOML":                         "addr = \n",
-		"a duration that is not one":          "departure_grace = \"soon\"\n",
-		"a negative duration":                 "departure_grace = \"-5s\"\n",
-		"an empty database path":              "database = \"\"\n",
-		"an empty address":                    "addr = \"\"\n",
-		"an empty assets directory":           "assets = \"\"\n",
-		"a size that is not one":              "uploads.max_asset_size = \"a lot\"\n",
-		"a zero asset size":                   "uploads.max_asset_size = \"0\"\n",
-		"a zero total storage":                "uploads.max_total_storage = \"0\"\n",
-		"total storage under the asset limit": "uploads.max_asset_size = \"1 GiB\"\nuploads.max_total_storage = \"1 MiB\"\n",
+// What `set` accepts is what `get` prints back. A Host who types a plain
+// byte count should not have to wonder whether it took.
+func TestParse_Canonicalises(t *testing.T) {
+	for _, tc := range []struct{ key, in, want string }{
+		{"uploads.max_asset_size", "26214400", "25 MiB"},
+		{"uploads.max_asset_size", "25MiB", "25 MiB"},
+		{"uploads.max_total_storage", "2 GB", "1.9 GiB"},
+		{"departure_grace", "120s", "2m0s"},
+		{"departure_grace", "  2m  ", "2m0s"},
+		{"addr", " :9000 ", ":9000"},
 	} {
-		if _, err := Load(write(t, contents)); err == nil {
-			t.Errorf("%s was accepted", name)
+		s, ok := Lookup(tc.key)
+		if !ok {
+			t.Fatalf("no setting %q", tc.key)
+		}
+		got, err := s.Parse(tc.in)
+		if err != nil {
+			t.Errorf("%s: Parse(%q): %v", tc.key, tc.in, err)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("%s: Parse(%q) = %q, want %q", tc.key, tc.in, got, tc.want)
 		}
 	}
 }
 
-// Settings a file doesn't mention take their defaults rather than their
-// zero values — which is what lets a later version add one without
-// breaking every file already out there.
-func TestLoad_ReadsWhatIsThereAndDefaultsTheRest(t *testing.T) {
-	path := write(t, "departure_grace = \"2m\"\n")
+// Refused on the way in, where the person who typed it is still looking
+// at it. With a file the same mistakes surfaced as a server that
+// wouldn't start.
+func TestParse_RefusesWhatCannotBeRun(t *testing.T) {
+	for name, tc := range map[string]struct{ key, value string }{
+		"a duration that is not one": {"departure_grace", "soon"},
+		"a negative duration":        {"departure_grace", "-5s"},
+		"a zero duration":            {"departure_grace", "0s"},
+		"a size that is not one":     {"uploads.max_asset_size", "huge"},
+		"a zero size":                {"uploads.max_asset_size", "0"},
+		"an empty address":           {"addr", ""},
+		"an empty assets directory":  {"assets", "   "},
+	} {
+		s, ok := Lookup(tc.key)
+		if !ok {
+			t.Fatalf("no setting %q", tc.key)
+		}
+		if _, err := s.Parse(tc.value); err == nil {
+			t.Errorf("%s: %s accepted %q", name, tc.key, tc.value)
+		}
+	}
+}
 
-	cfg, err := Load(path)
+// The one rule no single setting can judge alone.
+func TestValidate_CatchesACeilingBelowItsFloor(t *testing.T) {
+	c, err := Resolve(map[string]string{
+		"uploads.max_asset_size":    "1 GiB",
+		"uploads.max_total_storage": "1 MiB",
+	})
 	if err != nil {
-		t.Fatalf("Load: %v", err)
+		t.Fatalf("Resolve: %v", err)
 	}
-	if time.Duration(cfg.DepartureGrace) != 2*time.Minute {
-		t.Errorf("departure_grace = %s, want 2m", cfg.DepartureGrace)
-	}
-	if cfg.Addr != Defaults().Addr || cfg.Assets != Defaults().Assets {
-		t.Errorf("an unmentioned setting lost its default: %+v", cfg)
+	if err := c.Validate(); err == nil {
+		t.Fatal("a total storage limit below the per-asset limit was accepted")
 	}
 }
 
-// ByteSize is the same idea as Duration, for the same reason: a Host
-// writes what they mean ("500 MiB") rather than doing the arithmetic
-// themselves, and either unit family is accepted since nothing here
-// assumes which one a Host reaches for.
-func TestLoad_ReadsUploadLimits(t *testing.T) {
-	path := write(t, "uploads.max_asset_size = \"10 MiB\"\nuploads.max_total_storage = \"2 GB\"\n")
-
-	cfg, err := Load(path)
+// Anything the database doesn't mention takes its default, which is what
+// lets a later version add a setting without every database already out
+// there having to know about it.
+func TestResolve_FillsTheGapsWithDefaults(t *testing.T) {
+	c, err := Resolve(map[string]string{"departure_grace": "2m"})
 	if err != nil {
-		t.Fatalf("Load: %v", err)
+		t.Fatalf("Resolve: %v", err)
 	}
-	if cfg.Uploads.MaxAssetSize != ByteSize(10*humanize.MiByte) {
-		t.Errorf("max_asset_size = %s, want 10 MiB", cfg.Uploads.MaxAssetSize)
+	if time.Duration(c.DepartureGrace) != 2*time.Minute {
+		t.Errorf("departure_grace = %s, want 2m", c.DepartureGrace)
 	}
-	if cfg.Uploads.MaxTotalStorage != ByteSize(2*humanize.GByte) {
-		t.Errorf("max_total_storage = %s, want 2 GB", cfg.Uploads.MaxTotalStorage)
+	if c.Addr != Defaults().Addr || c.Assets != Defaults().Assets {
+		t.Errorf("an unmentioned setting lost its default: %+v", c)
 	}
-}
-
-// banner used to be a file setting and moved to a flag before anything
-// shipped (see cmd/longtable) — so a file that still has the old key
-// fails exactly like any other typo, which is the point of
-// DisallowUnknownFields rather than a special case of it.
-func TestLoad_RefusesTheOldBannerKey(t *testing.T) {
-	if _, err := Load(write(t, "banner = \"back at 9\"\n")); err == nil {
-		t.Fatal("a file still carrying the removed banner key was accepted")
+	if c.Uploads.MaxAssetSize != ByteSize(25*humanize.MiByte) {
+		t.Errorf("max_asset_size = %s, want 25 MiB", c.Uploads.MaxAssetSize)
 	}
 }
 
-// The hub owns this number; this package copies it rather than importing
-// the hub for one constant. Two copies is fine, drift isn't: the
-// generated file would then promise a wait the server doesn't keep.
+// A key the registry has never heard of must not stop a server starting.
+// Refusing one is the write path's job, where somebody is present to be
+// told about it — at startup it would only mean a version that removed a
+// setting cannot boot on a database that still remembers it.
+func TestResolve_IgnoresAKeyItDoesNotKnow(t *testing.T) {
+	c, err := Resolve(map[string]string{"banner_colour": "puce"})
+	if err != nil {
+		t.Fatalf("an unknown stored key stopped the server: %v", err)
+	}
+	if c.Addr != Defaults().Addr {
+		t.Errorf("addr = %q, want the default", c.Addr)
+	}
+}
+
+// The guarantee inherited from the file this replaced, whose own comment
+// called an unknown key "the one failure a config file invents that a
+// command line never had".
+func TestSuggest_NamesTheNearMiss(t *testing.T) {
+	if got := Suggest("departure_grase"); got != "departure_grace" {
+		t.Errorf("Suggest(\"departure_grase\") = %q, want departure_grace", got)
+	}
+	if got := Suggest("uploads.max_asset_sixe"); got != "uploads.max_asset_size" {
+		t.Errorf("got %q, want uploads.max_asset_size", got)
+	}
+	// Nothing close should suggest nothing, rather than the least-bad
+	// answer — "did you mean addr?" to someone who typed "hostname" is
+	// worse than silence.
+	if got := Suggest("completely-unrelated"); got != "" {
+		t.Errorf("Suggest returned %q for a key nothing resembles", got)
+	}
+}
+
+// The hub owns this number; the registry copies it rather than importing
+// the hub for one constant. Two copies is fine, drift isn't: a settings
+// screen would then promise a wait the server doesn't keep.
 func TestDefaults_DepartureGraceMatchesTheHub(t *testing.T) {
 	if got := time.Duration(Defaults().DepartureGrace); got != ws.DefaultDepartureGrace {
-		t.Fatalf("config default = %s, hub default = %s", got, ws.DefaultDepartureGrace)
+		t.Fatalf("registry default = %s, hub default = %s", got, ws.DefaultDepartureGrace)
 	}
 }

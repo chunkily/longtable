@@ -34,3 +34,13 @@ command line never had". Deleting the file must not delete the guarantee.
 
 The sixth is what a config file was quietly providing: one artefact to read, diff, version and
 copy. Setting values one command at a time does not replace that on its own.
+
+## Six of seven, on [settings-in-database](../backlog/settings-in-database.md)
+
+Everything here holds except the first, which cannot be checked yet: there is no admin UI to be
+at parity *with*. It stays as the criterion that will fail loudest if
+[admin-settings-page](../backlog/admin-settings-page.md) ever grows a field the CLI can't reach —
+which is the whole reason it is written down before the UI exists rather than after.
+
+The rest were verified rather than assumed, including the last: `config set` was run against a
+server that was serving at the time, and it carried on serving.

@@ -39,37 +39,78 @@ share: check it's actually on the network.
 
 ## Settings
 
-The first time you run Longtable it writes a file called `longtable.toml` next
-to itself, filled with its defaults and a comment explaining each one. Edit that
-file and restart the server to change a setting.
+Longtable keeps its settings in its database, next to your rooms. Change one
+like this:
 
-Longtable writes that file once. It never rewrites it, so your own comments and
-layout stay as you left them.
+```bash
+longtable config set departure_grace 2m
+```
+
+To see them all, with what each one does and what it's set to:
+
+```bash
+longtable config list
+```
 
 | Setting                     | Default              | What it does                                                                   |
 | --------------------------- | -------------------- | ------------------------------------------------------------------------------ |
 | `addr`                      | `":8080"`            | The address to listen on. `"127.0.0.1:8080"` keeps the server to this machine. |
-| `database`                  | `"longtable.db"`     | Where every room and everything in it is stored. This is the file to back up.  |
 | `assets`                    | `"longtable-assets"` | The directory uploaded maps and token art go in.                               |
 | `departure_grace`           | `"30s"`              | How long someone may be disconnected before the room is told they left.        |
 | `uploads.max_asset_size`    | `"25 MiB"`           | The largest a single map or token upload may be.                               |
 | `uploads.max_total_storage` | `"10 GiB"`           | The most this server will ever store, across every room combined.              |
 
-Run a second server on the same machine by giving it its own file:
+Changes take effect when you restart the server. Longtable says so when you
+make one.
 
-```sh
-longtable -config table-two.toml
+A setting Longtable doesn't recognise is refused, and it names the one you
+probably meant. A value it can't use is refused as you set it, so a mistake
+never waits until the next start to show up.
+
+Put a setting back to its default with `longtable config unset <setting>`.
+
+### Which database
+
+Every command works on `longtable.db` in the folder you run it from. Point them
+somewhere else with `-db`:
+
+```bash
+longtable -db table-two.db
 ```
 
-That file has to exist. Longtable creates one for you only at the default
-location, so a mistyped path is refused rather than answered with a fresh set of
-defaults.
+That's how you run a second server on one machine — its own database, its own
+rooms, its own settings. Give the same `-db` to every command you run for it,
+or you'll be changing the other server.
 
-A setting Longtable doesn't recognise stops it starting, and it prints the line
-your typo is on. A setting you leave out takes its default.
+### Keeping a copy of your settings
 
-One setting isn't in this file: see **A message for everyone on the server**,
-below.
+```bash
+longtable config export -o my-settings.toml
+```
+
+That writes every setting to a file you can read, keep, or copy to another
+machine. Load it back with:
+
+```bash
+longtable config import my-settings.toml
+```
+
+Longtable doesn't read that file when it starts — your settings live in the
+database, and this is a copy of them.
+
+### If you can't reach the server
+
+Set `addr` to something unreachable and you can't get back in to fix it. Start
+Longtable with `-addr` to override it for one run:
+
+```bash
+longtable -addr :8080
+```
+
+Then set it to something that works.
+
+The banner across the top of every page isn't a setting — see **A message for
+everyone on the server**, below.
 
 ### Players dropping in and out
 
@@ -79,8 +120,8 @@ puts nothing in the chat log.
 
 On a bad network, give it longer:
 
-```toml
-departure_grace = "2m"
+```bash
+longtable config set departure_grace 2m
 ```
 
 A player who closes their laptop still shows as connected until the wait is up.
@@ -95,10 +136,9 @@ rooms with the same map only cost the space for one copy. An upload that
 would push the total past its limit is refused even if it's well under the
 per-upload limit on its own.
 
-```toml
-[uploads]
-max_asset_size = "50 MiB"
-max_total_storage = "20 GiB"
+```bash
+longtable config set uploads.max_asset_size "50 MiB"
+longtable config set uploads.max_total_storage "20 GiB"
 ```
 
 ## A message for everyone on the server
@@ -119,8 +159,8 @@ longtable clear-banner
 Both work while the server is running. Nothing needs restarting, and the
 change reaches everyone the next time their page asks for it.
 
-Run them from the folder holding your `longtable.toml`, or add `-config
-path/to/longtable.toml`.
+Run them from the folder holding your database, or add `-db
+path/to/longtable.db`.
 
 Change the message and it comes back for anyone who already dismissed the
 last one.
@@ -136,9 +176,9 @@ Two recovery scenarios are documented here for hosts to help GMs that don't have
 access to the hosting machine, and each should take less than a minute to do.
 You will need to run the commands in a terminal!
 
-Run them from the folder holding your `longtable.toml`, or add `-config
-path/to/longtable.toml`. That file is how these commands find the same database
-the server is using.
+Run them from the folder holding your database, or add `-db
+path/to/longtable.db`. That's how these commands reach the same database the
+server is using.
 
 ### They've lost the room code
 

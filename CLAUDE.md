@@ -12,14 +12,14 @@ architecture and current state live here instead**, and keeping them true is par
 
 | Path | What lives there |
 | --- | --- |
-| `cmd/longtable/` | entrypoint: `serve` (default), a `room list` / `room reset-password` admin CLI, and `set-banner` / `clear-banner`. Every subcommand takes `-config` and finds the database through it — `room` and the banner commands reach into the same file a running `serve` has open, live, rather than a path of their own. `-h`/`--help`/`help` print the command list, hand-written in `main.go` rather than left to the flag package — that only ever knows one subcommand's flags, so it answered "what can this do?" with a lone `-config`. It names no file outside the binary, since the binary is downloaded on its own as often as it sits beside the repo. Add a command and add it there; a test fails if one goes unlisted. **An unrecognised command is an error**, not a server: `routeFor` is the pure function deciding that, and the line it draws is that a bare run and a bare flag both mean `serve` while a bare *word* means a typo — `longtable serv` used to start a server and say nothing |
+| `cmd/longtable/` | entrypoint: `serve` (default), `config list/get/set/unset/export/import`, a `room list` / `room reset-password` admin CLI, and `set-banner` / `clear-banner`. Every subcommand takes `-db` and nothing else finds the database — `config`, `room` and the banner commands all reach into the same file a running `serve` has open, live. `-h`/`--help`/`help` print the command list, hand-written in `main.go` rather than left to the flag package — that only ever knows one subcommand's flags, so it answered "what can this do?" with a lone flag. It names no file outside the binary, since the binary is downloaded on its own as often as it sits beside the repo. Add a command and add it there; a test fails if one goes unlisted. **An unrecognised command is an error**, not a server: `routeFor` is the pure function deciding that, and the line it draws is that a bare run and a bare flag both mean `serve` while a bare *word* means a typo — `longtable serv` used to start a server and say nothing |
 | `internal/api/` | HTTP routes: create/join room, GM login, asset upload + serving + per-room library listing, health check, the Host's banner (`GET /api/notice`, read fresh from the store on every request), `GET /ws` upgrade, SPA fallback for the embedded frontend |
 | `internal/ws/` | the real-time hub and the authority on room state — command/event protocol, permission checks, broadcast |
 | `internal/store/` | SQLite schema and every typed query (rooms, participants, scenes, tokens, fog, drawings, chat, the Host's banner). `store.go` holds the `CREATE TABLE`s, plus `addMissingColumns` — the only way a column reaches a database that already exists, since `CREATE TABLE IF NOT EXISTS` won't. **No `CHECK` constraints**: a value set that can grow has to live in Go, and `TestSchema_HasNoCheckConstraints` enforces it. `fog.go` stores the *hidden* cells packed 32 to an integer — read its doc comment before touching fog anywhere |
 | `internal/imageproc/` | decodes and re-encodes every upload to WebP. Read its doc comment before touching it — the studio-swing trap in there is easy to reintroduce |
 | `internal/blobstore/` | re-encoded images on disk, addressed by content hash so identical uploads share a file |
 | `internal/auth/` | session tokens and bcrypt password hashing. No accounts — identity in a room is a *seat* (a `participant` row), and a device proves it holds one with a `session` token in `localStorage`. See [ADR-0008](planning/decisions/0008-seats-and-sessions.md) |
-| `internal/config/` | the Host's `longtable.toml`: every setting there is, the defaults, and the commented file the server writes for itself when there isn't one. Written from a template rather than marshalled, because comments are the whole reason it's TOML ([ADR-0006](planning/decisions/0006-config-file-format.md)) — and written once, never rewritten |
+| `internal/config/` | the **registry** of every setting there is: its default, the one line explaining it, the `Parse` that validates and canonicalises a value, and whether it takes effect live. A leaf that reads nothing — values live in the database's `setting` table ([ADR-0009](planning/decisions/0009-admin-ui-and-database-config.md), which superseded [ADR-0006](planning/decisions/0006-config-file-format.md) and deleted the TOML file). `export.go` renders the registry back out as commented TOML, which is *output* the server never reads — that's what gives a technical Host something to diff and keep without the two-writers problem a live config file would have |
 | `internal/dice/` | `/roll 2d6+3` expression parser |
 | `internal/lanurl/` | which of the machine's addresses a Host can hand to their players, printed at startup. Takes the interface list as an argument, so the rules are testable on machines nobody has |
 | `internal/db/` | SQLite wiring (`modernc.org/sqlite`, no CGO) |
@@ -307,22 +307,35 @@ On startup the server prints the LAN addresses players can use, one line per int
 interface's name — a Host binding `-addr` to one interface is answered with that address alone,
 since enumerating the rest would be a lie about where the server is.
 
-**A Host configures the server by editing one file.** `longtable.toml`, in the working directory
-beside the database and assets it names, written with defaults and a comment per setting the first
-time the server runs and never rewritten after that — so a Host's own notes survive. `-config`
-points at another one and is the only flag any subcommand takes; there are no environment
-variables and no setting flags. A key the server doesn't recognise stops it starting and prints
-the line the typo is on, because the failure a config file invents is an edit that silently does
-nothing. A key that's simply absent takes its default, which is what lets a later version add one
-without breaking every file already out there.
+**A Host configures the server with `longtable config set`.** Settings live in the database
+beside the rooms ([ADR-0009](planning/decisions/0009-admin-ui-and-database-config.md)); there is
+no config file, no environment variables and no setting flags. `internal/config` is the
+*registry* — key, default, one-line summary, a `Parse` that validates and canonicalises, and
+whether the setting is live — and it reads nothing. Adding a row there is the whole of adding a
+setting: `config list`, `config export`'s comments and (later) the admin UI's fields all render
+from it, which is what stops the CLI and the UI drifting into two ideas of what can be
+configured. Only settings somebody has actually set are stored; anything absent takes the
+registry's default, which is what lets a later version add one without every database already out
+there having to know about it. **The guarantees the file used to give are now the CLI's**: an
+unknown key is refused with the near miss named, and a bad value is refused *as it is set* rather
+than at the next start, which is the main thing the database bought.
+
+**`-db` is the only flag any subcommand takes**, because the database cannot hold its own
+location — two ways of naming it is how a Host ends up administering a file the running server
+never opened. `-addr` is the one exception and exists purely for recovery: a stored listen address
+nothing can reach would otherwise lock a Host out of the screen they would fix it from, so the
+flag beats the stored value.
 
 **`departure_grace` is the one persisted setting that reaches a room.** How long a dropped
 connection has to come back before the room is told, where the right answer is the hall's wifi
-rather than ours. It isn't re-read while the server is up — changing it means a restart, and
-`planning/backlog/host-config-file.md` records why live reload was left out.
+rather than ours. It isn't re-read while the server is up — changing it means a restart, which
+the CLI says every time. **Nothing is live yet**, and `Setting.Live` is false across the registry
+on purpose: live reload is per-setting plumbing (the banner manages it by re-reading on every
+request), and a settings screen claiming a change took effect when it didn't is the one lie it
+must not tell.
 
-**Upload sizes are two more.** `[uploads]` holds `max_asset_size` (25 MiB by default, the ceiling
-this server always enforced, now a Host's to change) and `max_total_storage` (10 GiB by default) —
+**Upload sizes are two more.** `uploads.max_asset_size` (25 MiB by default, the ceiling
+this server always enforced, now a Host's to change) and `uploads.max_total_storage` (10 GiB by default) —
 the first `[section]` the file has, since neither setting belongs beside `addr` and `database`.
 Both are a `config.ByteSize`, parsed and printed the way `Duration` handles `"30s"`, so a Host
 writes `"2 GiB"` rather than counting zeroes. The total is checked against what the whole server
@@ -333,7 +346,7 @@ it even sitting right at the cap. Enforced in `internal/api/assets.go`, ahead of
 
 **The banner is deliberately not in that file.** `longtable set-banner "…"` and
 `longtable clear-banner` write straight to the running server's own database — the same one
-`room reset-password` already reaches into — rather than to `longtable.toml`, so a Host changes or
+`room reset-password` already reaches into — and it is not in the settings registry, so a Host changes or
 clears the message on a server that's already up, and `GET /api/notice` (`internal/api/notice.go`)
 reads it fresh on every request rather than holding a value anywhere. It's dismissable per browser
 and keyed by its own text, so changing it brings it back for people who dismissed the last one. A
@@ -502,7 +515,7 @@ after the fact has already misled someone. The triggers, all cheap:
   comments in `web/e2e/*.spec.ts`, which index layers by number.
 - Added a test helper or changed how a suite runs → `testing.md`, and the README if the command
   a human types changed.
-- Added a Host-configurable setting → `internal/config`'s struct and template **and** the table in
+- Added a Host-configurable setting → a row in `internal/config`'s `Registry` **and** the table in
   `docs/hosting.md`. The generated file and that table are the only two places a Host learns a
   setting exists, and the story behind them (`host-config-documentation`) asks for both to stay
   current.

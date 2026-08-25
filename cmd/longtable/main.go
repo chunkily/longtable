@@ -4,22 +4,25 @@
 //
 // Usage:
 //
-//	longtable [serve] [-config longtable.toml]
-//	longtable room list [-config longtable.toml]
-//	longtable room reset-password [-config longtable.toml] <room-code>
-//	longtable set-banner [-config longtable.toml] <message>
-//	longtable clear-banner [-config longtable.toml]
+//	longtable [serve] [-db longtable.db] [-addr :8080]
+//	longtable config list|get|set|unset|export|import [-db longtable.db]
+//	longtable room list [-db longtable.db]
+//	longtable room reset-password [-db longtable.db] <room-code>
+//	longtable set-banner [-db longtable.db] <message>
+//	longtable clear-banner [-db longtable.db]
 //
 // `longtable -h` prints the same list.
 //
-// Every setting lives in the config file, which the server writes for
-// itself the first time it runs. `-config` is the only flag any
-// subcommand takes: see internal/config for why.
+// **Settings live in the database**, not in a file — see ADR-0009 and
+// internal/config, which is the registry of what a setting is rather
+// than a reader of anything. `-db` says which database, and it is the
+// only way to say so: two ways of naming one is how a Host ends up
+// administering a file the running server has never opened.
 //
-// set-banner and clear-banner are the exception to "settings live in
-// the file" — they change a message across the top of every page while
-// the server keeps running, by writing straight to its database the way
-// room reset-password already does. See docs/hosting.md.
+// `-addr` is the one setting that is also a flag, and it exists for
+// recovery. A stored listen address that nothing can reach would
+// otherwise lock a Host out of the admin screen they would fix it from,
+// so a flag beats the stored value.
 package main
 
 import (
@@ -56,19 +59,24 @@ import (
 const usage = `Longtable is a self-hosted virtual tabletop for D&D.
 
 Usage:
-  longtable [command] [-config longtable.toml]
+  longtable [command] [-db longtable.db]
 
 With no command, Longtable starts the server.
 
 Commands:
   serve                            Start the server.
+  config list                      Show every setting, and what each one does.
+  config set <key> <value>         Change a setting.
   room list                        List every room on this server.
   room reset-password <room-code>  Set a new GM password for a room.
   set-banner <message>             Show a message across the top of every page.
   clear-banner                     Take that message down.
 
 Flags:
-  -config <path>                   The settings file to read. Default: longtable.toml
+  -db <path>                       The database to use. Default: longtable.db
+  -addr <host:port>                Listen here instead of the stored address.
+
+Run "longtable config -h" for the rest of the settings commands.
 `
 
 // isHelpArg covers the three spellings people actually type. `help` is
@@ -94,6 +102,7 @@ const (
 	routeRoom        route = "room"
 	routeSetBanner   route = "set-banner"
 	routeClearBanner route = "clear-banner"
+	routeConfig      route = "config"
 	routeUnknown     route = "unknown"
 )
 
@@ -115,9 +124,11 @@ func routeFor(args []string) route {
 		return routeSetBanner
 	case args[0] == "clear-banner":
 		return routeClearBanner
+	case args[0] == "config":
+		return routeConfig
 	case strings.HasPrefix(args[0], "-"):
 		// A flag with no command in front of it belongs to serve, which is
-		// what `longtable -config other.toml` has always meant.
+		// what `longtable -db other.db` means.
 		return routeServe
 	default:
 		return routeUnknown
@@ -139,6 +150,8 @@ func main() {
 		err = runSetBanner(args[1:])
 	case routeClearBanner:
 		err = runClearBanner(args[1:])
+	case routeConfig:
+		err = runConfigCommand(args[1:])
 	case routeUnknown:
 		// Refused rather than served. A mistyped command used to fall
 		// through to `serve` and come up looking like a normal start,
@@ -167,23 +180,31 @@ func main() {
 
 func runServe(args []string) error {
 	fset := flag.NewFlagSet("serve", flag.ExitOnError)
-	configPath := addConfigFlag(fset, "longtable [serve] [-config path]")
+	dbPath := addDBFlag(fset, "longtable [serve] [-db path] [-addr host:port]")
+	// Empty rather than defaulted, so "not given" is distinguishable from
+	// "given the same value the database holds" — only the first should
+	// leave the stored setting in charge.
+	addrOverride := fset.String("addr", "", "listen here instead of the stored address")
 	fset.Parse(args)
 
-	cfg, err := loadConfig(*configPath)
-	if err != nil {
-		return err
-	}
-	return serve(cfg)
-}
-
-func serve(cfg config.Config) error {
-	s, closeDB, err := openStore(cfg.Database)
+	s, closeDB, err := openStore(*dbPath)
 	if err != nil {
 		return err
 	}
 	defer closeDB()
 
+	cfg, err := loadSettings(s)
+	if err != nil {
+		return err
+	}
+	if *addrOverride != "" {
+		cfg.Addr = *addrOverride
+	}
+
+	return serve(s, cfg, *dbPath)
+}
+
+func serve(s *store.Store, cfg config.Config, dbPath string) error {
 	blobs, err := blobstore.New(cfg.Assets)
 	if err != nil {
 		return fmt.Errorf("open asset storage: %w", err)
@@ -201,13 +222,26 @@ func serve(cfg config.Config) error {
 	}
 	router := api.NewRouter(s, hub, blobs, frontend, limits)
 
-	slog.Info("longtable: listening", "addr", cfg.Addr, "db", cfg.Database, "assets", cfg.Assets)
+	slog.Info("longtable: listening", "addr", cfg.Addr, "db", dbPath, "assets", cfg.Assets)
 	logReachableURLs(cfg.Addr)
 	return http.ListenAndServe(cfg.Addr, router)
 }
 
-// addConfigFlag registers the one flag every subcommand has: settings
-// live in the file, and this says which file.
+// defaultDatabase is where the server looks when nobody says otherwise:
+// the working directory, beside the asset directory it also defaults to,
+// so everything one server owns sits in one folder the Host chose.
+//
+// Here rather than in internal/config because it is not a setting — it
+// is the one thing that cannot be, since nothing could read it.
+const defaultDatabase = "longtable.db"
+
+// addDBFlag registers the one flag every subcommand has: settings live
+// in the database, and this says which database.
+//
+// It is the only way to name it. Two ways is how a Host ends up
+// resetting a password, or changing a setting, in a file the running
+// server has never opened — which is why the config file that used to
+// name it took the same care.
 //
 // synopsis is the command's own usage line, and it is here rather than
 // left to the flag package because that prints the flags and nothing
@@ -215,27 +249,35 @@ func serve(cfg config.Config) error {
 // command with none. Passing it in also means the same string can be
 // the error text when the argument is missing, so the two can't
 // disagree about what the command takes.
-func addConfigFlag(fset *flag.FlagSet, synopsis string) *string {
+func addDBFlag(fset *flag.FlagSet, synopsis string) *string {
 	fset.Usage = func() {
 		fmt.Fprintf(fset.Output(), "Usage: %s\n\nFlags:\n", synopsis)
 		fset.PrintDefaults()
 	}
-	return fset.String("config", config.DefaultPath, "path to the settings file")
+	return fset.String("db", defaultDatabase, "path to the database file")
 }
 
-// loadConfig reads the settings, creating them only at the default
-// location.
+// loadSettings reads what a Host has configured and resolves it against
+// the registry's defaults.
 //
-// A Host who typed a path has a file in mind; writing a fresh default
-// one there would start a server that ignores everything they
-// configured and says nothing about it. A missing file at the default
-// location means a server nobody has configured yet, which is the case
-// the auto-created file exists for.
-func loadConfig(path string) (config.Config, error) {
-	if path == config.DefaultPath {
-		return config.LoadOrCreate(path)
+// Validated here as well as on the way in. The write path refuses a bad
+// value while somebody is present to be told, which is the point of
+// settings living in a database — but a database can also be edited by
+// hand, and a server should say what is wrong rather than start on
+// something incoherent.
+func loadSettings(s *store.Store) (config.Config, error) {
+	values, err := s.Settings()
+	if err != nil {
+		return config.Config{}, fmt.Errorf("read settings: %w", err)
 	}
-	return config.Load(path)
+	cfg, err := config.Resolve(values)
+	if err != nil {
+		return config.Config{}, err
+	}
+	if err := cfg.Validate(); err != nil {
+		return config.Config{}, err
+	}
+	return cfg, nil
 }
 
 // logReachableURLs prints the addresses the rest of the table can use.
