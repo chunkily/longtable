@@ -78,6 +78,24 @@ That replaces the token straight away, on a server that's still running.
 Whatever link you shared stops working, and so does any browser already
 signed in.
 
+### Turning the admin page off
+
+If you'd rather not have it at all, give it no address:
+
+```bash
+longtable config set admin_addr ""
+```
+
+Nothing listens, and Longtable says so when it starts. Everything the admin page
+would have done is still available from the command line — `longtable config
+list` and `longtable config set` are the same settings.
+
+To bring it back:
+
+```bash
+longtable config unset admin_addr
+```
+
 ### What the token does and doesn't protect
 
 The token stops someone who can reach the admin address from opening it.
@@ -107,7 +125,7 @@ longtable config list
 | Setting                     | Default              | What it does                                                                   |
 | --------------------------- | -------------------- | ------------------------------------------------------------------------------ |
 | `addr`                      | `":8080"`            | The address to listen on. `"127.0.0.1:8080"` keeps the server to this machine. |
-| `admin_addr`                | `"127.0.0.1:8081"`   | Where the admin page listens. Only this machine can reach it.                  |
+| `admin_addr`                | `"127.0.0.1:8081"`   | Where the admin page listens. Only this machine can reach it. Empty turns it off. |
 | `assets`                    | `"longtable-assets"` | The directory uploaded maps and token art go in.                               |
 | `departure_grace`           | `"30s"`              | How long someone may be disconnected before the room is told they left.        |
 | `uploads.max_asset_size`    | `"25 MiB"`           | The largest a single map or token upload may be.                               |

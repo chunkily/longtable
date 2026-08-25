@@ -234,15 +234,27 @@ func serve(s *store.Store, cfg config.Config, dbPath string) error {
 	// Minted here so the URL can be printed, but the admin surface reads
 	// it per request from the store — that is what makes `longtable admin
 	// -new` take effect on a running server rather than at the next
-	// restart.
-	token, err := s.AdminToken()
-	if err != nil {
-		return fmt.Errorf("read admin token: %w", err)
+	// restart. Not minted at all when the admin page is off: a secret
+	// nothing can use is a secret not worth creating.
+	token := ""
+	if cfg.AdminAddr != "" {
+		token, err = s.AdminToken()
+		if err != nil {
+			return fmt.Errorf("read admin token: %w", err)
+		}
 	}
 
 	slog.Info("longtable: listening", "addr", cfg.Addr, "db", dbPath, "assets", cfg.Assets)
 	logReachableURLs(cfg.Addr)
-	logAdminURL(cfg.AdminAddr, token)
+	if cfg.AdminAddr == "" {
+		// Said rather than left silent. A Host who turned it off months
+		// ago and has forgotten needs the line more than one who did it
+		// this morning, and silence where a URL used to be reads as a
+		// fault.
+		slog.Info("longtable: admin page is off", "turn_it_on_with", "longtable config unset admin_addr")
+	} else {
+		logAdminURL(cfg.AdminAddr, token)
+	}
 
 	// Two listeners, and the server is only up when both are: a Host who
 	// cannot reach the admin page has no way to fix the setting that
@@ -252,9 +264,16 @@ func serve(s *store.Store, cfg config.Config, dbPath string) error {
 	// Whichever falls over first ends the process. Neither returns unless
 	// something has gone wrong.
 	failed := make(chan error, 2)
-	go func() {
-		failed <- fmt.Errorf("admin listener: %w", http.ListenAndServe(cfg.AdminAddr, admin.New(s.AdminToken, cfg.AdminAddr)))
-	}()
+	if cfg.AdminAddr != "" {
+		go func() {
+			// The game's URL goes with it so the admin page can point back at
+			// Longtable itself. Two addresses is two things to confuse, and the
+			// Host who lands on the wrong one should find the way over rather
+			// than a dead end.
+			handler := admin.New(s.AdminToken, cfg.AdminAddr, browsableURL(cfg.Addr))
+			failed <- fmt.Errorf("admin listener: %w", http.ListenAndServe(cfg.AdminAddr, handler))
+		}()
+	}
 	go func() {
 		failed <- http.ListenAndServe(cfg.Addr, router)
 	}()
@@ -267,23 +286,36 @@ func serve(s *store.Store, cfg config.Config, dbPath string) error {
 // only place the token is shown until they ask for it again with
 // `longtable admin` — which they will, because a console scrolls and on
 // Windows it closes with the process.
+//
+// It says "admin page" rather than anything shorter because there are
+// now two addresses on this screen and only one of them is Longtable
+// itself. This line read "set up at" first, which a Host reasonably took
+// to mean "the app is set up at this URL", and they went to the admin
+// port looking for their rooms.
 func logAdminURL(adminAddr, token string) {
-	slog.Info("longtable: set up at", "url", adminURL(adminAddr, token))
+	slog.Info("longtable: admin page at", "url", adminURL(adminAddr, token))
 }
 
 // adminURL is the address and the token together, ready to be opened.
-//
-// A bare ":8081" is printed as a loopback address rather than verbatim,
-// since "http://:8081" is not something a browser can be given.
 func adminURL(adminAddr, token string) string {
-	host, port, err := net.SplitHostPort(adminAddr)
+	return fmt.Sprintf("%s/?token=%s", browsableURL(adminAddr), token)
+}
+
+// browsableURL turns a listen address into one that can be typed into a
+// browser on this machine.
+//
+// A bare ":8080" means every address this machine has, which is not
+// something a browser can be given — "http://:8080" goes nowhere. From
+// the Host's own seat the loopback address is the true one.
+func browsableURL(addr string) string {
+	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
-		return fmt.Sprintf("http://%s/?token=%s", adminAddr, token)
+		return "http://" + addr
 	}
 	if host == "" {
 		host = "127.0.0.1"
 	}
-	return fmt.Sprintf("http://%s/?token=%s", net.JoinHostPort(host, port), token)
+	return "http://" + net.JoinHostPort(host, port)
 }
 
 // defaultDatabase is where the server looks when nobody says otherwise:

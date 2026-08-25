@@ -33,6 +33,14 @@ func runAdmin(args []string) error {
 		return err
 	}
 
+	if cfg.AdminAddr == "" {
+		// A URL to nowhere would be worse than useless here, since this
+		// command exists precisely for the Host who can't find the way in.
+		fmt.Println("The admin page is off.")
+		fmt.Println("Turn it back on with: longtable config unset admin_addr")
+		return nil
+	}
+
 	token := ""
 	if *issueNew {
 		token, err = s.RotateAdminToken()

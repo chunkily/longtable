@@ -329,7 +329,13 @@ printed at startup as part of a URL and reprintable with `longtable admin`, sinc
 scrolls and on Windows closes with the process; `longtable admin -new` rotates it live. There is
 **no TLS**, so the token crosses in the clear — which is nothing on loopback and is the reason
 moving `admin_addr` off it warns rather than being offered as a feature. A remote-admin opt-in was
-deliberately not built: an SSH tunnel gives the same access encrypted.
+deliberately not built: an SSH tunnel gives the same access encrypted. **An empty `admin_addr`
+turns the page off** — one setting rather than a toggle beside an address, since those two can
+disagree about whether it is on. That is why `Resolve` distinguishes a stored empty string from an
+absent key: collapsing them would have made turning it off silently do nothing. `addr` and
+`admin_addr` sharing a port is refused, because Linux fails the second bind loudly while **Windows
+allows both and gives loopback to the more specific one** — a game on `:8081` quietly serves the
+admin page on localhost and the rooms on the LAN address, with nothing logged.
 
 **`-db` is the only flag any subcommand takes**, because the database cannot hold its own
 location — two ways of naming it is how a Host ends up administering a file the running server

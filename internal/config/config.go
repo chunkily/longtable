@@ -123,14 +123,16 @@ var Registry = []Setting{
 	addrSetting(
 		"addr", ":8080",
 		`The address to listen on. ":8080" means every address this machine has, which is what lets other people reach you over the network. Use "127.0.0.1:8080" to keep the server to this machine only.`,
-		nil, // Being reachable is the whole point of this one.
+		false, // A server with nowhere to listen is not a server.
+		nil,   // Being reachable is the whole point of this one.
 		func(c *Config, v string) { c.Addr = v },
 	),
 	addrSetting(
 		"admin_addr", "127.0.0.1:8081",
-		`Where the admin page listens. This is a second address, separate from the one players use, and it starts on 127.0.0.1 so that only this machine can reach it.`,
+		`Where the admin page listens. This is a second address, separate from the one players use, and it starts on 127.0.0.1 so that only this machine can reach it. Set it to nothing at all to turn the admin page off.`,
+		true, // Empty turns the admin page off.
 		func(v string) string {
-			if isLoopback(v) {
+			if v == "" || isLoopback(v) {
 				return ""
 			}
 			// Plain sentences, and it says what was given up rather than
@@ -190,9 +192,14 @@ func Resolve(values map[string]string) (Config, error) {
 	var c Config
 	for _, s := range Registry {
 		raw, ok := values[s.Key]
-		if !ok || raw == "" {
+		if !ok {
 			raw = s.Default
 		}
+		// Note `!ok` alone: a stored empty string is a *value*, not an
+		// absence. Treating the two the same would make turning the admin
+		// page off silently do nothing, which is the exact failure this
+		// whole design refuses elsewhere. Every setting that cannot be
+		// empty refuses one in Parse, so nothing else reaches apply blank.
 		if err := s.apply(&c, raw); err != nil {
 			// Only reachable if something wrote past Parse — a hand-edited
 			// database, most likely. Name the key, since the value alone
@@ -226,6 +233,21 @@ func Defaults() Config {
 // same mistake surfaced as a server that wouldn't boot.
 func (c Config) Validate() error {
 	// Plain sentences: a Host reads these. See the longtable-copy skill.
+	//
+	// Two listeners on one port is never what anyone means, and it fails
+	// far worse than it sounds. Linux refuses the second bind and the
+	// server won't start, which is at least loud. **Windows allows both**
+	// — a wildcard `:8081` and a specific `127.0.0.1:8081` bind happily
+	// side by side, and the more specific one takes loopback traffic — so
+	// a Host whose game is on 8081 quietly finds the admin page on
+	// localhost while their rooms are still on the LAN address. Nothing
+	// errors and nothing looks wrong. Caught here so it is refused the
+	// same way on both.
+	if c.AdminAddr != "" && addrPort(c.Addr) == addrPort(c.AdminAddr) {
+		return fmt.Errorf(
+			"addr and admin_addr are both on port %s. They need different ports: the admin page is a separate address from the one players use",
+			addrPort(c.Addr))
+	}
 	if c.Uploads.MaxTotalStorage < c.Uploads.MaxAssetSize {
 		return fmt.Errorf(
 			"uploads.max_total_storage can't be smaller than uploads.max_asset_size (%s). Nothing could ever be uploaded",
@@ -291,10 +313,18 @@ func distance(a, b string) int {
 // from. Catching "8081" or "127.0.0.1;8081" as it is typed is much
 // better than at the next restart, when the server refuses to bind and
 // the admin page is wherever the typo pointed.
-func addrSetting(key, def, summary string, warn func(string) string, assign func(*Config, string)) Setting {
+// optional says an empty value is meaningful rather than missing: for
+// admin_addr it means "don't listen at all", which is how the admin page
+// is turned off. One setting rather than a toggle beside an address,
+// because those two can disagree and then something has to decide which
+// wins.
+func addrSetting(key, def, summary string, optional bool, warn func(string) string, assign func(*Config, string)) Setting {
 	parse := func(raw string) (string, error) {
 		raw = strings.TrimSpace(raw)
 		if raw == "" {
+			if optional {
+				return "", nil
+			}
 			return "", fmt.Errorf("can't be empty. It's an address like %q or %q", ":8080", "127.0.0.1:8080")
 		}
 		if _, port, err := net.SplitHostPort(raw); err != nil || port == "" {
@@ -314,6 +344,15 @@ func addrSetting(key, def, summary string, warn func(string) string, assign func
 			return nil
 		},
 	}
+}
+
+// addrPort is the port half of a listen address, or "" if it hasn't one.
+func addrPort(addr string) string {
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return ""
+	}
+	return port
 }
 
 // isLoopback reports whether a listen address is reachable only from

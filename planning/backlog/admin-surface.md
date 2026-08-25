@@ -77,6 +77,25 @@ because they leaked it. The token is now read per request, the way the banner al
 there is a test pinning it. A read per request costs nothing on a surface that is one person
 clicking.
 
+**The admin page can be turned off**, with an empty `admin_addr` rather than a toggle beside it —
+a boolean and an address are two settings that can disagree, and then something has to decide
+which wins. Nothing binds, nothing is minted, and startup says so rather than leaving a silence
+where a URL used to be. It costs a Host nothing, because ADR-0009 already requires the CLI to
+reach every setting the page would have.
+
+That turned up a latent bug in `Resolve`, which treated a stored empty string as an absent key and
+substituted the default — so turning the admin page off would have silently left it on, which is
+the exact "edit that does nothing" this whole design refuses. Absent and explicitly-empty are now
+different answers.
+
+**`addr` and `admin_addr` on one port is refused**, found by a Host running the game on 8081 for
+acceptance testing and meeting the new default head-on. Worth knowing why it needed catching in
+config rather than being left to the bind: Linux refuses the second bind and the server won't
+start, which is at least loud, but **Windows allows a wildcard and a specific address to share a
+port and hands loopback to the more specific one**. So the game answered on the LAN address while
+`127.0.0.1:8081` quietly served the admin page, and nothing logged a thing. Reproduced, then
+refused in `Validate` so both systems behave the same.
+
 Two things deliberately left: `longtable admin` prints but does not open a browser, which belongs
 with [first-run-opens-the-browser](first-run-opens-the-browser.md) and its four guards; and there
 is still no remote-admin opt-in, per the note above.

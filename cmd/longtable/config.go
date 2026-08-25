@@ -139,10 +139,26 @@ func configList(s *store.Store) error {
 // effectiveValue is what the server will actually use: what was stored,
 // or the registry's default when nothing was.
 func effectiveValue(setting config.Setting, values map[string]string) string {
-	if value, ok := values[setting.Key]; ok {
-		return value
+	value, ok := values[setting.Key]
+	if !ok {
+		value = setting.Default
 	}
-	return setting.Default
+	return shownValue(value)
+}
+
+// shownValue is a value as a person should read it.
+//
+// A stored empty string is a value rather than an absence — it is how
+// admin_addr turns the admin page off — and printing nothing at all
+// leaves "admin_addr is now  (was 127.0.0.1:8081)" and a blank table
+// column, both of which read as something failing to render rather than
+// as an answer. `config get` still prints the raw empty string, because
+// that one is for scripts and an empty value is genuinely empty.
+func shownValue(value string) string {
+	if value == "" {
+		return "off"
+	}
+	return value
 }
 
 // configGet prints the bare value and nothing else, so it is useful
@@ -208,10 +224,10 @@ func configSet(s *store.Store, key, value string) error {
 	}
 
 	if canonical == previous {
-		fmt.Printf("%s was already %s\n", key, canonical)
+		fmt.Printf("%s was already %s\n", key, shownValue(canonical))
 		return nil
 	}
-	fmt.Printf("%s is now %s (was %s)\n", key, canonical, previous)
+	fmt.Printf("%s is now %s (was %s)\n", key, shownValue(canonical), shownValue(previous))
 	if !setting.Live {
 		// Said every time rather than only when a server is running: this
 		// command works fine against a stopped one, and a Host who assumes

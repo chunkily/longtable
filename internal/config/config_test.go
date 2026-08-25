@@ -130,6 +130,75 @@ func TestValidate_CatchesACeilingBelowItsFloor(t *testing.T) {
 	}
 }
 
+// Turning the admin page off is an empty admin_addr rather than a
+// separate toggle, so that a toggle and an address can never disagree
+// about whether it is on.
+func TestAdminAddr_EmptyTurnsItOff(t *testing.T) {
+	setting, ok := Lookup("admin_addr")
+	if !ok {
+		t.Fatal("no admin_addr setting")
+	}
+	if _, err := setting.Parse(""); err != nil {
+		t.Fatalf("an empty admin_addr was refused: %v", err)
+	}
+
+	c, err := Resolve(map[string]string{"admin_addr": ""})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	// The bug this guards: Resolve used to treat a stored empty string as
+	// an absent one and hand back the default, so turning the admin page
+	// off would have silently left it on — an edit that does nothing,
+	// which is the failure this whole design exists to refuse.
+	if c.AdminAddr != "" {
+		t.Fatalf("AdminAddr = %q, want empty — the setting was ignored", c.AdminAddr)
+	}
+	if err := c.Validate(); err != nil {
+		t.Errorf("a server with no admin page failed validation: %v", err)
+	}
+
+	// And it says nothing about being exposed, because it isn't listening.
+	if warning := setting.Warn(""); warning != "" {
+		t.Errorf("an admin page that is off warned about the network: %q", warning)
+	}
+}
+
+// The address every *other* setting refuses to be empty, because a
+// server with nowhere to listen is not a server.
+func TestAddr_CannotBeTurnedOff(t *testing.T) {
+	setting, _ := Lookup("addr")
+	if _, err := setting.Parse(""); err == nil {
+		t.Fatal("an empty addr was accepted")
+	}
+}
+
+// Two listeners on one port is never meant, and it fails differently on
+// different systems: Linux refuses the second bind, while Windows allows
+// a wildcard and a specific address to share a port and gives loopback
+// to the more specific one. A Host whose game was on 8081 found the
+// admin page on localhost and their rooms still on the LAN address, with
+// nothing logged. Refused here so both behave the same.
+func TestValidate_RefusesTwoListenersOnOnePort(t *testing.T) {
+	for name, values := range map[string]map[string]string{
+		"a wildcard against loopback": {"addr": ":8081", "admin_addr": "127.0.0.1:8081"},
+		"the same address twice":      {"addr": "127.0.0.1:8080", "admin_addr": "127.0.0.1:8080"},
+		"different hosts, one port":   {"addr": "192.168.1.5:9000", "admin_addr": "127.0.0.1:9000"},
+	} {
+		c, err := Resolve(values)
+		if err != nil {
+			t.Fatalf("%s: Resolve: %v", name, err)
+		}
+		if err := c.Validate(); err == nil {
+			t.Errorf("%s: accepted %v", name, values)
+		}
+	}
+
+	// The defaults are two different ports, and must stay that way.
+	if err := Defaults().Validate(); err != nil {
+		t.Errorf("the defaults collide: %v", err)
+	}
+}
+
 // Anything the database doesn't mention takes its default, which is what
 // lets a later version add a setting without every database already out
 // there having to know about it.

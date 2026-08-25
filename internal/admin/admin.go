@@ -21,6 +21,7 @@ package admin
 
 import (
 	"crypto/subtle"
+	"html/template"
 	"log/slog"
 	"net"
 	"net/http"
@@ -43,12 +44,16 @@ const cookieName = "longtable_admin"
 type Server struct {
 	token     func() (string, error)
 	adminAddr string
+	// gameURL is Longtable itself, so this page can point back at it.
+	gameURL string
 }
 
 // New wires the admin routes. adminAddr is the address this will be
-// served on, kept so the Host header can be checked against it.
-func New(token func() (string, error), adminAddr string) http.Handler {
-	srv := &Server{token: token, adminAddr: adminAddr}
+// served on, kept so the Host header can be checked against it; gameURL
+// is where Longtable itself is, so a Host who arrived here looking for
+// their rooms is sent on rather than left.
+func New(token func() (string, error), adminAddr, gameURL string) http.Handler {
+	srv := &Server{token: token, adminAddr: adminAddr, gameURL: gameURL}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", srv.index)
@@ -200,20 +205,32 @@ func isLoopbackHost(host string) bool {
 // It exists so the surface can be tested as a surface — that the token
 // gets someone in, that nothing else does — before there is anything
 // worth protecting on it.
+//
+// It names the game's address because a Host who has just met two
+// addresses will sooner or later open the wrong one, and this is the
+// wrong one. Landing here with no way over is how "the page I'm seeing
+// is not the room list" happens.
 func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if _, err := w.Write([]byte(placeholder)); err != nil {
+	if err := placeholder.Execute(w, s.gameURL); err != nil {
 		slog.Error("admin: write index failed", "error", err)
 	}
 }
 
-const placeholder = `<!doctype html>
+// html/template rather than a string: the address it interpolates comes
+// from a Host's own settings, and a template that knows it is writing an
+// href escapes it for that context.
+var placeholder = template.Must(template.New("admin").Parse(`<!doctype html>
 <meta charset="utf-8">
 <title>Longtable admin</title>
 <style>
-  body { font-family: system-ui, sans-serif; margin: 4rem auto; max-width: 32rem; line-height: 1.5; }
+  body { font-family: system-ui, sans-serif; margin: 4rem auto; max-width: 32rem; line-height: 1.5; padding: 0 1rem; }
+  .rooms { padding: 1rem; border: 1px solid #ccc; border-radius: 6px; }
 </style>
 <h1>Longtable admin</h1>
-<p>You're in. There's nothing here yet — the settings screen is still being built.</p>
-<p>In the meantime, <code>longtable config list</code> shows every setting and what it does.</p>
-`
+<p>This is the admin page. It's for settings, and only this machine can reach it.</p>
+<p class="rooms"><strong>Looking for your rooms?</strong> Longtable is at
+  <a href="{{.}}">{{.}}</a> — that's the address to share with players.</p>
+<p>There's nothing to change here yet; the settings screen is still being built.
+  In the meantime, <code>longtable config list</code> shows every setting and what it does.</p>
+`))
