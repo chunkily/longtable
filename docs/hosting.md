@@ -37,6 +37,58 @@ Then other players may be able to get to the main page at
 Note that if nothing is printed, the machine may have no network address to
 share: check it's actually on the network.
 
+## The admin page
+
+Longtable starts a second, separate address for you: the admin page. When it
+starts it prints a link with a token in it, like
+
+```sh
+INFO longtable: set up at url="http://127.0.0.1:8081/?token=k3f9…"
+```
+
+Open that and you're in. If the line has scrolled away, or the window closed,
+ask for it again:
+
+```bash
+longtable admin
+```
+
+**The admin page is only reachable from the machine Longtable runs on.** It
+listens on `127.0.0.1`, which your network can't route to, so nobody at your
+table can open it even if they know the address. The players' address is the
+other one, and that's the only one they need.
+
+To get in from another machine, forward the port over SSH rather than moving
+the address:
+
+```bash
+ssh -L 8081:localhost:8081 your-server
+```
+
+That gets you the admin page over an encrypted connection, which moving it
+wouldn't.
+
+### If you shared the link by mistake
+
+```bash
+longtable admin -new
+```
+
+That replaces the token straight away, on a server that's still running.
+Whatever link you shared stops working, and so does any browser already
+signed in.
+
+### What the token does and doesn't protect
+
+The token stops someone who can reach the admin address from opening it.
+Longtable serves plain HTTP with no encryption, so the token is readable by
+anyone who can watch the connection — which on `127.0.0.1` is nobody, because
+the connection never leaves your machine.
+
+That changes if you move `admin_addr` off `127.0.0.1`. Then the page is on your
+network, the token crosses it in the clear, and anyone who reads it once can get
+in. Longtable says so when you make that change.
+
 ## Settings
 
 Longtable keeps its settings in its database, next to your rooms. Change one
@@ -55,6 +107,7 @@ longtable config list
 | Setting                     | Default              | What it does                                                                   |
 | --------------------------- | -------------------- | ------------------------------------------------------------------------------ |
 | `addr`                      | `":8080"`            | The address to listen on. `"127.0.0.1:8080"` keeps the server to this machine. |
+| `admin_addr`                | `"127.0.0.1:8081"`   | Where the admin page listens. Only this machine can reach it.                  |
 | `assets`                    | `"longtable-assets"` | The directory uploaded maps and token art go in.                               |
 | `departure_grace`           | `"30s"`              | How long someone may be disconnected before the room is told they left.        |
 | `uploads.max_asset_size`    | `"25 MiB"`           | The largest a single map or token upload may be.                               |

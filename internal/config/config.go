@@ -20,6 +20,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
@@ -49,7 +50,10 @@ func (b ByteSize) String() string { return humanize.IBytes(uint64(b)) }
 // database takes the registry's default, which is what lets a version
 // add a setting without every existing database having to know about it.
 type Config struct {
-	Addr           string
+	Addr string
+	// AdminAddr is a second listener, and it is loopback by default on
+	// purpose — see the registry entry and ADR-0009.
+	AdminAddr      string
 	Assets         string
 	DepartureGrace Duration
 	Uploads        UploadLimits
@@ -98,6 +102,15 @@ type Setting struct {
 	// "25 MiB".
 	Parse func(raw string) (string, error)
 
+	// Warn returns something to say about a value that is allowed but
+	// worth thinking about, or "" for the ordinary case.
+	//
+	// Separate from Parse because refusing is the wrong answer here: a
+	// Host who moves the admin listener off loopback may have a reason,
+	// and the design's job is to make sure they know what they gave up
+	// rather than to stop them. Nil for most settings.
+	Warn func(canonical string) string
+
 	// apply puts an already-canonical value into a Config. Unexported
 	// because nothing outside resolves a single setting on its own.
 	apply func(c *Config, canonical string) error
@@ -107,10 +120,24 @@ type Setting struct {
 // them. Adding a row is the whole of adding a setting: the CLI, an
 // export and the admin UI all read this.
 var Registry = []Setting{
-	stringSetting(
+	addrSetting(
 		"addr", ":8080",
 		`The address to listen on. ":8080" means every address this machine has, which is what lets other people reach you over the network. Use "127.0.0.1:8080" to keep the server to this machine only.`,
+		nil, // Being reachable is the whole point of this one.
 		func(c *Config, v string) { c.Addr = v },
+	),
+	addrSetting(
+		"admin_addr", "127.0.0.1:8081",
+		`Where the admin page listens. This is a second address, separate from the one players use, and it starts on 127.0.0.1 so that only this machine can reach it.`,
+		func(v string) string {
+			if isLoopback(v) {
+				return ""
+			}
+			// Plain sentences, and it says what was given up rather than
+			// scolding. See the longtable-copy skill.
+			return "Anyone on your network can now reach the admin page. The token is all that stands in the way, and it isn't encrypted on its way there."
+		},
+		func(c *Config, v string) { c.AdminAddr = v },
 	),
 	stringSetting(
 		"assets", "longtable-assets",
@@ -255,6 +282,56 @@ func distance(a, b string) int {
 // setting is and nothing about how its type is handled. Each builds both
 // Parse and apply from one parser, which is what stops the two
 // disagreeing about what a valid value is.
+
+// addrSetting is a listen address: "host:port", or ":port" for every
+// address this machine has.
+//
+// The shape is checked, unlike a plain string, because an address is the
+// one setting that can lock a Host out of the screen they would fix it
+// from. Catching "8081" or "127.0.0.1;8081" as it is typed is much
+// better than at the next restart, when the server refuses to bind and
+// the admin page is wherever the typo pointed.
+func addrSetting(key, def, summary string, warn func(string) string, assign func(*Config, string)) Setting {
+	parse := func(raw string) (string, error) {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			return "", fmt.Errorf("can't be empty. It's an address like %q or %q", ":8080", "127.0.0.1:8080")
+		}
+		if _, port, err := net.SplitHostPort(raw); err != nil || port == "" {
+			return "", fmt.Errorf("%q isn't an address. It needs a port, like %q or %q", raw, ":8080", "127.0.0.1:8080")
+		}
+		return raw, nil
+	}
+	return Setting{
+		Key: key, Default: def, Summary: summary, Warn: warn,
+		Parse: parse,
+		apply: func(c *Config, canonical string) error {
+			value, err := parse(canonical)
+			if err != nil {
+				return err
+			}
+			assign(c, value)
+			return nil
+		},
+	}
+}
+
+// isLoopback reports whether a listen address is reachable only from
+// this machine.
+//
+// A bare ":8081" is not: an empty host means every interface, which is
+// the case most worth warning about and the easiest to type by accident.
+func isLoopback(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil || host == "" {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
 
 func stringSetting(key, def, summary string, assign func(*Config, string)) Setting {
 	return Setting{

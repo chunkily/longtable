@@ -19,6 +19,7 @@ architecture and current state live here instead**, and keeping them true is par
 | `internal/imageproc/` | decodes and re-encodes every upload to WebP. Read its doc comment before touching it — the studio-swing trap in there is easy to reintroduce |
 | `internal/blobstore/` | re-encoded images on disk, addressed by content hash so identical uploads share a file |
 | `internal/auth/` | session tokens and bcrypt password hashing. No accounts — identity in a room is a *seat* (a `participant` row), and a device proves it holds one with a `session` token in `localStorage`. See [ADR-0008](planning/decisions/0008-seats-and-sessions.md) |
+| `internal/admin/` | the Host's own HTTP surface, on a **second listener** bound to loopback by default. That binding is the security, not the token: one listener with a `RemoteAddr` check passes for the whole internet the moment a reverse proxy is in front, where a socket on 127.0.0.1 cannot be reached off the machine whatever headers arrive. The token is read per request rather than held, so `longtable admin -new` takes effect on a running server — it used to claim a rotation had worked while the old link kept working. Also checks the `Host` header (DNS rebinding) and uses a `SameSite=Strict` cookie (blind CSRF from a page the Host is merely visiting) |
 | `internal/config/` | the **registry** of every setting there is: its default, the one line explaining it, the `Parse` that validates and canonicalises a value, and whether it takes effect live. A leaf that reads nothing — values live in the database's `setting` table ([ADR-0009](planning/decisions/0009-admin-ui-and-database-config.md), which superseded [ADR-0006](planning/decisions/0006-config-file-format.md) and deleted the TOML file). `export.go` renders the registry back out as commented TOML, which is *output* the server never reads — that's what gives a technical Host something to diff and keep without the two-writers problem a live config file would have |
 | `internal/dice/` | `/roll 2d6+3` expression parser |
 | `internal/lanurl/` | which of the machine's addresses a Host can hand to their players, printed at startup. Takes the interface list as an argument, so the rules are testable on machines nobody has |
@@ -319,6 +320,16 @@ registry's default, which is what lets a later version add one without every dat
 there having to know about it. **The guarantees the file used to give are now the CLI's**: an
 unknown key is refused with the near miss named, and a bad value is refused *as it is set* rather
 than at the next start, which is the main thing the database bought.
+
+**The admin page is a second address, and it is a Host's alone.** `admin_addr`
+(`127.0.0.1:8081` by default) is a separate listener from the one players use, so the table
+cannot reach it at all — [ADR-0007](planning/decisions/0007-the-table-is-trusted.md) trusts the
+table, and a server's configuration is not a table matter. A token minted on first start is
+printed at startup as part of a URL and reprintable with `longtable admin`, since a console
+scrolls and on Windows closes with the process; `longtable admin -new` rotates it live. There is
+**no TLS**, so the token crosses in the clear — which is nothing on loopback and is the reason
+moving `admin_addr` off it warns rather than being offered as a feature. A remote-admin opt-in was
+deliberately not built: an SSH tunnel gives the same access encrypted.
 
 **`-db` is the only flag any subcommand takes**, because the database cannot hold its own
 location — two ways of naming it is how a Host ends up administering a file the running server

@@ -1,7 +1,7 @@
 ---
 title: The admin surface — a loopback listener and a token
 created: 2026-08-25
-status: open
+status: done
 tags: [host, security, admin]
 story: host-keeps-admin-access-to-themselves
 ---
@@ -47,6 +47,39 @@ sniffer, loopback alone loses to local processes and the browser.
 everything covers every case anyone has constructed, and `ssh -L 8081:localhost:8081` gives a
 remote Host the UI *with* encryption. Adding an exposure later is easy; walking one back after
 Hosts depend on it is not.
+
+## What shipped
+
+`internal/admin`, on its own listener at `admin_addr` (`127.0.0.1:8081`), with a placeholder page
+behind the guard so the surface could be tested as a surface before there was anything on it.
+`longtable admin` prints the URL, `-new` rotates.
+
+**Verified against a running binary rather than argued for.** With `addr = :8080`, `netstat` shows
+`0.0.0.0:8080` and `127.0.0.1:8081` — and the game answered on the machine's LAN address while the
+admin port refused the connection outright. That is the property the whole item exists for, and it
+is a fact about the socket rather than about any code path.
+
+Three defences, each covering what the others don't, and all tested:
+
+- **The loopback binding**, which is the one that survives a reverse proxy.
+- **The `Host` header check** — DNS rebinding. A page the Host is merely visiting can point a name
+  it controls at 127.0.0.1; what it cannot do is forge the header the browser sends. A valid token
+  with a foreign `Host` gets a 404, and `localhost` / `127.0.0.1` / `[::1]` are all accepted
+  because they are all the same machine.
+- **A `SameSite=Strict`, `HttpOnly` cookie**, exchanged for the token and redirected so the secret
+  leaves the URL — history and referrers included, which is the correction Jupyter made after
+  shipping the naive version.
+
+**One real bug, found by driving it rather than by reading it.** The token was held from startup,
+so `longtable admin -new` printed "any link you shared before now stops working" while the old
+link kept working and the *new* one was refused with a 401 — exactly backwards for a Host rotating
+because they leaked it. The token is now read per request, the way the banner already worked, and
+there is a test pinning it. A read per request costs nothing on a surface that is one person
+clicking.
+
+Two things deliberately left: `longtable admin` prints but does not open a browser, which belongs
+with [first-run-opens-the-browser](first-run-opens-the-browser.md) and its four guards; and there
+is still no remote-admin opt-in, per the note above.
 
 ## Related user stories
 

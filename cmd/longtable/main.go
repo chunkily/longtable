@@ -6,6 +6,7 @@
 //
 //	longtable [serve] [-db longtable.db] [-addr :8080]
 //	longtable config list|get|set|unset|export|import [-db longtable.db]
+//	longtable admin [-db longtable.db] [-new]
 //	longtable room list [-db longtable.db]
 //	longtable room reset-password [-db longtable.db] <room-code>
 //	longtable set-banner [-db longtable.db] <message>
@@ -30,12 +31,14 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"strings"
 	"time"
 
 	assets "longtable"
+	"longtable/internal/admin"
 	"longtable/internal/api"
 	"longtable/internal/blobstore"
 	"longtable/internal/config"
@@ -49,11 +52,11 @@ import (
 //
 // Written out here rather than assembled from the flag package's own
 // output, which only ever knows about one subcommand's flags: asked
-// "what can this do?", it answers with a single -config line and no
+// "what can this do?", it answers with a single -db line and no
 // mention that `room` or `set-banner` exist at all.
 //
 // Each command's arguments are shown next to it, because the flag
-// package can't: `longtable set-banner -h` lists -config and stops,
+// package can't: `longtable set-banner -h` lists -db and stops,
 // which reads as "takes no arguments" for the two commands that need
 // one.
 const usage = `Longtable is a self-hosted virtual tabletop for D&D.
@@ -67,6 +70,7 @@ Commands:
   serve                            Start the server.
   config list                      Show every setting, and what each one does.
   config set <key> <value>         Change a setting.
+  admin                            Print the link to the admin page.
   room list                        List every room on this server.
   room reset-password <room-code>  Set a new GM password for a room.
   set-banner <message>             Show a message across the top of every page.
@@ -92,8 +96,8 @@ func isHelpArg(arg string) bool {
 // is easy to get wrong can be tested without starting a server: which
 // arguments mean "serve" and which mean "you typed something wrong".
 // Those two sit closer together than they look — a bare `longtable`
-// serves, and so does `longtable -config other.toml`, but `longtable
-// serv` must not.
+// serves, and so does `longtable -db other.db`, but `longtable serv`
+// must not.
 type route string
 
 const (
@@ -103,6 +107,7 @@ const (
 	routeSetBanner   route = "set-banner"
 	routeClearBanner route = "clear-banner"
 	routeConfig      route = "config"
+	routeAdmin       route = "admin"
 	routeUnknown     route = "unknown"
 )
 
@@ -126,6 +131,8 @@ func routeFor(args []string) route {
 		return routeClearBanner
 	case args[0] == "config":
 		return routeConfig
+	case args[0] == "admin":
+		return routeAdmin
 	case strings.HasPrefix(args[0], "-"):
 		// A flag with no command in front of it belongs to serve, which is
 		// what `longtable -db other.db` means.
@@ -152,6 +159,8 @@ func main() {
 		err = runClearBanner(args[1:])
 	case routeConfig:
 		err = runConfigCommand(args[1:])
+	case routeAdmin:
+		err = runAdmin(args[1:])
 	case routeUnknown:
 		// Refused rather than served. A mistyped command used to fall
 		// through to `serve` and come up looking like a normal start,
@@ -222,9 +231,59 @@ func serve(s *store.Store, cfg config.Config, dbPath string) error {
 	}
 	router := api.NewRouter(s, hub, blobs, frontend, limits)
 
+	// Minted here so the URL can be printed, but the admin surface reads
+	// it per request from the store — that is what makes `longtable admin
+	// -new` take effect on a running server rather than at the next
+	// restart.
+	token, err := s.AdminToken()
+	if err != nil {
+		return fmt.Errorf("read admin token: %w", err)
+	}
+
 	slog.Info("longtable: listening", "addr", cfg.Addr, "db", dbPath, "assets", cfg.Assets)
 	logReachableURLs(cfg.Addr)
-	return http.ListenAndServe(cfg.Addr, router)
+	logAdminURL(cfg.AdminAddr, token)
+
+	// Two listeners, and the server is only up when both are: a Host who
+	// cannot reach the admin page has no way to fix the setting that
+	// would let them, so failing to bind it is a failure to start rather
+	// than something to log and carry on past.
+	//
+	// Whichever falls over first ends the process. Neither returns unless
+	// something has gone wrong.
+	failed := make(chan error, 2)
+	go func() {
+		failed <- fmt.Errorf("admin listener: %w", http.ListenAndServe(cfg.AdminAddr, admin.New(s.AdminToken, cfg.AdminAddr)))
+	}()
+	go func() {
+		failed <- http.ListenAndServe(cfg.Addr, router)
+	}()
+	return <-failed
+}
+
+// logAdminURL prints the way in to the admin page.
+//
+// The most important line on the screen for a first-time Host, and the
+// only place the token is shown until they ask for it again with
+// `longtable admin` — which they will, because a console scrolls and on
+// Windows it closes with the process.
+func logAdminURL(adminAddr, token string) {
+	slog.Info("longtable: set up at", "url", adminURL(adminAddr, token))
+}
+
+// adminURL is the address and the token together, ready to be opened.
+//
+// A bare ":8081" is printed as a loopback address rather than verbatim,
+// since "http://:8081" is not something a browser can be given.
+func adminURL(adminAddr, token string) string {
+	host, port, err := net.SplitHostPort(adminAddr)
+	if err != nil {
+		return fmt.Sprintf("http://%s/?token=%s", adminAddr, token)
+	}
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	return fmt.Sprintf("http://%s/?token=%s", net.JoinHostPort(host, port), token)
 }
 
 // defaultDatabase is where the server looks when nobody says otherwise:

@@ -376,6 +376,27 @@ func (s *Store) createTables() error {
 			value      TEXT NOT NULL,
 			updated_at TEXT NOT NULL
 		);
+
+		-- The secret that gets a Host into the admin page.
+		--
+		-- Its own table rather than a row in 'setting', and that is not
+		-- tidiness: 'longtable config export' writes every setting to a
+		-- file a Host is encouraged to keep and version, and a token is the
+		-- one thing that must not travel that way.
+		--
+		-- Stored as issued rather than hashed, because unlike a password
+		-- it has to be *shown* again — a console scrolls, and on Windows it
+		-- closes with the process, so 'longtable admin' printing the URL
+		-- back is the only way in for a Host who lost the startup line.
+		-- Session tokens beside it are stored the same way.
+		--
+		-- Seeded empty; the server mints one on first start.
+		CREATE TABLE IF NOT EXISTS admin_token (
+			token      TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL DEFAULT ''
+		);
+		INSERT INTO admin_token (token, created_at)
+		SELECT '', '' WHERE NOT EXISTS (SELECT 1 FROM admin_token);
 	`)
 	return err
 }
