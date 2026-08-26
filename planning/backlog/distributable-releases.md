@@ -21,6 +21,10 @@ and it is the GM's to make. Push a `v*` tag and this closes, along with
 [host-download-and-run-distributable](../user-stories/host-download-and-run-distributable.md),
 whose first criterion is the only one still false.
 
+**A second thing now wants this**: [check-for-new-versions](check-for-new-versions.md) cannot
+tell whether a binary is behind without knowing what it is, so the stamp below is worth doing once
+for both rather than twice.
+
 Worth deciding at the same time: the binary has no way to say which version it is. The folder
 inside the archive carries the tag, and nothing else does. A `-version` flag wants an `ldflags`
 stamp in the workflow, which is a small change to make while cutting the first release and an

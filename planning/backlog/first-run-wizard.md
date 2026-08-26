@@ -29,6 +29,11 @@ Two routes through, and the first is the one most Hosts should take:
 Express is not a shortcut past a decision; it *is* the decision, and the wizard should say so
 rather than hiding it behind "advanced".
 
+**Express must never be the more permissive route.** It takes every default, and any question
+whose default is "don't" stays "don't" — the update check is the first of those, and the quick way
+through setup has to also be the private one. A future setting that opted a Host into something by
+being defaulted on would break that quietly, so weigh it here rather than there.
+
 ## Which questions
 
 Not every setting deserves asking about. The wizard is not a second rendering of the settings
@@ -37,6 +42,10 @@ form:
 - [ ] Decide which settings a first-time Host should be asked about at all, and mark the rest as
       "change later if you need to". `uploads.max_total_storage` is a good example of one nobody
       should have to think about on day one.
+- [ ] Ask whether Longtable may check for new versions — see
+      [check-for-new-versions](check-for-new-versions.md). That question is *why* it can exist at
+      all: it is the only thing Longtable would ever send outside the machine, and asking once is
+      what makes it a choice rather than a default nobody was told about.
 - [ ] Take the question text from the registry's `Summary` rather than writing it twice
 - [ ] Validate through the registry's `Parse`, so the wizard cannot accept a value the settings
       page would refuse
