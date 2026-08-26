@@ -44,6 +44,7 @@ import (
 	"longtable/internal/config"
 	"longtable/internal/db"
 	"longtable/internal/lanurl"
+	"longtable/internal/listener"
 	"longtable/internal/store"
 	"longtable/internal/ws"
 )
@@ -256,6 +257,15 @@ func serve(s *store.Store, cfg config.Config, dbPath string) error {
 		logAdminURL(cfg.AdminAddr, token)
 	}
 
+	// The game goes on a listener that can be moved, so changing `addr`
+	// doesn't mean restarting a process nothing would restart. Bound
+	// before anything else so a bad address fails the start rather than
+	// being discovered later.
+	game, err := listener.Start(cfg.Addr, router)
+	if err != nil {
+		return fmt.Errorf("listen on %s: %w", cfg.Addr, err)
+	}
+
 	// Two listeners, and the server is only up when both are: a Host who
 	// cannot reach the admin page has no way to fix the setting that
 	// would let them, so failing to bind it is a failure to start rather
@@ -269,13 +279,14 @@ func serve(s *store.Store, cfg config.Config, dbPath string) error {
 			// The game's URL goes with it so the admin page can point back at
 			// Longtable itself. Two addresses is two things to confuse, and the
 			// Host who lands on the wrong one should find the way over rather
-			// than a dead end.
-			handler := admin.New(s.AdminToken, cfg.AdminAddr, browsableURL(cfg.Addr), s)
+			// than a dead end. Rebind goes with it so a Host changing the
+			// address is moved there rather than told to restart.
+			handler := admin.New(s.AdminToken, cfg.AdminAddr, browsableURL(cfg.Addr), s, game.Rebind)
 			failed <- fmt.Errorf("admin listener: %w", http.ListenAndServe(cfg.AdminAddr, handler))
 		}()
 	}
 	go func() {
-		failed <- http.ListenAndServe(cfg.Addr, router)
+		failed <- <-game.Fatal()
 	}()
 	return <-failed
 }

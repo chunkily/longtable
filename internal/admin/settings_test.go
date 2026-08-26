@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -9,14 +10,21 @@ import (
 	"testing"
 
 	"longtable/internal/config"
+	"longtable/internal/listener"
 )
 
 // signedIn is a handler plus the cookie that gets past the guard, so
 // these tests are about the settings page rather than about auth.
 func signedIn(t *testing.T, settings Settings) (http.Handler, *http.Cookie) {
 	t.Helper()
+	return signedInWith(t, settings, func(string) error { return nil })
+}
 
-	handler := New(fixed(token), adminAddr, "http://127.0.0.1:8080", settings)
+// signedInWith is signedIn for the tests that care what the rebind did.
+func signedInWith(t *testing.T, settings Settings, rebind func(string) error) (http.Handler, *http.Cookie) {
+	t.Helper()
+
+	handler := New(fixed(token), adminAddr, "http://127.0.0.1:8080", settings, rebind)
 	resp := get(t, handler, "/?token="+token, adminAddr)
 	for _, c := range resp.Cookies() {
 		if c.Name == cookieName {
@@ -205,7 +213,7 @@ func TestSettingsPage_WarnsAboutExposingItself(t *testing.T) {
 // half it would be easiest to forget.
 func TestSettingsPage_SavingNeedsTheSameAuth(t *testing.T) {
 	store := &fakeSettings{}
-	handler := New(fixed(token), adminAddr, "http://127.0.0.1:8080", store)
+	handler := New(fixed(token), adminAddr, "http://127.0.0.1:8080", store, nil)
 
 	form := url.Values{"addr": {":9999"}}
 	resp := post(t, handler, form, &http.Cookie{Name: cookieName, Value: "forged"})
@@ -214,5 +222,114 @@ func TestSettingsPage_SavingNeedsTheSameAuth(t *testing.T) {
 	}
 	if len(store.values) != 0 {
 		t.Errorf("an unauthenticated post changed settings: %v", store.values)
+	}
+}
+
+// Changing the address moves the server rather than telling the Host to
+// restart, which is what lets setup end by landing them on it.
+func TestSettingsPage_MovesTheServerWhenTheAddressChanges(t *testing.T) {
+	store := &fakeSettings{}
+	moved := ""
+	handler, session := signedInWith(t, store, func(addr string) error {
+		moved = addr
+		return nil
+	})
+
+	form := url.Values{}
+	for _, setting := range config.Registry {
+		form.Set(setting.Key, setting.Default)
+	}
+	form.Set("addr", ":9000")
+
+	resp := post(t, handler, form, session)
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("status = %d, want a redirect", resp.StatusCode)
+	}
+	if moved != ":9000" {
+		t.Errorf("the listener was asked to move to %q, want :9000", moved)
+	}
+	if store.values["addr"] != ":9000" {
+		t.Errorf("addr = %q, want it stored", store.values["addr"])
+	}
+	// Nothing else changed, so there is nothing to restart for.
+	if location := resp.Header.Get("Location"); strings.Contains(location, "restart") {
+		t.Errorf("redirected to %q — it moved, so it shouldn't ask for a restart", location)
+	}
+}
+
+// The ordering the whole thing turns on. A bind that fails must leave
+// the stored address alone: written first, the database would name an
+// address the server isn't on and couldn't take, so the *next* start
+// fails too — on a value nobody can see is wrong.
+func TestSettingsPage_StoresNoAddressItCouldNotMoveTo(t *testing.T) {
+	store := &fakeSettings{}
+	handler, session := signedInWith(t, store, func(string) error {
+		return errors.New("couldn't listen on :9000: address already in use")
+	})
+
+	form := url.Values{}
+	for _, setting := range config.Registry {
+		form.Set(setting.Key, setting.Default)
+	}
+	form.Set("addr", ":9000")
+	form.Set("departure_grace", "2m")
+
+	page := body(t, post(t, handler, form, session))
+	if !strings.Contains(page, "address already in use") {
+		t.Errorf("the reason isn't on the page:\n%s", page)
+	}
+	if !strings.Contains(page, `value=":9000"`) {
+		t.Error("what was typed was thrown away")
+	}
+	// And nothing at all was saved, including the field that was fine.
+	if len(store.values) != 0 {
+		t.Errorf("settings were stored despite the move failing: %v", store.values)
+	}
+}
+
+// A change that can't be made live is still a change worth keeping — it
+// is stored, and the Host is told a restart will finish it.
+func TestSettingsPage_StoresAnAddressThatNeedsARestart(t *testing.T) {
+	store := &fakeSettings{}
+	handler, session := signedInWith(t, store, func(string) error {
+		return listener.ErrNeedsRestart
+	})
+
+	form := url.Values{}
+	for _, setting := range config.Registry {
+		form.Set(setting.Key, setting.Default)
+	}
+	form.Set("addr", "127.0.0.1:8080")
+
+	resp := post(t, handler, form, session)
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("status = %d, want a redirect", resp.StatusCode)
+	}
+	if store.values["addr"] != "127.0.0.1:8080" {
+		t.Errorf("addr = %q, want it stored anyway", store.values["addr"])
+	}
+	if location := resp.Header.Get("Location"); !strings.Contains(location, "restart") {
+		t.Errorf("redirected to %q, which won't mention the restart it needs", location)
+	}
+}
+
+// Without a listener to move — a page built with no rebinder — the
+// honest answer is that a restart is needed, not that it worked.
+func TestSettingsPage_SaysRestartWhenThereIsNothingToMove(t *testing.T) {
+	store := &fakeSettings{}
+	handler, session := signedInWith(t, store, nil)
+
+	form := url.Values{}
+	for _, setting := range config.Registry {
+		form.Set(setting.Key, setting.Default)
+	}
+	form.Set("addr", ":9000")
+
+	resp := post(t, handler, form, session)
+	if location := resp.Header.Get("Location"); !strings.Contains(location, "restart") {
+		t.Errorf("redirected to %q, want a restart notice", location)
+	}
+	if store.values["addr"] != ":9000" {
+		t.Errorf("addr = %q, want it stored", store.values["addr"])
 	}
 }

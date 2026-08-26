@@ -134,8 +134,9 @@ longtable config list
 | `uploads.max_asset_size`    | `"25 MiB"`           | The largest a single map or token upload may be.                               |
 | `uploads.max_total_storage` | `"10 GiB"`           | The most this server will ever store, across every room combined.              |
 
-Changes take effect when you restart the server. Longtable says so when you
-make one.
+Most changes take effect when you restart the server, and Longtable says so when you
+make one. Changing the address from the admin page is the exception: the server
+moves to it there and then.
 
 A setting Longtable doesn't recognise is refused, and it names the one you
 probably meant. A value it can't use is refused as you set it, so a mistake

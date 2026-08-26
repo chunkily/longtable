@@ -1,11 +1,13 @@
 package admin
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 
 	"longtable/internal/config"
+	"longtable/internal/listener"
 )
 
 // Settings is the half of the store this page needs. An interface rather
@@ -115,6 +117,35 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// The address is applied before anything is stored, because the two
+	// can disagree and only one order is safe. Applied first, a bind that
+	// fails changes nothing at all — the server is still on the old
+	// address and the setting still says so. Stored first, a failed bind
+	// leaves the database naming an address the server isn't on and
+	// couldn't take, so the *next* start fails too, on a value nobody can
+	// see is wrong.
+	// appliedLive names the settings this save has already put into
+	// effect itself. `Setting.Live` cannot answer for `addr`: it means
+	// "the running server picks this up on its own", which is true of the
+	// banner and false of an address — the *page* applies that one,
+	// because it is inside the process, and `longtable config set addr`
+	// from a terminal genuinely cannot. So the restart notice is built
+	// from what happened rather than from the flag.
+	appliedLive := map[string]bool{}
+	if len(fieldErrors) == 0 && problem == "" {
+		if next := prospective["addr"]; next != effectiveAddr(stored) {
+			switch err := s.moveTo(next); {
+			case err == nil:
+				appliedLive["addr"] = true
+			case errors.Is(err, listener.ErrNeedsRestart):
+				// A legitimate change that can't be made live. Left out of
+				// appliedLive so the notice below asks for the restart.
+			default:
+				fieldErrors["addr"] = err.Error()
+			}
+		}
+	}
+
 	if len(fieldErrors) > 0 || problem != "" {
 		// Re-rendered with what was typed still in the boxes. Handing back
 		// the stored values instead would throw away the work and hide the
@@ -143,7 +174,7 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "couldn't save that", http.StatusInternalServerError)
 			return
 		}
-		if !setting.Live {
+		if !setting.Live && !appliedLive[setting.Key] {
 			restart = true
 		}
 	}
@@ -182,6 +213,25 @@ func viewsFor(values, fieldErrors map[string]string) []settingView {
 		})
 	}
 	return views
+}
+
+// moveTo asks for the game listener to be moved, when there is one to
+// move. A CLI-only build of this page has no listener of its own, and a
+// change it cannot apply is one to restart for.
+func (s *Server) moveTo(addr string) error {
+	if s.rebind == nil {
+		return listener.ErrNeedsRestart
+	}
+	return s.rebind(addr)
+}
+
+// effectiveAddr is the address the server is currently meant to be on.
+func effectiveAddr(stored map[string]string) string {
+	setting, ok := config.Lookup("addr")
+	if !ok {
+		return ""
+	}
+	return effective(setting, stored)
 }
 
 // effective is what a setting is currently worth: stored, or its default.

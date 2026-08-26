@@ -46,14 +46,17 @@ type Server struct {
 	// gameURL is Longtable itself, so this page can point back at it.
 	gameURL  string
 	settings Settings
+	// rebind moves the game listener, or nil when nothing can. See
+	// saveSettings for the three answers it can give.
+	rebind func(addr string) error
 }
 
 // New wires the admin routes. adminAddr is the address this will be
 // served on, kept so the Host header can be checked against it; gameURL
 // is where Longtable itself is, so a Host who arrived here looking for
 // their rooms is sent on rather than left.
-func New(token func() (string, error), adminAddr, gameURL string, settings Settings) http.Handler {
-	srv := &Server{token: token, adminAddr: adminAddr, gameURL: gameURL, settings: settings}
+func New(token func() (string, error), adminAddr, gameURL string, settings Settings, rebind func(string) error) http.Handler {
+	srv := &Server{token: token, adminAddr: adminAddr, gameURL: gameURL, settings: settings, rebind: rebind}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", srv.showSettings)

@@ -22,6 +22,7 @@ architecture and current state live here instead**, and keeping them true is par
 | `internal/admin/` | the Host's own HTTP surface — the settings screen — on a **second listener** bound to loopback by default. That binding is the security, not the token: one listener with a `RemoteAddr` check passes for the whole internet the moment a reverse proxy is in front, where a socket on 127.0.0.1 cannot be reached off the machine whatever headers arrive. The token is read per request rather than held, so `longtable admin -new` takes effect on a running server — it used to claim a rotation had worked while the old link kept working. Also checks the `Host` header (DNS rebinding) and uses a `SameSite=Strict` cookie (blind CSRF from a page the Host is merely visiting). **The page is server-rendered HTML and a plain form, not a SvelteKit route**: the admin bundle would otherwise ship to every Player for a screen none of them can open, and a form that posts and comes back with the message beside the field runs the *same* `Parse` `config set` does rather than a second implementation in TypeScript. `page.go` is the template; `settings.go` the two handlers |
 | `internal/config/` | the **registry** of every setting there is: its default, the one line explaining it, the `Parse` that validates and canonicalises a value, and whether it takes effect live. A leaf that reads nothing — values live in the database's `setting` table ([ADR-0009](planning/decisions/0009-admin-ui-and-database-config.md), which superseded [ADR-0006](planning/decisions/0006-config-file-format.md) and deleted the TOML file). `export.go` renders the registry back out as commented TOML, which is *output* the server never reads — that's what gives a technical Host something to diff and keep without the two-writers problem a live config file would have |
 | `internal/dice/` | `/roll 2d6+3` expression parser |
+| `internal/listener/` | serves the game on an address that can change while the process runs, so `addr` doesn't mean a restart nothing would perform. **Binds the new address before releasing the old**, and keeps the old on failure — the other ordering leaves a Host with neither address and only the CLI to recover from. A same-port change (`:8080` to `127.0.0.1:8080`) overlaps and so is refused as `ErrNeedsRestart` rather than done unsafely |
 | `internal/lanurl/` | which of the machine's addresses a Host can hand to their players, printed at startup. Takes the interface list as an argument, so the rules are testable on machines nobody has |
 | `internal/db/` | SQLite wiring (`modernc.org/sqlite`, no CGO) |
 | `assets.go` (root) | `go:embed`s `web/build`. Has to be at the root — embed can't reach outside its own directory |
@@ -346,10 +347,13 @@ flag beats the stored value.
 **`departure_grace` is the one persisted setting that reaches a room.** How long a dropped
 connection has to come back before the room is told, where the right answer is the hall's wifi
 rather than ours. It isn't re-read while the server is up — changing it means a restart, which
-the CLI says every time. **Nothing is live yet**, and `Setting.Live` is false across the registry
-on purpose: live reload is per-setting plumbing (the banner manages it by re-reading on every
-request), and a settings screen claiming a change took effect when it didn't is the one lie it
-must not tell.
+the CLI says every time. `Setting.Live` is false across the registry, still: it means "the running server picks this up on
+its own", which is true of the banner and of nothing else yet. **`addr` is the exception that
+proved the flag is the wrong shape for it** — the admin page moves the listener itself
+(`internal/listener`), so a change made *there* takes effect at once while the same change from
+`longtable config set` genuinely cannot. The page therefore builds its restart notice from what it
+actually applied rather than from the flag, and anything else that becomes applyable joins that
+set instead of flipping one.
 
 **Upload sizes are two more.** `uploads.max_asset_size` (25 MiB by default, the ceiling
 this server always enforced, now a Host's to change) and `uploads.max_total_storage` (10 GiB by default) —

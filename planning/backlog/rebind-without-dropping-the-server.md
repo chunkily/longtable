@@ -1,7 +1,7 @@
 ---
 title: Change the listen address without dropping the server
 created: 2026-08-26
-status: open
+status: done
 tags: [host, admin, reliability]
 story: host-finishes-setup-and-starts-playing
 ---
@@ -44,8 +44,7 @@ by the time anything responds to the Host, the new listener is already accepting
       `http.ListenAndServe`
 - [ ] Bind-before-release, with the old listener kept on failure
 - [ ] Report a failed rebind to whoever asked for it, in the form they asked from
-- [ ] `Setting.Live` becomes true for `addr` — the first setting it is true for, and the point at
-      which the field stops being decoration
+- [ ] ~~`Setting.Live` becomes true for `addr`~~ — **this turned out to be wrong**, see below
 
 ## Two wrinkles worth knowing before starting
 
@@ -58,6 +57,41 @@ by the time anything responds to the Host, the new listener is already accepting
   `departure_grace` by the hub, both built at startup. This item is about `addr` alone, because
   `addr` is the one the wizard's handoff depends on. Making the others live is separate work and
   should not be smuggled in here.
+
+## What shipped
+
+`internal/listener`, a `Swappable` that serves a handler on an address it can change, and the
+admin page wired to use it. Changing `addr` on the settings page now moves the running server and
+says nothing about restarting.
+
+Verified against a live binary rather than only in tests: the game moved from `:8071` to `:8073`
+mid-run and the redirect came back `?saved` with no `&restart`; and with a port held by another
+process, the attempt failed at the field, the server carried on serving where it was, and **the
+stored address was left alone**.
+
+That last part is the ordering that matters, and it is the opposite of the obvious one. The
+address is applied *before* it is stored: a failed bind then changes nothing at all. Stored first,
+the database would name an address the server isn't on and couldn't take — so the next start
+fails too, on a value nobody can see is wrong.
+
+**`Setting.Live` was the wrong tool, which only became clear once a test failed on it.** `Live`
+means "the running server picks this up on its own", which is true of the banner (re-read per
+request) and false of an address: the *page* applies that one because it is inside the process,
+and `longtable config set addr` from a terminal genuinely cannot. Flipping the flag would have
+made the CLI claim a change had taken effect when it hadn't — the one lie ADR-0009 says a settings
+surface must not tell. So `addr` stays `Live: false`, and the page builds its restart notice from
+what actually happened, via an `appliedLive` set. Anything else that becomes applyable joins that
+set rather than flipping a flag.
+
+**The same-port wrinkle is refused, deliberately.** `:8080` to `127.0.0.1:8080` overlaps, so it
+cannot be bound before releasing; doing it the other way round would reintroduce the exact
+"neither address" failure this exists to prevent. `ErrNeedsRestart` says so honestly, and the
+setting is still stored — it is a legitimate change, just not a live one.
+
+One edge a test caught that reading would not have: rebinding to the address already being served
+returned `ErrNeedsRestart` instead of doing nothing, because the current address is held in two
+spellings — as requested (`:8080`) and as resolved (`[::]:8080`) — and only the first was compared.
+"Restart to stay where you are" is a silly answer to give anybody.
 
 ## Related user stories
 
