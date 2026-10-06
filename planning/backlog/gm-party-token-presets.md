@@ -28,6 +28,9 @@ new tokens spreads today (`token.create`'s numbering/spread logic).
   discussed (the other being a template distinct from any live token) and is the one to build
   unless a concrete need for the other shows up.
 
+If [icon-tokens](icon-tokens.md) has shipped by the time this is picked up, `icon` and `color` are
+identity fields like art and belong in the copy — not per-fight state.
+
 ## Related user stories
 
 - [gm-add-party-to-scene](../user-stories/gm-add-party-to-scene.md)

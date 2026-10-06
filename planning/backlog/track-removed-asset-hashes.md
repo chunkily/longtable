@@ -21,3 +21,13 @@ Needs a record that survives asset removal (e.g. a separate `blocked_content_has
 "removed" flag/tombstone on the asset row instead of a hard delete) containing at least: the
 content hash, removal timestamp, and the Host's optional reason. The upload path needs to check
 this before accepting a new file.
+
+**The output hash alone is not enough to block on** (2026-10-06). `content_hash` is of the
+re-encoded WebP, and [frame-token-art-at-upload](frame-token-art-at-upload.md) means the same file
+cropped two ways is two hashes — a Player re-uploading a removed portrait will frame it differently
+without trying to, and walk straight past a block keyed on the output. The grid aligner already has
+the smaller version of this. Removing an asset should therefore block its output hash **and** every
+source hash [record-upload-source-hash](record-upload-source-hash.md) recorded against it, and an
+upload is refused if either matches. Assets uploaded before source hashes were recorded can only be
+blocked by output; that's a permanent gap for them, not something to backfill. An edited source
+(resized, recompressed) is not caught either, knowingly — see that item's last paragraph.

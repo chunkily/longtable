@@ -19,3 +19,9 @@ So that I can moderate content without building a full administration interface
 - [ ] When removing an asset, I can optionally record a reason
 - [ ] Room Members reuploading a blocked asset can see the reason, if one was given, and are given a default response otherwise.
 - [ ] This is accomplished via a CLI command or direct database/filesystem access, not a web admin UI
+- [ ] Assets that came from the same uploaded file — two crops of one portrait, one map aligned two
+      ways — are listed together, so removing one doesn't leave its siblings up unnoticed
+
+Added 2026-10-06, with token cropping planned ([frame-token-art-at-upload](../backlog/frame-token-art-at-upload.md)):
+once one file can become several stored assets, a flat list fills with near-duplicates. Grouping
+needs [record-upload-source-hash](../backlog/record-upload-source-hash.md).
