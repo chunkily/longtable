@@ -188,7 +188,7 @@ stand alone for a lair action or a hazard, sorted by the value rolled with a man
 ties, a current turn and a round counter that wrap together, and a two-click clear that leaves the
 tokens on the map. It belongs to the room rather than the scene, so a GM switching to the battle
 map mid-fight keeps the encounter,
-chat with `/roll` and a two-stage delete (a GM may delete or purge any message, everyone else
+chat with `/roll` (each roll's dice listed highest first, so counting hits stops at the first miss) and a two-stage delete (a GM may delete or purge any message, everyone else
 only their own — the first delete leaves the room seeing "this message has been deleted", while
 the author and whoever just deleted it still see the original text struck through; a second
 delete on that same message purges it outright for everyone — that bin is invisible and

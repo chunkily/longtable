@@ -1,7 +1,7 @@
 ---
 title: Show each roll's dice highest first
 created: 2026-10-06
-status: open
+status: done
 tags: [chat, dice, playtest]
 story: room-member-counts-a-big-roll
 ---
@@ -26,3 +26,15 @@ total is unchanged. Recorded here so nobody later "fixes" its loss.
 
 Considered and declined: the roller counting successes itself (`/roll 10d6>=5` → "4 successes").
 Sorting was judged enough.
+
+## What shipped
+
+Every `NdM` term's dice are listed highest first — `/roll 4d6+2` reads `4d6(6,5,3,1)+2` — for
+everyone, since the sort happens in `internal/dice` before the breakdown becomes the text that
+`message.roll_breakdown` stores. Rolls already in a room's log keep the order they were rolled in.
+
+`slices.Sort` then `slices.Reverse` on the term's own slice, *after* it has been summed, so the total
+can't be touched by it. `TestRoll_ListsEachTermsDiceHighestFirst` rolls `40d6+1d20-30d6+3` fifty
+times and checks three things: each term is non-increasing, each term still has its count of dice,
+and the dice shown sum back to the total — that last one is what proves the sorted list is the dice
+that were actually rolled. Confirmed by sorting ascending instead and watching it fail.

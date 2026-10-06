@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -64,6 +65,16 @@ func Roll(expr string) (Result, error) {
 				sum = -sum
 			}
 			total += sum
+			// Highest first, so counting how many dice beat a target stops
+			// at the first miss rather than reading all of them — the
+			// complaint from a twelve-die roll in playtesting. Sorted here
+			// rather than in the client because the breakdown is stored as
+			// text: the message is sorted for everyone, a refresh included,
+			// and nothing has to parse numbers back out of a string. Per
+			// term, since a d20 sorted in among d6s means nothing. The order
+			// the dice fell in is dropped, and nothing at the table needs it.
+			slices.Sort(rolls)
+			slices.Reverse(rolls)
 			parts = append(parts, fmt.Sprintf("%s%dd%d(%s)", signPrefix(sign), count, sides, joinInts(rolls)))
 		} else {
 			value, err := strconv.Atoi(term)

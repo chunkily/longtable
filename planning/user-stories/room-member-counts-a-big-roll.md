@@ -1,7 +1,7 @@
 ---
 title: Room Member counts a big roll at a glance
 created: 2026-10-06
-status: incomplete
+status: done
 ---
 
 As a Room Member
