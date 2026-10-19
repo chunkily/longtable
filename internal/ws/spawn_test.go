@@ -86,3 +86,27 @@ func TestSpawnCells_LargeTokensDoNotOverlapEachOther(t *testing.T) {
 		}
 	}
 }
+
+// spawnCells puts a lone token exactly where it was asked, because
+// somebody pointed there. Nobody pointed anywhere for a party member, so
+// spawnFootprints walks a party of one off an occupied square like any
+// other — and fits each footprint by its own size.
+func TestSpawnFootprints_NeverStacksAndFitsEachSize(t *testing.T) {
+	lone := spawnFootprints(0, 0, []cell{{X: 1, Y: 1}}, []store.Token{at(0, 0)})
+	if lone[0] == (cell{X: 0, Y: 0}) {
+		t.Fatalf("a party of one was put on the occupied spawn square")
+	}
+
+	sizes := []cell{{X: 2, Y: 2}, {X: 1, Y: 1}, {X: 1, Y: 1}}
+	got := spawnFootprints(0, 0, sizes, nil)
+	if got[0] != (cell{X: 0, Y: 0}) {
+		t.Errorf("the first token is at %+v, want the spawn square", got[0])
+	}
+	for i := range got {
+		for j := i + 1; j < len(got); j++ {
+			if overlaps(got[i], sizes[i].X, sizes[i].Y, got[j], sizes[j].X, sizes[j].Y) {
+				t.Fatalf("%+v (%v) overlaps %+v (%v)", got[i], sizes[i], got[j], sizes[j])
+			}
+		}
+	}
+}

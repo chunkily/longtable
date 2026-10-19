@@ -1,7 +1,7 @@
 ---
 title: GM adds the party to a scene
 created: 2026-08-14
-status: incomplete
+status: done
 ---
 
 As a GM

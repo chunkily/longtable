@@ -45,6 +45,7 @@
 	let ownerParticipantId = $state<string | null>(null);
 	let trackers = $state<Tracker[]>([]);
 	let conditions = $state<string[]>([]);
+	let inParty = $state(false);
 
 	// What the form held when it opened, for telling "nothing typed" from
 	// "typed and about to be thrown away".
@@ -65,6 +66,7 @@
 		// RoomClient's own state as it was typed, before anything was saved.
 		trackers = tokenTrackers(token).map((t) => ({ ...t }));
 		conditions = [...(token.conditions ?? [])];
+		inParty = !!token.partyKey;
 		loaded = current();
 	}
 
@@ -76,6 +78,7 @@
 			height: squares,
 			ownerParticipantId,
 			visibility,
+			inParty,
 			trackers,
 			conditions
 		};
@@ -258,6 +261,34 @@
 								class="flex-1"
 							>
 								Hidden from players
+							</Button>
+						</div>
+					</div>
+					<!-- A party character is one Add party copies onto a new scene.
+					     Saying no here takes the character out everywhere, every
+					     copy on every scene with it — see store.LeaveParty — which
+					     is what the GM means by it: Brom has left the party, not
+					     this particular Brom. -->
+					<div class="flex flex-col gap-2">
+						<Label>Party</Label>
+						<div class="flex gap-2">
+							<Button
+								type="button"
+								variant={inParty ? 'outline' : 'default'}
+								aria-pressed={!inParty}
+								onclick={() => (inParty = false)}
+								class="flex-1"
+							>
+								Not in the party
+							</Button>
+							<Button
+								type="button"
+								variant={inParty ? 'default' : 'outline'}
+								aria-pressed={inParty}
+								onclick={() => (inParty = true)}
+								class="flex-1"
+							>
+								In the party
 							</Button>
 						</div>
 					</div>

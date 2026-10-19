@@ -70,6 +70,8 @@ var addedColumns = []struct{ table, column, definition string }{
 	{"drawing", "stroke_width", "REAL NOT NULL DEFAULT 3"},
 	{"participant", "color", "TEXT NOT NULL DEFAULT ''"},
 	{"room", "join_password_hash", "TEXT NOT NULL DEFAULT ''"},
+	{"token", "party_key", "TEXT NOT NULL DEFAULT ''"},
+	{"token", "updated_at", "TEXT NOT NULL DEFAULT ''"},
 }
 
 func (s *Store) addMissingColumns() error {
@@ -221,7 +223,17 @@ func (s *Store) createTables() error {
 			-- that fails safely for a Player.
 			visibility             TEXT NOT NULL DEFAULT 'visible',
 			trackers               TEXT NOT NULL DEFAULT '[]',
-			conditions             TEXT NOT NULL DEFAULT '[]'
+			conditions             TEXT NOT NULL DEFAULT '[]',
+			-- Which party character this token is a copy of, or '' for none.
+			-- Every copy of one character shares the key, which is what
+			-- lets party.add put one of each on a scene rather than one of
+			-- every copy ever made. See ListPartyMembers.
+			party_key              TEXT NOT NULL DEFAULT '',
+			-- Set on create and on edit, not on move: it answers "which copy
+			-- of this character is the newest version of them?", and where
+			-- a token stands has nothing to do with that. '' on a row from
+			-- before the column, which sorts as oldest.
+			updated_at             TEXT NOT NULL DEFAULT ''
 		);
 		CREATE INDEX IF NOT EXISTS idx_token_scene ON token(scene_id);
 

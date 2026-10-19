@@ -74,6 +74,12 @@ export interface Token {
 	// `tokenTrackers()` rather than indexing directly.
 	trackers?: Tracker[];
 	conditions?: string[];
+	// Which party character this token is a copy of; null when it isn't
+	// one. Opaque — what a client does with it is ask "is this in the
+	// party?" and, undoing a deletion, hand it back so the character
+	// returns to the party with it. Optional for a token from an older
+	// server, like the two above.
+	partyKey?: string | null;
 }
 
 export const TRACKER_SLOTS = 3;
@@ -750,10 +756,21 @@ export class RoomClient {
 		x: number,
 		y: number,
 		visibility: 'visible' | 'hidden' = 'visible',
-		options: { squares?: number; ownerParticipantId?: string | null; count?: number } = {}
+		options: {
+			squares?: number;
+			ownerParticipantId?: string | null;
+			count?: number;
+			inParty?: boolean;
+		} = {}
 	) {
 		const count = Math.max(1, Math.min(MAX_TOKENS_PER_CREATE, Math.round(options.count ?? 1)));
 		const tokenIds = Array.from({ length: count }, () => randomId());
+		// A new party character is a new key, minted here because
+		// token.create takes the key itself (for undo's sake) rather than a
+		// yes/no. One key for the whole batch would make eight monkeys one
+		// character, so a batch can't join — the dialog only offers the box
+		// to a GM making one token. A Player's is ignored by the server.
+		const partyKey = options.inParty && count === 1 ? randomId() : null;
 
 		if (
 			!this.send('token.create', {
@@ -767,7 +784,8 @@ export class RoomClient {
 				height: options.squares ?? 1,
 				ownerParticipantId: options.ownerParticipantId ?? null,
 				count,
-				tokenIds
+				tokenIds,
+				partyKey
 			})
 		) {
 			return;
@@ -779,6 +797,15 @@ export class RoomClient {
 		// room actually holds it. A refusal simply never arrives, and
 		// nothing is left on the stack.
 		for (const id of tokenIds) this.pendingCreates.add(id);
+	}
+
+	/**
+	 * Puts every party character not already on the scene onto it, spread
+	 * out from (x, y). GM-only, and the server's to work out: the party's
+	 * other copies are on scenes this client isn't holding.
+	 */
+	addParty(sceneId: string, x: number, y: number) {
+		this.send('party.add', { sceneId, x, y });
 	}
 
 	revealFog(sceneId: string, cells: FogCell[]) {
@@ -950,7 +977,10 @@ export class RoomClient {
 			ownerParticipantId: token.ownerParticipantId,
 			visibility: token.visibility,
 			trackers: tokenTrackers(token),
-			conditions: token.conditions ?? []
+			conditions: token.conditions ?? [],
+			// So a party character whose deletion is undone comes back in
+			// the party, as the same character its other copies are.
+			partyKey: token.partyKey ?? null
 		});
 	}
 
@@ -1029,6 +1059,10 @@ export class RoomClient {
 			height: token.height,
 			ownerParticipantId: token.ownerParticipantId,
 			visibility: token.visibility,
+			// Carried through untouched like the rest. Left out, a GM
+			// changing a party character's hit points from the details
+			// panel would take them out of the party.
+			inParty: !!token.partyKey,
 			trackers,
 			conditions
 		});
@@ -1493,6 +1527,20 @@ export class RoomClient {
 				// nobody here minted isn't in the set.
 				if (this.pendingCreates.delete(token.id)) {
 					this.record({ kind: 'createToken', token });
+				}
+				break;
+			}
+
+			// The tokens a party.add of ours made, sent to us alone after
+			// their token.created events — so they're already held, and each
+			// becomes its own undo entry the way a batch's tokens do. The ids
+			// can't be minted up front as createToken does: how many
+			// characters arrive is the server's answer, not ours.
+			case 'party.added': {
+				const payload = env.payload as { tokenIds: string[] };
+				for (const id of payload.tokenIds) {
+					const token = this.tokens.find((t) => t.id === id);
+					if (token) this.record({ kind: 'createToken', token });
 				}
 				break;
 			}

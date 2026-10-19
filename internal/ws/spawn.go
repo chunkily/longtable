@@ -41,46 +41,63 @@ func spawnCells(originX, originY float64, count int, w, h float64, existing []st
 	if count <= 1 {
 		return []cell{{X: originX, Y: originY}}
 	}
+	sizes := make([]cell, count)
+	for i := range sizes {
+		sizes[i] = cell{X: w, Y: h}
+	}
+	return spawnFootprints(originX, originY, sizes, existing)
+}
 
+// spawnFootprints is spawnCells for tokens that needn't be one size —
+// the party, where a Large companion stands beside four Medium
+// characters. Each token in turn takes the first free square nearest the
+// origin that its own footprint fits, with everything placed before it
+// counted as standing there.
+//
+// For a batch of one size that is exactly what the single walk outward
+// spawnCells used to do: a square too crowded for one token stays too
+// crowded for the next, so searching again from the middle finds the
+// same squares in the same order. Unlike spawnCells it never treats one
+// token as special — a party of one still steps off an occupied square,
+// because nobody pointed at that square for it.
+func spawnFootprints(originX, originY float64, sizes []cell, existing []store.Token) []cell {
 	// Footprints rather than corners: a 2×2 token standing at (3,3)
 	// covers (4,4) too, and a monkey dropped there would be half under it.
-	taken := make([]cell, 0, len(existing)+count)
-	sizes := make([]cell, 0, len(existing)+count)
+	taken := make([]cell, 0, len(existing)+len(sizes))
+	takenSizes := make([]cell, 0, len(existing)+len(sizes))
 	for _, t := range existing {
 		taken = append(taken, cell{X: t.X, Y: t.Y})
-		sizes = append(sizes, cell{X: t.Width, Y: t.Height})
+		takenSizes = append(takenSizes, cell{X: t.Width, Y: t.Height})
 	}
 
-	free := func(c cell) bool {
+	free := func(c, size cell) bool {
 		for i, other := range taken {
-			if overlaps(c, w, h, other, sizes[i].X, sizes[i].Y) {
+			if overlaps(c, size.X, size.Y, other, takenSizes[i].X, takenSizes[i].Y) {
 				return false
 			}
 		}
 		return true
 	}
 
-	out := make([]cell, 0, count)
-	for radius := 0; radius <= maxSpawnRadius && len(out) < count; radius++ {
-		for _, c := range ring(originX, originY, radius) {
-			if len(out) == count {
-				break
+	out := make([]cell, 0, len(sizes))
+	for _, size := range sizes {
+		// The neighbourhood full to maxSpawnRadius stacks the token on the
+		// spawn square rather than dropping it — better than returning
+		// fewer tokens than were asked for, since one on a pile can still
+		// be dragged off it.
+		spot := cell{X: originX, Y: originY}
+	search:
+		for radius := 0; radius <= maxSpawnRadius; radius++ {
+			for _, c := range ring(originX, originY, radius) {
+				if free(c, size) {
+					spot = c
+					break search
+				}
 			}
-			if !free(c) {
-				continue
-			}
-			out = append(out, c)
-			taken = append(taken, c)
-			sizes = append(sizes, cell{X: w, Y: h})
 		}
-	}
-
-	// The neighbourhood was full to maxSpawnRadius. Better to stack the
-	// remainder on the spawn square than to return fewer tokens than were
-	// asked for — the count is what the user typed, and a token they can
-	// drag off a pile still exists.
-	for len(out) < count {
-		out = append(out, cell{X: originX, Y: originY})
+		out = append(out, spot)
+		taken = append(taken, spot)
+		takenSizes = append(takenSizes, size)
 	}
 	return out
 }

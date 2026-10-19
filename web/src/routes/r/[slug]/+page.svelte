@@ -1157,6 +1157,12 @@
 						{isGM}
 						bind:highContrastGrid
 						onResetView={() => canvasRef?.resetView()}
+						onAddParty={isGM && sceneId
+							? () => {
+									const { x, y } = canvasRef?.viewCenterCell() ?? { x: 0, y: 0 };
+									client?.addParty(sceneId, x, y);
+								}
+							: undefined}
 					>
 						{#snippet newToken()}
 							<!-- Everyone's, not just the GM's: a Player's summons and

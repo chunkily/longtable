@@ -42,6 +42,7 @@
 	let squares = $state(1);
 	let ownerParticipantId = $state<string | null>(null);
 	let count = $state(1);
+	let inParty = $state(false);
 	let submitting = $state(false);
 
 	async function handleSubmit(event: SubmitEvent) {
@@ -56,7 +57,8 @@
 			room.createToken(sceneId, name, imageAssetId, x, y, visibility, {
 				squares,
 				ownerParticipantId,
-				count
+				count,
+				inParty
 			});
 			open = false;
 			name = '';
@@ -65,6 +67,7 @@
 			ownerParticipantId = null;
 			visibility = 'visible';
 			count = 1;
+			inParty = false;
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : 'failed to create token');
 		} finally {
@@ -86,7 +89,12 @@
 			</Button>
 		{/snippet}
 	</Dialog.Trigger>
-	<Dialog.Content>
+	<!-- Bounded by the window, with only the fields scrolling — the edit
+	     dialog's layout, for the edit dialog's reason. This one ran out of
+	     height when the party choice arrived: on a 720px-tall window it
+	     overflowed both ways, putting the close button off the top and
+	     Create token off the bottom, where nothing could scroll to either. -->
+	<Dialog.Content class="flex max-h-[calc(100dvh-2rem)] flex-col">
 		<Dialog.Header>
 			<Dialog.Title>New token</Dialog.Title>
 			<!-- The numbering is the surprising part of a batch, so it's said
@@ -102,82 +110,113 @@
 				{/if}
 			</Dialog.Description>
 		</Dialog.Header>
-		<form class="flex flex-col gap-4" onsubmit={handleSubmit}>
-			<!-- The count shares the name's row rather than taking one of its
-			     own, and that isn't only tidiness: this dialog was already
-			     within one field of the window's height, and a dialog taller
-			     than the window puts its own close button off the top of the
-			     screen where nothing can scroll to it. The number input is
-			     the stepper — no need for buttons beside it.
+		<form class="flex min-h-0 flex-1 flex-col gap-4" onsubmit={handleSubmit}>
+			<div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
+				<!-- The count shares the name's row rather than taking one of its
+			     own. That used to be what kept this dialog inside the window;
+			     the fields scroll now, but a short form is still better than a
+			     scrolling one. The number input is the stepper — no need for
+			     buttons beside it.
 
 			     Offered to a GM and a Player alike: six goblins is the same
 			     eight-trips-through-a-dialog problem as eight monkeys. The
 			     cap here only stops the spinner where the server refuses, so
 			     it never becomes an error toast after the fact. -->
-			<div class="flex gap-2">
-				<div class="flex flex-1 flex-col gap-2">
-					<Label for="token-name">Name</Label>
-					<Input id="token-name" bind:value={name} required />
-				</div>
-				<div class="flex w-24 flex-col gap-2">
-					<Label for="token-count">How many</Label>
-					<Input
-						id="token-count"
-						type="number"
-						min="1"
-						max={MAX_TOKENS_PER_CREATE}
-						class="text-center"
-						bind:value={count}
-					/>
-				</div>
-			</div>
-			<TokenSizePicker bind:squares idPrefix="token" />
-			{#if isGM}
-				<!-- A token being made now has no owner to preserve, so this is
-				     simply whoever is at the table. -->
-				<TokenOwnerPicker
-					bind:ownerId={ownerParticipantId}
-					options={ownerOptions(room.connectedParticipants, room.participants, null)}
-				/>
-			{/if}
-			<div class="flex flex-col gap-2">
-				<Label>Image (optional)</Label>
-				<!-- Token art only. What goes on a token is one question with one
-				     kind of answer, and a Maps tab here is an invitation to put a
-				     battle map on a goblin. -->
-				<AssetPicker
-					{roomSlug}
-					{sessionToken}
-					idPrefix="token"
-					kind="token"
-					lockKind
-					bind:selectedId={imageAssetId}
-					emptyHint="Nothing in the library yet — add art on the assets page, or leave blank for a plain marker."
-				/>
-			</div>
-			{#if isGM}
-				<div class="flex flex-col gap-2">
-					<Label>Visibility</Label>
-					<div class="flex gap-2">
-						<Button
-							type="button"
-							variant={visibility === 'visible' ? 'default' : 'outline'}
-							onclick={() => (visibility = 'visible')}
-							class="flex-1"
-						>
-							Visible
-						</Button>
-						<Button
-							type="button"
-							variant={visibility === 'hidden' ? 'default' : 'outline'}
-							onclick={() => (visibility = 'hidden')}
-							class="flex-1"
-						>
-							Hidden from players
-						</Button>
+				<div class="flex gap-2">
+					<div class="flex flex-1 flex-col gap-2">
+						<Label for="token-name">Name</Label>
+						<Input id="token-name" bind:value={name} required />
+					</div>
+					<div class="flex w-24 flex-col gap-2">
+						<Label for="token-count">How many</Label>
+						<Input
+							id="token-count"
+							type="number"
+							min="1"
+							max={MAX_TOKENS_PER_CREATE}
+							class="text-center"
+							bind:value={count}
+						/>
 					</div>
 				</div>
-			{/if}
+				<TokenSizePicker bind:squares idPrefix="token" />
+				{#if isGM}
+					<!-- A token being made now has no owner to preserve, so this is
+				     simply whoever is at the table. -->
+					<TokenOwnerPicker
+						bind:ownerId={ownerParticipantId}
+						options={ownerOptions(room.connectedParticipants, room.participants, null)}
+					/>
+				{/if}
+				<div class="flex flex-col gap-2">
+					<Label>Image (optional)</Label>
+					<!-- Token art only. What goes on a token is one question with one
+				     kind of answer, and a Maps tab here is an invitation to put a
+				     battle map on a goblin. -->
+					<AssetPicker
+						{roomSlug}
+						{sessionToken}
+						idPrefix="token"
+						kind="token"
+						lockKind
+						bind:selectedId={imageAssetId}
+						emptyHint="Nothing in the library yet — add art on the assets page, or leave blank for a plain marker."
+					/>
+				</div>
+				{#if isGM}
+					<div class="flex flex-col gap-2">
+						<Label>Visibility</Label>
+						<div class="flex gap-2">
+							<Button
+								type="button"
+								variant={visibility === 'visible' ? 'default' : 'outline'}
+								onclick={() => (visibility = 'visible')}
+								class="flex-1"
+							>
+								Visible
+							</Button>
+							<Button
+								type="button"
+								variant={visibility === 'hidden' ? 'default' : 'outline'}
+								onclick={() => (visibility = 'hidden')}
+								class="flex-1"
+							>
+								Hidden from players
+							</Button>
+						</div>
+					</div>
+					<!-- One token only: a party character is one character, and a
+				     batch of eight under one key would be one character Add party
+				     puts down once. Hidden rather than disabled for a batch, the
+				     way fog is hidden from a Player. -->
+					{#if count === 1}
+						<div class="flex flex-col gap-2">
+							<Label>Party</Label>
+							<div class="flex gap-2">
+								<Button
+									type="button"
+									variant={inParty ? 'outline' : 'default'}
+									aria-pressed={!inParty}
+									onclick={() => (inParty = false)}
+									class="flex-1"
+								>
+									Not in the party
+								</Button>
+								<Button
+									type="button"
+									variant={inParty ? 'default' : 'outline'}
+									aria-pressed={inParty}
+									onclick={() => (inParty = true)}
+									class="flex-1"
+								>
+									In the party
+								</Button>
+							</div>
+						</div>
+					{/if}
+				{/if}
+			</div>
+			<!-- Outside the scrolling box, so Create token never scrolls away. -->
 			<Dialog.Footer>
 				<Button type="submit" disabled={submitting}>
 					{submitting ? 'Creating…' : 'Create token'}

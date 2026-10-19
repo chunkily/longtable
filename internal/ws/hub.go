@@ -526,6 +526,8 @@ func (h *Hub) handleMessage(ctx context.Context, c *client, data []byte) {
 		h.handleTokenUpdate(ctx, c, env.Payload)
 	case "token.delete":
 		h.handleTokenDelete(ctx, c, env.Payload)
+	case "party.add":
+		h.handlePartyAdd(ctx, c, env.Payload)
 	case "fog.reveal":
 		h.handleFogReveal(ctx, c, env.Payload)
 	case "fog.hide":
@@ -970,6 +972,10 @@ type tokenCreateRequest struct {
 	// the undo was for.
 	Trackers   []trackerRequest `json:"trackers"`
 	Conditions []string         `json:"conditions"`
+	// Normally absent, and honoured only from a GM. Here for TokenIDs'
+	// reason again: undoing the deletion of a party character has to put
+	// it back *in* the party, under the key its other copies still carry.
+	PartyKey *string `json:"partyKey"`
 }
 
 // handleTokenCreate puts one or more tokens on a scene.
@@ -1030,9 +1036,20 @@ func (h *Hub) handleTokenCreate(ctx context.Context, c *client, raw json.RawMess
 
 	owner := req.OwnerParticipantID
 	visibility := store.Visibility(req.Visibility)
+	partyKey := ""
 	if isGM {
 		if !h.requireOwnerInRoom(ctx, c, owner) {
 			return
+		}
+		if req.PartyKey != nil {
+			// Any canonical UUID rather than one that already exists: the
+			// deleted copy may have been the character's last, and a key
+			// nobody else holds just makes a party of one.
+			if !isCanonicalUUID(*req.PartyKey) {
+				h.sendError(ctx, c, "partyKey must be a canonical UUID")
+				return
+			}
+			partyKey = *req.PartyKey
 		}
 		if visibility == "" {
 			visibility = store.VisibilityVisible
@@ -1108,6 +1125,7 @@ func (h *Hub) handleTokenCreate(ctx context.Context, c *client, raw json.RawMess
 			Visibility:         visibility,
 			Trackers:           trackers,
 			Conditions:         conditions,
+			PartyKey:           partyKey,
 		})
 		if err != nil {
 			// Whatever was made before the failure is real and stays: the
@@ -1150,6 +1168,10 @@ type tokenUpdateRequest struct {
 	Visibility         string           `json:"visibility"`
 	Trackers           []trackerRequest `json:"trackers"`
 	Conditions         []string         `json:"conditions"`
+	// A GM field, like visibility. A bool rather than the key, because
+	// what a GM decides is "this is a party character" — which key that
+	// makes it is the server's business.
+	InParty bool `json:"inParty"`
 }
 
 // handleTokenUpdate edits a token in place.
@@ -1261,24 +1283,43 @@ func (h *Hub) handleTokenUpdate(ctx context.Context, c *client, raw json.RawMess
 	token.Trackers = trackers
 	token.Conditions = conditions
 
+	// Joining mints a key: a token ticked into the party is a new
+	// character, even one that left and came back, since its old copies
+	// were all unkeyed when it left. Leaving unkeys every copy on every
+	// scene — see store.LeaveParty — and those other copies need telling
+	// the room about as well as this one.
+	var leftWith []store.Token
+	if isGM {
+		switch {
+		case req.InParty && token.PartyKey == "":
+			token.PartyKey = uuid.NewString()
+		case !req.InParty && token.PartyKey != "":
+			leftWith, err = h.store.LeaveParty(c.roomID, token.PartyKey)
+			if err != nil {
+				slog.Error("ws: leave party failed", "error", err)
+				h.sendError(ctx, c, "failed to update token")
+				return
+			}
+			token.PartyKey = ""
+		}
+	}
+
 	if err := h.store.UpdateToken(token); err != nil {
 		slog.Error("ws: update token failed", "error", err)
 		h.sendError(ctx, c, "failed to update token")
 		return
 	}
 
-	// Withheld from Players while the token is hidden, as ever. A Player
-	// who *can* see it gets the whole token rather than a diff, so the
-	// same event serves the token they already had and one that has just
-	// become visible to them — their client upserts on id.
-	payload := tokenPayload(token)
+
+	h.broadcastTokenUpdated(ctx, c.roomID, token)
 	nowHidden := token.Visibility == store.VisibilityHidden
-	h.broadcastPerClient(ctx, c.roomID, "token.updated", func(recipient *client) any {
-		if nowHidden && recipient.participant.Role != store.RoleGM {
-			return nil
+	// The rest of the character's copies, after the edit itself, so the
+	// sender's echo comes first like any other edit's.
+	for _, other := range leftWith {
+		if other.ID != token.ID {
+			h.broadcastTokenUpdated(ctx, c.roomID, other)
 		}
-		return payload
-	})
+	}
 
 	// Going visible -> hidden is the one transition the update alone
 	// can't express: Players are holding a token they must now stop
@@ -1300,6 +1341,22 @@ func (h *Hub) handleTokenUpdate(ctx context.Context, c *client, raw json.RawMess
 	// and follows the token's visibility, so an edit can change the
 	// tracker without anyone having touched it.
 	h.broadcastInitiativeIfLinked(ctx, c.roomID, token.ID)
+}
+
+// broadcastTokenUpdated tells the room a token changed. Withheld from
+// Players while the token is hidden, as ever. A Player who *can* see it
+// gets the whole token rather than a diff, so the same event serves the
+// token they already had and one that has just become visible to them —
+// their client upserts on id.
+func (h *Hub) broadcastTokenUpdated(ctx context.Context, roomID string, token store.Token) {
+	payload := tokenPayload(token)
+	hidden := token.Visibility == store.VisibilityHidden
+	h.broadcastPerClient(ctx, roomID, "token.updated", func(recipient *client) any {
+		if hidden && recipient.participant.Role != store.RoleGM {
+			return nil
+		}
+		return payload
+	})
 }
 
 type tokenDeleteRequest struct {

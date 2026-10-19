@@ -1568,7 +1568,8 @@ describe('RoomClient', () => {
 				{ label: '', value: null },
 				{ label: '', value: null }
 			],
-			conditions: ['Prone']
+			conditions: ['Prone'],
+			partyKey: null
 		});
 
 		// And redo deletes it again, once the recreation has landed.
@@ -1720,6 +1721,69 @@ describe('RoomClient', () => {
 		expect(JSON.parse(socket.sent[2]).payload).toMatchObject({ tokenIds: [id], name: 'Monkey' });
 	});
 
+	// The party. Most of it is the server's — the copies are on scenes this
+	// client isn't holding — so what's worth pinning here is that nothing
+	// on this side quietly takes a character out of the party, and that an
+	// Add party is undoable like the batch it resembles.
+
+	it('records each token a party.add made as its own undo', () => {
+		const { client, socket } = roomWithTokens([]);
+		client.addParty('s1', 4, 5);
+		expect(JSON.parse(socket.sent[0])).toEqual({
+			type: 'party.add',
+			payload: { sceneId: 's1', x: 4, y: 5 }
+		});
+
+		for (const id of ['a', 'b']) {
+			socket.emit({ type: 'token.created', payload: { ...goblin, id, partyKey: `key-${id}` } });
+		}
+		socket.emit({ type: 'party.added', payload: { tokenIds: ['a', 'b'] } });
+
+		client.undo();
+		expect(JSON.parse(socket.sent.at(-1)!).payload).toEqual({ tokenId: 'b' });
+		socket.emit({ type: 'token.deleted', payload: { tokenId: 'b' } });
+		client.undo();
+		expect(JSON.parse(socket.sent.at(-1)!).payload).toEqual({ tokenId: 'a' });
+	});
+
+	// Someone else's party.add arrives as plain token.created events — only
+	// the sender is sent party.added — so nobody else gets them on their stack.
+	it("leaves another GM's Add party off this session's undo", () => {
+		const { client, socket } = roomWithTokens([]);
+		socket.emit({ type: 'token.created', payload: { ...goblin, id: 'a', partyKey: 'k' } });
+		expect(client.canUndo).toBe(false);
+	});
+
+	it('keeps a party character in the party when its trackers are changed inline', () => {
+		const { client, socket } = roomWithTokens([{ ...goblin, partyKey: 'k' }]);
+		client.setTokenTrackers('t1', [{ label: 'HP', value: 3 }], []);
+		expect(JSON.parse(socket.sent[0]).payload).toMatchObject({ tokenId: 't1', inParty: true });
+	});
+
+	it('puts a deleted party character back in the party on undo', () => {
+		const { client, socket } = roomWithTokens([{ ...goblin, partyKey: 'k' }]);
+		client.deleteToken('t1');
+		socket.emit({ type: 'token.deleted', payload: { tokenId: 't1' } });
+		client.undo();
+		expect(JSON.parse(socket.sent.at(-1)!)).toMatchObject({
+			type: 'token.create',
+			payload: { tokenIds: ['t1'], partyKey: 'k' }
+		});
+	});
+
+	// One key per character, so a batch can't share one: eight monkeys under
+	// a single key would be one character the next Add party puts down once.
+	it('mints a party key for a single new token only', () => {
+		const { client, socket } = roomWithTokens([]);
+		client.createToken('s1', 'Aria', null, 0, 0, 'visible', { inParty: true });
+		client.createToken('s1', 'Monkey', null, 0, 0, 'visible', { inParty: true, count: 3 });
+		const [single, batch] = socket.sent.map((m) => JSON.parse(m).payload);
+		expect(single.partyKey).toMatch(
+			/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+		);
+		expect(batch.partyKey).toBeNull();
+	});
+
 	it('sends every editable field on token.update, so a cleared image stays cleared', () => {
 		const { client, socket } = roomWithTokens([{ ...goblin, imageAssetId: 'art' }]);
 
@@ -1730,6 +1794,7 @@ describe('RoomClient', () => {
 			height: 2,
 			ownerParticipantId: null,
 			visibility: 'hidden',
+			inParty: false,
 			trackers: [{ label: 'HP', value: 0 }],
 			conditions: ['Prone']
 		});
@@ -1744,6 +1809,7 @@ describe('RoomClient', () => {
 				height: 2,
 				ownerParticipantId: null,
 				visibility: 'hidden',
+				inParty: false,
 				// A tracker reading 0 has to survive JSON as 0 rather than
 				// being dropped — it's a creature on nought hit points, not an
 				// empty slot.
@@ -1795,6 +1861,7 @@ describe('RoomClient', () => {
 				height: 2,
 				ownerParticipantId: 'p2',
 				visibility: 'visible',
+				inParty: false,
 				trackers: [
 					{ label: 'HP', value: 4 },
 					{ label: 'AC', value: 15 },

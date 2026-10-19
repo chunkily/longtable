@@ -188,7 +188,19 @@ func tokenPayload(t store.Token) map[string]any {
 		// points is a table's choice, not the protocol's.
 		"trackers":   trackerPayloads(t.Trackers),
 		"conditions": t.Conditions,
+		// Null for a token that isn't a party character. Sent to everyone,
+		// not only the GM: it's an opaque id that says which tokens are
+		// the same character, and the client needs it to undo a deletion
+		// without the character quietly leaving the party.
+		"partyKey": nullableString(t.PartyKey),
 	}
+}
+
+func nullableString(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 // trackerPayloads is an exhaustive struct-to-map like participantPayload
