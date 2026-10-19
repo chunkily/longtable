@@ -519,6 +519,13 @@ is the opposite of the point: replacing a map keeps the tokens, fog and drawings
   returning `nil` skips that client entirely. This is how hidden tokens are withheld from
   players: they are never sent, not even filtered-out or nulled.
 - `send(ctx, c, type, payload)` — one client, for `state.sync` and errors.
+- **Nothing is filtered by scene on the way out.** The hub doesn't know who is looking where (see
+  `per-client-scene-viewing`), so every scene's events reach every connection, and `RoomClient`
+  drops the ones for a scene it isn't showing. Every case that *adds* something to state has to
+  check `sceneId` itself — `token.created`, `token.updated` (an upsert, so the dangerous one),
+  `drawing.created`, `ping`, `measure.updated`. The ones keyed by an id the client already holds
+  (`token.moved`, `token.deleted`, `drawing.deleted`) are harmless without it. The first four went
+  unfiltered until the party work found them, and a GM's prep showed on everyone's map.
 - Clients are snapshotted under the mutex and written to outside it, so a slow write can't block
   the room.
 

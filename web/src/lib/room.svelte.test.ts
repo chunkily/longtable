@@ -532,6 +532,7 @@ describe('RoomClient', () => {
 			payload: {
 				room: { slug: 'abc123', name: 'Room' },
 				you: { participantId: 'p1', displayName: 'A', role: 'gm' },
+				scene: { id: 's1' },
 				drawings: [
 					{
 						id: 'd1',
@@ -567,6 +568,7 @@ describe('RoomClient', () => {
 			payload: {
 				room: { slug: 'abc123', name: 'Room' },
 				you: { participantId: 'p1', displayName: 'A', role: 'gm' },
+				scene: { id: 's1' },
 				drawings: [
 					{
 						id: 'd1',
@@ -1937,10 +1939,78 @@ describe('RoomClient', () => {
 		expect(client.canUndo).toBe(false);
 	});
 
+	// The hub sends every scene's events to every connection and keeps no
+	// idea of who is looking where, so a browser on one scene hears about
+	// all the others. These four are the events that *add* something; each
+	// used to add it to whatever scene this browser was showing, which put
+	// a GM's prep — the monster, the stroke, the ping — on the Players' map.
+	it("drops what's made on a scene this browser isn't showing", () => {
+		const { client, socket } = connectedClient();
+		socket.emit({
+			type: 'state.sync',
+			payload: {
+				room: { slug: 'abc123', name: 'Room', activeSceneId: 'table' },
+				you: { participantId: 'p1', displayName: 'A', role: 'player' },
+				scene: { id: 'table' },
+				tokens: [],
+				drawings: []
+			}
+		});
+
+		const elsewhere = {
+			sceneId: 'prep',
+			name: 'Ogre',
+			imageAssetId: null,
+			x: 2,
+			y: 2,
+			width: 2,
+			height: 2,
+			ownerParticipantId: null,
+			visibility: 'visible',
+			trackers: [],
+			conditions: []
+		};
+		socket.emit({ type: 'token.created', payload: { id: 't1', ...elsewhere } });
+		// token.updated upserts, so this is the one that would have added a
+		// token nobody here was ever sent a creation for.
+		socket.emit({ type: 'token.updated', payload: { id: 't2', ...elsewhere } });
+		socket.emit({
+			type: 'drawing.created',
+			payload: {
+				id: 'd1',
+				sceneId: 'prep',
+				kind: 'line',
+				points: [],
+				color: '#000000',
+				createdByParticipantId: 'p2'
+			}
+		});
+		socket.emit({
+			type: 'ping',
+			payload: { sceneId: 'prep', x: 1, y: 1, participantId: 'p2', participantName: 'GM' }
+		});
+
+		expect(client.tokens).toEqual([]);
+		expect(client.drawings).toEqual([]);
+		expect(client.pings).toEqual([]);
+
+		// And the same events for the scene on screen still land.
+		socket.emit({ type: 'token.created', payload: { id: 't3', ...elsewhere, sceneId: 'table' } });
+		expect(client.tokens.map((t) => t.id)).toEqual(['t3']);
+	});
+
 	it('adds a ping with a generated id and removes it after it expires', () => {
 		vi.useFakeTimers();
 		try {
 			const { client, socket } = connectedClient();
+			socket.emit({
+				type: 'state.sync',
+				payload: {
+					room: { slug: 'abc123', name: 'Room' },
+					you: { participantId: 'p1', displayName: 'A', role: 'player' },
+					scene: { id: 'scene1' }
+				}
+			});
 			socket.emit({
 				type: 'ping',
 				payload: { sceneId: 'scene1', x: 10, y: 20, participantName: 'Bob' }

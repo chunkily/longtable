@@ -1480,6 +1480,12 @@ export class RoomClient {
 
 			case 'token.created': {
 				const token = env.payload as Token;
+				// Every scene's events reach every connection — the hub keeps
+				// no idea of who is looking where (per-client-scene-viewing
+				// says why) — so a token made on a scene this browser isn't
+				// showing is dropped here. Without it a GM prepping next
+				// week's map put its monsters on everyone's current one.
+				if (token.sceneId !== this.scene?.id) break;
 				this.tokens = [...this.tokens, token];
 				// One undo entry per token, in the order the server made
 				// them — so Ctrl+Z after eight monkeys takes Monkey 8 first.
@@ -1508,6 +1514,10 @@ export class RoomClient {
 				if (pending && sameTokenFields(pending, tokenFields(token))) {
 					this.pendingEdits.delete(token.id);
 				}
+				// Dropped for another scene, as token.created is — and this one
+				// matters more, because it upserts: an edit to a token on a map
+				// nobody here is looking at would otherwise *add* it to this one.
+				if (token.sceneId !== this.scene?.id) break;
 				const existing = this.tokens.findIndex((t) => t.id === token.id);
 				this.tokens =
 					existing === -1
@@ -1636,6 +1646,8 @@ export class RoomClient {
 
 			case 'drawing.created': {
 				const drawing = env.payload as Drawing;
+				// Another scene's stroke, dropped for token.created's reason.
+				if (drawing.sceneId !== this.scene?.id) break;
 				// Replace rather than append when this is the echo of a
 				// stroke already drawn locally: same id, but the server's
 				// copy is the authoritative one.
@@ -1663,6 +1675,8 @@ export class RoomClient {
 
 			case 'ping': {
 				const payload = env.payload as PingPayload;
+				// A GM pinging their prep map shouldn't flash on everyone's.
+				if (payload.sceneId !== this.scene?.id) break;
 				// Local, and never on the wire: the hub's ping event carries no
 				// id of its own, so this only has to be unique within this
 				// client for long enough to expire itself.

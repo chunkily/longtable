@@ -71,6 +71,14 @@ Decisions worth not rediscovering:
   predates this), hidden tokens are filtered by role rather than by scene, and every connection
   opens on `room.active_scene_id`. Storing it would buy nothing and would then have to be kept in
   step with every delete. `handleSceneView` answers and forgets.
+
+  **Correction (2026-10-19):** the client-side filter did *not* already cover everything. Fog and
+  measurements checked `sceneId`; `token.created`, `token.updated`, `drawing.created` and `ping`
+  did not, so a GM prepping another scene put its tokens, strokes and pings on every Player's
+  current map until they reloaded — invisible before this item, when everyone was always on the
+  same scene. Found while building [gm-party-token-presets](gm-party-token-presets.md), whose
+  leave-the-party broadcast touches copies on every scene, and fixed in `RoomClient` with a test
+  naming all four. The decision above stands; only the claim that it was already true was wrong.
 - **The open question about `state.sync` answered itself.** It was already keyed off the room's
   active scene and stays that way — that *is* the "fresh join and reconnect land on the room's
   scene" decision, so the round trip the item asked for is only needed for a deliberate switch.
