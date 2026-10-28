@@ -2,6 +2,7 @@
 	import { onDestroy, onMount, untrack } from 'svelte';
 	import { mode } from 'mode-watcher';
 	import Konva from 'konva';
+	import { coverCrop } from '$lib/cover-crop';
 	import { assetUrl } from '$lib/api';
 	import { DRAWING_STROKE_WIDTH, isFilled, pickDrawing, strokeWidthOf } from '$lib/drawing-hit';
 	import { seatHex } from '$lib/identity-color';
@@ -2529,9 +2530,31 @@
 		hoveredTokenId = (group?.getAttr('tokenId') as string | undefined) ?? null;
 	}
 
+	// Cropped rather than stretched: the token's circle shows the largest
+	// centred part of the art with the token's shape, and the rest is cut
+	// off. Drawing the art at exactly w×h squashed anything that wasn't
+	// square — see cover-crop.ts. Natural size, not width/height, because
+	// those are the attributes Konva would scale.
 	function addTokenImage(group: Konva.Group, img: HTMLImageElement, w: number, h: number) {
-		group.add(new Konva.Image({ image: img, width: w, height: h, cornerRadius: w / 2 }));
+		group.add(
+			new Konva.Image({
+				image: img,
+				width: w,
+				height: h,
+				crop: coverCrop(img.naturalWidth, img.naturalHeight, w, h),
+				cornerRadius: w / 2
+			})
+		);
 	}
+
+	// A token without art: a disc in its chosen colour (or the one its id
+	// picks), a two-tone ring, and its icon or initials in whichever ink
+	// reads on that colour. discLook in token-look.ts is the one answer for
+	// the colours, shared with every DOM view of a token.
+	//
+	// Also what an art token shows while its image loads, which is why the
+	// icon is only drawn when there's no art: a slow icon load could
+	// otherwise land on top of art that arrived first.
 
 	function addTokenPlaceholder(group: Konva.Group, token: Token, w: number, h: number) {
 		group.add(

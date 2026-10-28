@@ -142,7 +142,8 @@ set in the edit dialog — which **stages** its changes, unlike the panel: `Save
 `Cancel`/Escape/the X discard, and clicking away with something typed swaps the form for a
 three-way question (`Back`, `Discard changes`, `Save changes`) rather than stacking a second
 dialog. A GM may change all of it on any token while a Player may change the trackers and
-conditions on one they own),
+conditions on one they own; art that isn't square is **cropped to the token's circle, never
+stretched** — the centred region, by `web/src/lib/cover-crop.ts`),
 **the party** — the GM's to define, in a Party dialog behind an icon past the toolbar's divider
 beside fog: members with a name, art, size and owner, each started from nothing or from a token on
 the current scene (`Add from this scene`), with every Player seat offered as owner since a party is

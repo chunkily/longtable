@@ -1,7 +1,7 @@
 ---
 title: Token art keeps its proportions on the map
 created: 2026-10-06
-status: open
+status: done
 tags: [tokens, canvas, bug, playtest]
 story: room-member-frames-token-art
 ---
@@ -32,3 +32,21 @@ way — so it stays correct after the cropper exists rather than being supersede
 
 In Konva the cover maths is a `crop` on the `Konva.Image` (the largest centred square of the
 source) rather than a different width and height, which keeps the circle exactly the token's size.
+
+## What shipped
+
+Token art on the map is cropped to the token's shape rather than stretched to it: the largest
+centred region of the art that fits, scaled evenly — the same framing the initiative panel's
+`object-cover` already gave it. Existing tokens and library art are fixed by it with nothing
+re-uploaded.
+
+The arithmetic is `web/src/lib/cover-crop.ts`, tested on its own, and `addTokenImage` passes its
+result as the `Konva.Image`'s `crop` in the image's natural pixels. Checked on the canvas with a
+300×100 image in three coloured bands: the token shows the green middle band alone, where the
+stretched version showed all three. The repo's own `wide-map.png` couldn't show the difference —
+it's one flat colour, so cropped and stretched look identical — which is worth knowing before
+reaching for it to test anything about framing.
+
+The library tile still shows token art whole (`object-contain`), on purpose: it's where you see
+everything you uploaded before choosing it. Once [frame-token-art-at-upload](frame-token-art-at-upload.md)
+lands, new token art arrives square and the three framings agree anyway.
