@@ -16,7 +16,6 @@
 	import Redo from '@lucide/svelte/icons/redo';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import Grid3x3 from '@lucide/svelte/icons/grid-3x3';
-	import Users from '@lucide/svelte/icons/users';
 
 	let {
 		room,
@@ -24,17 +23,17 @@
 		isGM,
 		highContrastGrid = $bindable(false),
 		onResetView,
-		onAddParty,
-		newToken
+		newToken,
+		party
 	}: {
 		room: RoomClient;
 		activeTool?: Tool;
 		isGM: boolean;
 		highContrastGrid?: boolean;
 		onResetView: () => void;
-		/** The GM's, so only passed — and only drawn — for a GM. */
-		onAddParty?: () => void;
 		newToken?: Snippet;
+		/** The GM's, so only passed — and only drawn — for a GM. */
+		party?: Snippet;
 	} = $props();
 
 	// Derived, never stored: see the note in $lib/tool-family. The
@@ -107,20 +106,11 @@
 				{#each gmFamilies as family (family.value)}
 					{@render familyButton(family)}
 				{/each}
-				<!-- An action like New token rather than a tool, but the GM's
-				     alone, so it sits past the divider rather than beside New
-				     token. It adds to the scene on *this* screen, which is the
-				     scene a GM making one has just been taken to. -->
-				{#if onAddParty}
-					<Button
-						variant="ghost"
-						size="sm"
-						aria-label="Add party"
-						title="Add the party to this scene"
-						onclick={onAddParty}
-					>
-						<Users class="h-4 w-4" />
-					</Button>
+				<!-- The Party dialog: an action like New token rather than a
+				     tool, but the GM's alone, so it sits past the divider rather
+				     than beside New token. -->
+				{#if party}
+					{@render party()}
 				{/if}
 			</div>
 		{/if}

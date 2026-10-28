@@ -33,6 +33,12 @@ identity fields like art and belong in the copy — not per-fight state.
 
 ## What shipped
 
+**Superseded (2026-10-19), the same week.** GM feedback replaced marking tokens with a Party
+dialog where each member is defined directly — see [party-dialog](party-dialog.md). The note below
+is what the first version did, kept for the reasoning; the roster-of-keys idea survives as the
+member id a copy carries, and the newest-copy logic and `In the party` are gone.
+
+
 A GM marks a token `In the party` — in the edit dialog, or in New token when making one token —
 and `Add party`, an icon past the toolbar's divider beside fog, puts the whole party on the scene
 the GM is looking at, spread out from the middle of their view. Making a scene already takes the GM

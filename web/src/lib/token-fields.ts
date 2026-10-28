@@ -21,12 +21,6 @@ export interface TokenFields {
 	height: number;
 	ownerParticipantId: string | null;
 	visibility: 'visible' | 'hidden';
-	// A yes/no rather than the key, because that's what an edit decides;
-	// which key it gets is the server's. It does mean undoing "take them
-	// out of the party" puts *this* token back under a new key, and the
-	// copies on other scenes stay out — they were unkeyed with it, and an
-	// edit to one token can't name them.
-	inParty: boolean;
 	trackers: Tracker[];
 	conditions: string[];
 }
@@ -40,7 +34,6 @@ export function tokenFields(token: Token): TokenFields {
 		height: token.height,
 		ownerParticipantId: token.ownerParticipantId,
 		visibility: token.visibility,
-		inParty: !!token.partyKey,
 		// Padded to the full three slots, so a token stored before trackers
 		// existed compares equal to a form that shows three empty boxes.
 		trackers: tokenTrackers(token).map((t) => ({ ...t })),
@@ -64,7 +57,6 @@ export function sameTokenFields(a: TokenFields, b: TokenFields): boolean {
 		a.height === b.height &&
 		a.ownerParticipantId === b.ownerParticipantId &&
 		a.visibility === b.visibility &&
-		a.inParty === b.inParty &&
 		sameTrackers(a.trackers, b.trackers) &&
 		sameConditions(a.conditions, b.conditions)
 	);

@@ -1,164 +1,172 @@
 package store
 
 import (
-	"slices"
+	"errors"
 	"testing"
 )
 
-// partyFixture is a room with two scenes and a second room beside it, so
-// every party query has something on another scene and something in
-// another room that it must and must not see.
-func partyFixture(t *testing.T) (s *Store, roomID string, first, second Scene, otherRoomScene Scene) {
+func partyRooms(t *testing.T) (s *Store, roomID, otherRoomID string) {
 	t.Helper()
 	s = newTestStore(t)
-
 	room, _, err := s.CreateRoom("Room", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
-	}
-	first, err = s.CreateScene(room.ID, "Corridor", nil, 70, 700, 700)
-	if err != nil {
-		t.Fatalf("CreateScene: %v", err)
-	}
-	second, err = s.CreateScene(room.ID, "Boss room", nil, 70, 700, 700)
-	if err != nil {
-		t.Fatalf("CreateScene: %v", err)
 	}
 	other, _, err := s.CreateRoom("Other", "GM", "password")
 	if err != nil {
 		t.Fatalf("CreateRoom(other): %v", err)
 	}
-	otherRoomScene, err = s.CreateScene(other.ID, "Elsewhere", nil, 70, 700, 700)
-	if err != nil {
-		t.Fatalf("CreateScene(other): %v", err)
-	}
-	return s, room.ID, first, second, otherRoomScene
+	return s, room.ID, other.ID
 }
 
-func mustCreateToken(t *testing.T, s *Store, tok Token) Token {
+func mustCreateMember(t *testing.T, s *Store, roomID, name string) PartyMember {
 	t.Helper()
-	if tok.Width == 0 {
-		tok.Width, tok.Height = 1, 1
-	}
-	created, err := s.CreateToken(tok)
+	m, err := s.CreatePartyMember(PartyMember{RoomID: roomID, Name: name, Width: 1, Height: 1})
 	if err != nil {
-		t.Fatalf("CreateToken(%s): %v", tok.Name, err)
+		t.Fatalf("CreatePartyMember(%s): %v", name, err)
 	}
-	return created
+	return m
 }
 
-func memberNames(tokens []Token) []string {
-	names := make([]string, len(tokens))
-	for i, tok := range tokens {
-		names[i] = tok.Name
+func names(members []PartyMember) []string {
+	out := make([]string, len(members))
+	for i, m := range members {
+		out[i] = m.Name
 	}
-	slices.Sort(names)
-	return names
+	return out
 }
 
-// One per character however many copies exist — that's the whole reason
-// the party is a key rather than a flag — and never another room's, even
-// though keys are just strings and nothing stops two rooms holding one.
-func TestListPartyMembers_OnePerCharacterAndOnlyThisRoom(t *testing.T) {
-	s, roomID, first, second, elsewhere := partyFixture(t)
-
-	mustCreateToken(t, s, Token{SceneID: first.ID, Name: "Aria", PartyKey: "aria"})
-	mustCreateToken(t, s, Token{SceneID: second.ID, Name: "Aria", PartyKey: "aria"})
-	mustCreateToken(t, s, Token{SceneID: first.ID, Name: "Brom", PartyKey: "brom"})
-	mustCreateToken(t, s, Token{SceneID: first.ID, Name: "Goblin"})
-	mustCreateToken(t, s, Token{SceneID: elsewhere.ID, Name: "Stranger", PartyKey: "aria"})
+// Listed in the order they were added — the order the dialog shows them
+// and party.add puts them down — and never another room's.
+func TestListPartyMembers_InTheOrderAddedAndOnlyThisRoom(t *testing.T) {
+	s, roomID, otherID := partyRooms(t)
+	for _, n := range []string{"Aria", "Brom", "Cyl"} {
+		mustCreateMember(t, s, roomID, n)
+	}
+	mustCreateMember(t, s, otherID, "Stranger")
 
 	members, err := s.ListPartyMembers(roomID)
 	if err != nil {
 		t.Fatalf("ListPartyMembers: %v", err)
 	}
-	if got := memberNames(members); !slices.Equal(got, []string{"Aria", "Brom"}) {
-		t.Fatalf("members = %v, want [Aria Brom]", got)
+	if got := names(members); len(got) != 3 || got[0] != "Aria" || got[1] != "Brom" || got[2] != "Cyl" {
+		t.Fatalf("members = %v, want [Aria Brom Cyl]", got)
+	}
+	if n, err := s.CountPartyMembers(roomID); err != nil || n != 3 {
+		t.Fatalf("CountPartyMembers = %d, %v; want 3", n, err)
 	}
 }
 
-// The newest version of a character is whichever copy was last made or
-// edited, on any scene — so new art given to the copy in front of the GM
-// is what the next scene gets, rather than the art from the first night.
-func TestListPartyMembers_TakesTheMostRecentlyEditedCopy(t *testing.T) {
-	s, roomID, first, second, _ := partyFixture(t)
-
-	original := mustCreateToken(t, s, Token{SceneID: first.ID, Name: "Aria", PartyKey: "aria"})
-	mustCreateToken(t, s, Token{SceneID: second.ID, Name: "Aria", PartyKey: "aria"})
-
-	// The older copy is the one edited, which is what makes this a test of
-	// updated_at rather than of row order.
-	original.Name = "Aria the Bold"
-	if err := s.UpdateToken(original); err != nil {
-		t.Fatalf("UpdateToken: %v", err)
-	}
-
+// An empty party is an empty list, not nil, so it reaches the client as
+// [] rather than null.
+func TestListPartyMembers_EmptyIsNotNil(t *testing.T) {
+	s, roomID, _ := partyRooms(t)
 	members, err := s.ListPartyMembers(roomID)
-	if err != nil {
-		t.Fatalf("ListPartyMembers: %v", err)
-	}
-	if len(members) != 1 || members[0].ID != original.ID {
-		t.Fatalf("members = %+v, want only the edited copy %s", members, original.ID)
+	if err != nil || members == nil {
+		t.Fatalf("ListPartyMembers = %v, %v; want an empty list", members, err)
 	}
 }
 
-// Moving a token isn't an edit to the character, so dragging an old copy
-// across its map mustn't make it the version the next scene gets.
-func TestListPartyMembers_AMoveDoesNotCountAsAnEdit(t *testing.T) {
-	s, roomID, first, second, _ := partyFixture(t)
+func TestUpdatePartyMember_ChangesTheMember(t *testing.T) {
+	s, roomID, _ := partyRooms(t)
+	m := mustCreateMember(t, s, roomID, "Aria")
 
-	old := mustCreateToken(t, s, Token{SceneID: first.ID, Name: "Aria", PartyKey: "aria"})
-	newest := mustCreateToken(t, s, Token{SceneID: second.ID, Name: "Aria", PartyKey: "aria"})
-	if err := s.MoveToken(old.ID, 4, 4); err != nil {
-		t.Fatalf("MoveToken: %v", err)
+	m.Name, m.Width, m.Height = "Aria the Bold", 2, 2
+	if err := s.UpdatePartyMember(m); err != nil {
+		t.Fatalf("UpdatePartyMember: %v", err)
 	}
-
-	members, err := s.ListPartyMembers(roomID)
-	if err != nil {
-		t.Fatalf("ListPartyMembers: %v", err)
-	}
-	if len(members) != 1 || members[0].ID != newest.ID {
-		t.Fatalf("members = %+v, want the newest copy %s", members, newest.ID)
+	members, _ := s.ListPartyMembers(roomID)
+	if len(members) != 1 || members[0].Name != "Aria the Bold" || members[0].Width != 2 {
+		t.Fatalf("members = %+v", members)
 	}
 }
 
-// Leaving is about the character, so every copy on every scene goes —
-// and nothing in another room that happens to carry the same key.
-func TestLeaveParty_UnkeysEveryCopyInTheRoomAndNothingElse(t *testing.T) {
-	s, roomID, first, second, elsewhere := partyFixture(t)
+// A member id from another room answers exactly as a missing one does,
+// for edits and deletes both — so one room can't reach, or even probe
+// for, another's party.
+func TestPartyMember_WritesAreScopedToTheRoom(t *testing.T) {
+	s, roomID, otherID := partyRooms(t)
+	m := mustCreateMember(t, s, roomID, "Aria")
 
-	a := mustCreateToken(t, s, Token{SceneID: first.ID, Name: "Aria", PartyKey: "aria"})
-	b := mustCreateToken(t, s, Token{SceneID: second.ID, Name: "Aria", PartyKey: "aria"})
-	brom := mustCreateToken(t, s, Token{SceneID: first.ID, Name: "Brom", PartyKey: "brom"})
-	stranger := mustCreateToken(t, s, Token{SceneID: elsewhere.ID, Name: "Stranger", PartyKey: "aria"})
-
-	changed, err := s.LeaveParty(roomID, "aria")
-	if err != nil {
-		t.Fatalf("LeaveParty: %v", err)
+	elsewhere := m
+	elsewhere.RoomID = otherID
+	elsewhere.Name = "Hijacked"
+	if err := s.UpdatePartyMember(elsewhere); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("update from another room: %v, want ErrNotFound", err)
 	}
-	ids := []string{}
-	for _, tok := range changed {
-		ids = append(ids, tok.ID)
-		if tok.PartyKey != "" {
-			t.Errorf("returned %s still keyed %q", tok.ID, tok.PartyKey)
+	if err := s.DeletePartyMember(otherID, m.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("delete from another room: %v, want ErrNotFound", err)
+	}
+	if err := s.DeletePartyMember(roomID, "no-such-member"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("delete of a missing member: %v, want ErrNotFound", err)
+	}
+
+	members, _ := s.ListPartyMembers(roomID)
+	if len(members) != 1 || members[0].Name != "Aria" {
+		t.Fatalf("members = %+v, want Aria untouched", members)
+	}
+}
+
+// Leaving the party isn't leaving the scene: a member's copies stay on
+// their maps, still carrying the key, which now matches nothing.
+func TestDeletePartyMember_LeavesItsCopiesOnTheMap(t *testing.T) {
+	s, roomID, _ := partyRooms(t)
+	scene, err := s.CreateScene(roomID, "Corridor", nil, 70, 700, 700)
+	if err != nil {
+		t.Fatalf("CreateScene: %v", err)
+	}
+	m := mustCreateMember(t, s, roomID, "Aria")
+	copied, err := s.CreateToken(Token{SceneID: scene.ID, Name: "Aria", Width: 1, Height: 1, PartyKey: m.ID})
+	if err != nil {
+		t.Fatalf("CreateToken: %v", err)
+	}
+
+	if err := s.DeletePartyMember(roomID, m.ID); err != nil {
+		t.Fatalf("DeletePartyMember: %v", err)
+	}
+	if _, err := s.GetToken(copied.ID); err != nil {
+		t.Fatalf("the copy went with the member: %v", err)
+	}
+}
+
+// updated_at was written while the party was the newest copy of a marked
+// token, and was dropped when it moved into its own table. A database
+// that got the column has it taken out again; one that never did is left
+// alone — both on every start.
+func TestNew_DropsADeadColumnOnlyWhenItIsThere(t *testing.T) {
+	s := newTestStore(t)
+	if _, err := s.db.Exec(`ALTER TABLE token ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''`); err != nil {
+		t.Fatalf("add the old column back: %v", err)
+	}
+
+	for range 2 {
+		if err := s.dropDeadColumns(); err != nil {
+			t.Fatalf("dropDeadColumns: %v", err)
 		}
-	}
-	slices.Sort(ids)
-	want := []string{a.ID, b.ID}
-	slices.Sort(want)
-	if !slices.Equal(ids, want) {
-		t.Fatalf("changed = %v, want %v", ids, want)
-	}
-
-	for _, check := range []struct {
-		id, wantKey string
-	}{{a.ID, ""}, {b.ID, ""}, {brom.ID, "brom"}, {stranger.ID, "aria"}} {
-		got, err := s.GetToken(check.id)
+		has, err := s.hasColumn("token", "updated_at")
 		if err != nil {
-			t.Fatalf("GetToken: %v", err)
+			t.Fatalf("hasColumn: %v", err)
 		}
-		if got.PartyKey != check.wantKey {
-			t.Errorf("%s: party key %q, want %q", got.Name, got.PartyKey, check.wantKey)
+		if has {
+			t.Fatal("token.updated_at survived")
 		}
+	}
+}
+
+// Attendance is stored, so a night's ticks hold for every scene that
+// night and survive a reload.
+func TestPartyMember_KeepsWhetherTheyAreAttending(t *testing.T) {
+	s, roomID, _ := partyRooms(t)
+	m, err := s.CreatePartyMember(PartyMember{RoomID: roomID, Name: "Aria", Width: 1, Height: 1, Attending: true})
+	if err != nil {
+		t.Fatalf("CreatePartyMember: %v", err)
+	}
+	m.Attending = false
+	if err := s.UpdatePartyMember(m); err != nil {
+		t.Fatalf("UpdatePartyMember: %v", err)
+	}
+	members, _ := s.ListPartyMembers(roomID)
+	if members[0].Attending {
+		t.Fatal("attending came back true after being turned off")
 	}
 }

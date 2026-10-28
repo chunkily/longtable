@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"time"
 
 	"github.com/google/uuid"
 )
@@ -52,16 +51,9 @@ type Token struct {
 	// ("Prone", "Concentrating"), in the order it was added.
 	Trackers   []Tracker
 	Conditions []string
-	// PartyKey names the party character this token is a copy of, or is
-	// empty for a token that isn't one. A key rather than a flag because
-	// the party is a roster of characters and a token is only ever one
-	// copy of a character: flag the copies and Add party on the third
-	// scene would copy everyone twice, don't and the party lives only on
-	// the scene it was first flagged on. ListPartyMembers is the reader.
+	// PartyKey is the id of the PartyMember this token was copied from,
+	// or empty. See the column's note for why it isn't a foreign key.
 	PartyKey string
-	// UpdatedAt is set by the store on create and edit — never by a
-	// caller — so ListPartyMembers can tell which copy is the newest.
-	UpdatedAt string
 }
 
 // normalizeTrackers pads or truncates to exactly TrackerSlots, so a row
@@ -113,13 +105,13 @@ func decodeTokenExtras(t *Token, trackersJSON, conditionsJSON string) error {
 // tokenColumns is every column a Token is read from, in the order
 // scanToken reads them.
 const tokenColumns = `token.id, token.scene_id, token.name, token.image_asset_id, token.x, token.y, token.width, token.height,
-	token.owner_participant_id, token.visibility, token.trackers, token.conditions, token.party_key, token.updated_at`
+	token.owner_participant_id, token.visibility, token.trackers, token.conditions, token.party_key`
 
 func scanToken(row rowScanner) (Token, error) {
 	var t Token
 	var visibility, trackersJSON, conditionsJSON string
 	if err := row.Scan(&t.ID, &t.SceneID, &t.Name, &t.ImageAssetID, &t.X, &t.Y, &t.Width, &t.Height, &t.OwnerParticipantID, &visibility,
-		&trackersJSON, &conditionsJSON, &t.PartyKey, &t.UpdatedAt); err != nil {
+		&trackersJSON, &conditionsJSON, &t.PartyKey); err != nil {
 		return Token{}, err
 	}
 	t.Visibility = Visibility(visibility)
@@ -127,13 +119,6 @@ func scanToken(row rowScanner) (Token, error) {
 		return Token{}, err
 	}
 	return t, nil
-}
-
-// tokenTimestamp is what updated_at holds. Fixed-width UTC, so the
-// column sorts as text in time order, and with nanoseconds so two edits
-// in one test — or one Add party making several copies — don't tie.
-func tokenTimestamp() string {
-	return time.Now().UTC().Format("2006-01-02T15:04:05.000000000Z")
 }
 
 func (s *Store) CreateToken(t Token) (Token, error) {
@@ -147,17 +132,16 @@ func (s *Store) CreateToken(t Token) (Token, error) {
 	if t.Conditions == nil {
 		t.Conditions = []string{}
 	}
-	t.UpdatedAt = tokenTimestamp()
 	trackersJSON, conditionsJSON, err := encodeTokenExtras(t)
 	if err != nil {
 		return Token{}, err
 	}
 	_, err = s.db.Exec(
 		`INSERT INTO token (id, scene_id, name, image_asset_id, x, y, width, height, owner_participant_id, visibility, trackers, conditions,
-		                    party_key, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		                    party_key)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ID, t.SceneID, t.Name, t.ImageAssetID, t.X, t.Y, t.Width, t.Height, t.OwnerParticipantID, string(t.Visibility),
-		trackersJSON, conditionsJSON, t.PartyKey, t.UpdatedAt,
+		trackersJSON, conditionsJSON, t.PartyKey,
 	)
 	if err != nil {
 		return Token{}, err
@@ -186,10 +170,10 @@ func (s *Store) UpdateToken(t Token) error {
 	}
 	_, err = s.db.Exec(
 		`UPDATE token SET name = ?, image_asset_id = ?, width = ?, height = ?, owner_participant_id = ?, visibility = ?,
-		        trackers = ?, conditions = ?, party_key = ?, updated_at = ?
+		        trackers = ?, conditions = ?, party_key = ?
 		 WHERE id = ?`,
 		t.Name, t.ImageAssetID, t.Width, t.Height, t.OwnerParticipantID, string(t.Visibility),
-		trackersJSON, conditionsJSON, t.PartyKey, tokenTimestamp(), t.ID,
+		trackersJSON, conditionsJSON, t.PartyKey, t.ID,
 	)
 	return err
 }
@@ -233,62 +217,6 @@ func (s *Store) TokenRoomID(tokenID string) (string, error) {
 
 func (s *Store) ListTokensForScene(sceneID string) ([]Token, error) {
 	return s.queryTokens(`SELECT `+tokenColumns+` FROM token WHERE scene_id = ?`, sceneID)
-}
-
-// ListPartyMembers returns one token per party character in the room:
-// the newest copy of each, by when it was last created or edited.
-//
-// The newest rather than the original, because a character changes — new
-// art, a growth spell's size — and the GM makes that change on whichever
-// copy is in front of them. Copying the first one ever flagged would
-// quietly put the old art back on every new scene. Ties fall to the later
-// row, which only matters for rows from before updated_at existed.
-func (s *Store) ListPartyMembers(roomID string) ([]Token, error) {
-	tokens, err := s.queryTokens(
-		`SELECT `+tokenColumns+` FROM token JOIN scene ON scene.id = token.scene_id
-		 WHERE scene.room_id = ? AND token.party_key <> ''
-		 ORDER BY token.updated_at DESC, token.rowid DESC`, roomID,
-	)
-	if err != nil {
-		return nil, err
-	}
-	seen := map[string]bool{}
-	members := make([]Token, 0, len(tokens))
-	for _, t := range tokens {
-		if seen[t.PartyKey] {
-			continue
-		}
-		seen[t.PartyKey] = true
-		members = append(members, t)
-	}
-	return members, nil
-}
-
-// LeaveParty takes a character out of the party: every copy of it in the
-// room stops carrying the key. Returns the tokens it changed, as they now
-// are, so the caller can tell the room — they may be on any scene.
-//
-// Every copy rather than the one being edited, because unticking "in the
-// party" is a statement about the character. Leave the other copies keyed
-// and the next Add party brings them straight back.
-func (s *Store) LeaveParty(roomID, partyKey string) ([]Token, error) {
-	if partyKey == "" {
-		return nil, nil
-	}
-	tokens, err := s.queryTokens(
-		`SELECT `+tokenColumns+` FROM token JOIN scene ON scene.id = token.scene_id
-		 WHERE scene.room_id = ? AND token.party_key = ?`, roomID, partyKey,
-	)
-	if err != nil {
-		return nil, err
-	}
-	for i := range tokens {
-		tokens[i].PartyKey = ""
-		if err := s.UpdateToken(tokens[i]); err != nil {
-			return nil, err
-		}
-	}
-	return tokens, nil
 }
 
 func (s *Store) queryTokens(query string, args ...any) ([]Token, error) {

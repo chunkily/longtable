@@ -59,7 +59,8 @@ and art" and so take its icon and colour too.
 - [ ] `ws-protocol.md` updated for the new `token.create`/`token.update` fields
 - [ ] The icon pool's labels and search words, and every new string, go through `longtable-copy`
 
-- [ ] `icon` and `color` are identity fields, so `handlePartyAdd` in `internal/ws/party.go` copies
-      them onto each new party token alongside name and art (it lists exactly what it copies)
+- [ ] `icon` and `color` are identity fields, so a party member needs them too: columns on
+      `party_member`, fields in the Party dialog's member form, and `handlePartyAdd` in
+      `internal/ws/party.go` copying them onto each new token alongside name and art
 
 Out of scope: a coloured ring around art tokens, and defaulting a token to its owner's colour.

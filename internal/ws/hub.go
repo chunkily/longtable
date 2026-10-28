@@ -528,6 +528,12 @@ func (h *Hub) handleMessage(ctx context.Context, c *client, data []byte) {
 		h.handleTokenDelete(ctx, c, env.Payload)
 	case "party.add":
 		h.handlePartyAdd(ctx, c, env.Payload)
+	case "party.memberCreate":
+		h.handlePartyMemberCreate(ctx, c, env.Payload)
+	case "party.memberUpdate":
+		h.handlePartyMemberUpdate(ctx, c, env.Payload)
+	case "party.memberDelete":
+		h.handlePartyMemberDelete(ctx, c, env.Payload)
 	case "fog.reveal":
 		h.handleFogReveal(ctx, c, env.Payload)
 	case "fog.hide":
@@ -1168,10 +1174,6 @@ type tokenUpdateRequest struct {
 	Visibility         string           `json:"visibility"`
 	Trackers           []trackerRequest `json:"trackers"`
 	Conditions         []string         `json:"conditions"`
-	// A GM field, like visibility. A bool rather than the key, because
-	// what a GM decides is "this is a party character" — which key that
-	// makes it is the server's business.
-	InParty bool `json:"inParty"`
 }
 
 // handleTokenUpdate edits a token in place.
@@ -1283,27 +1285,6 @@ func (h *Hub) handleTokenUpdate(ctx context.Context, c *client, raw json.RawMess
 	token.Trackers = trackers
 	token.Conditions = conditions
 
-	// Joining mints a key: a token ticked into the party is a new
-	// character, even one that left and came back, since its old copies
-	// were all unkeyed when it left. Leaving unkeys every copy on every
-	// scene — see store.LeaveParty — and those other copies need telling
-	// the room about as well as this one.
-	var leftWith []store.Token
-	if isGM {
-		switch {
-		case req.InParty && token.PartyKey == "":
-			token.PartyKey = uuid.NewString()
-		case !req.InParty && token.PartyKey != "":
-			leftWith, err = h.store.LeaveParty(c.roomID, token.PartyKey)
-			if err != nil {
-				slog.Error("ws: leave party failed", "error", err)
-				h.sendError(ctx, c, "failed to update token")
-				return
-			}
-			token.PartyKey = ""
-		}
-	}
-
 	if err := h.store.UpdateToken(token); err != nil {
 		slog.Error("ws: update token failed", "error", err)
 		h.sendError(ctx, c, "failed to update token")
@@ -1313,13 +1294,6 @@ func (h *Hub) handleTokenUpdate(ctx context.Context, c *client, raw json.RawMess
 
 	h.broadcastTokenUpdated(ctx, c.roomID, token)
 	nowHidden := token.Visibility == store.VisibilityHidden
-	// The rest of the character's copies, after the edit itself, so the
-	// sender's echo comes first like any other edit's.
-	for _, other := range leftWith {
-		if other.ID != token.ID {
-			h.broadcastTokenUpdated(ctx, c.roomID, other)
-		}
-	}
 
 	// Going visible -> hidden is the one transition the update alone
 	// can't express: Players are holding a token they must now stop

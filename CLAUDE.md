@@ -46,7 +46,8 @@ architecture and current state live here instead**, and keeping them true is par
 | `web/src/lib/components/theme-toggle.svelte` | System/Light/Dark as three icon buttons, in two shapes: a labelled row for the room menu and a floating pill for the home page's corner. The scheme itself is `mode-watcher`, wired up in `+layout.svelte`, plus the boot script in `app.html` that beats the flash of light |
 | `web/src/lib/components/initiative-panel.svelte` | the turn order in the rail's second panel — one component for both roles, with the GM's controls left off for everyone else |
 | `internal/ws/initiative.go` | the tracker's six commands and its one event, split out of `hub.go` |
-| `internal/ws/party.go` | `party.add`, and the note on why the party is a roster of characters keyed across scenes rather than a flag on tokens. Joining and leaving ride `token.update`'s `inParty` |
+| `internal/ws/party.go`, `internal/store/party.go` | the party: a GM-only roster of `party_member` rows, its three edit commands, and `party.add`, which puts a copy of each member on a scene. The note at the top of `party.go` says why a member is defined rather than a mark on tokens |
+| `web/src/lib/components/party-dialog.svelte` | the GM's Party dialog behind the toolbar's party icon: `Add to this scene` at the top, the roster under it, and the member form as a mode of the same dialog |
 | `web/src/routes/r/[slug]/+page.svelte` | the room page — join form, then the full-bleed shell: map, floating toolbar, side rail (or bottom sheet) |
 | `web/e2e/fixtures/` | everything the specs are built on, so `e2e/` itself is just the tests: the `table` fixture (a room, a scene, a GM, and teardown that survives a failure), the canvas helpers, the room-chrome helpers (including `createRoom`, which every spec goes through), and the upload images. Its README is the starting point for a new spec |
 | `web/src/routes/r/[slug]/assets/+page.svelte` | the assets page — the only way art enters a room's library, and the only way one leaves: tabbed by token/map, with name, credit, grid alignment, search |
@@ -142,14 +143,16 @@ set in the edit dialog — which **stages** its changes, unlike the panel: `Save
 three-way question (`Back`, `Discard changes`, `Save changes`) rather than stacking a second
 dialog. A GM may change all of it on any token while a Player may change the trackers and
 conditions on one they own),
-**the party** — a GM marks a token `In the party` (in the edit dialog, or New token for a single
-token) and then puts the whole party on whichever scene they're looking at with `Add party`, an
-icon past the divider beside fog. The party is a **roster of characters**, not a flag: every copy
-of a character shares a key, so `Add party` puts down one of each, skips anyone already on the
-scene (a second press says so; it also tops up a late arrival), and copies the most recently
-edited version of each. A copy is name, art, size, owner and visibility — never hit points,
-conditions or position — and it isn't a live link, so editing one copy changes no other. Taking a
-token out of the party takes that character out on every scene,
+**the party** — the GM's to define, in a Party dialog behind an icon past the toolbar's divider
+beside fog: members with a name, art, size and owner, each started from nothing or from a token on
+the current scene (`Add from this scene`), with every Player seat offered as owner since a party is
+set up before people arrive. `Add to this scene` at the top puts a copy of each member on the scene
+the GM is looking at, spread from the middle of their view; anyone already there is skipped, so a
+second press says so and a member added since is put down alone. Each member has a checkbox
+for whether they're **attending** tonight — stored, so it holds for every scene that night — and
+only ticked members are put down. A copy is name, art, size and
+owner — never hit points, conditions or position — and editing a member changes the next copy,
+not ones already down. The roster is never sent to a Player,
 fog the GM reveals and hides by dragging a rectangle (a plain click covers just the one cell under
 it), starting fully revealed on a new scene rather than fully covered — a Player looking at a
 scene nobody has painted fog on yet sees the map, not an unexplained black rectangle — plus
@@ -461,11 +464,12 @@ and the release waits for it too; don't copy checks into the release file.
 ## Before touching a shared port
 
 The e2e harness binds **:8080** — the Go binary, serving the SPA it embeds; it no longer starts
-vite, so :5173 is only in play if someone is running `npm run dev` by hand. Other Claude sessions
-work in this same checkout, so a process already on either port may well be in use — ask before
-stopping anything. `npx playwright test` writes to `web/.e2e-data/longtable.db`, which it wipes at
-the start of every run — so starting a run pulls the data out from under any other session
-reading it, and what's left afterwards is the last run's alone.
+vite, so :5173 is only in play if someone is running `npm run dev` by hand. **One Claude session
+works in this checkout at a time** (since 2026-10-28; several used to share it, which is what this
+section was first written about). A process on :8080 is still worth a look before stopping it: it
+may be the GM's own Longtable server, and `longtable.db` at the repo root is real playtest data,
+not a fixture. `npx playwright test` writes to `web/.e2e-data/longtable.db` instead, and wipes it
+at the start of every run, so what's left afterwards is the last run's alone.
 
 ## House style
 

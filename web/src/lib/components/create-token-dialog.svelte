@@ -42,7 +42,6 @@
 	let squares = $state(1);
 	let ownerParticipantId = $state<string | null>(null);
 	let count = $state(1);
-	let inParty = $state(false);
 	let submitting = $state(false);
 
 	async function handleSubmit(event: SubmitEvent) {
@@ -57,8 +56,7 @@
 			room.createToken(sceneId, name, imageAssetId, x, y, visibility, {
 				squares,
 				ownerParticipantId,
-				count,
-				inParty
+				count
 			});
 			open = false;
 			name = '';
@@ -67,7 +65,6 @@
 			ownerParticipantId = null;
 			visibility = 'visible';
 			count = 1;
-			inParty = false;
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : 'failed to create token');
 		} finally {
@@ -90,10 +87,10 @@
 		{/snippet}
 	</Dialog.Trigger>
 	<!-- Bounded by the window, with only the fields scrolling — the edit
-	     dialog's layout, for the edit dialog's reason. This one ran out of
-	     height when the party choice arrived: on a 720px-tall window it
-	     overflowed both ways, putting the close button off the top and
-	     Create token off the bottom, where nothing could scroll to either. -->
+	     dialog's layout, for the edit dialog's reason. This one has run out
+	     of height once already: with one more field, a 720px-tall window
+	     put the close button off the top and Create token off the bottom,
+	     where nothing could scroll to either. -->
 	<Dialog.Content class="flex max-h-[calc(100dvh-2rem)] flex-col">
 		<Dialog.Header>
 			<Dialog.Title>New token</Dialog.Title>
@@ -185,35 +182,6 @@
 							</Button>
 						</div>
 					</div>
-					<!-- One token only: a party character is one character, and a
-				     batch of eight under one key would be one character Add party
-				     puts down once. Hidden rather than disabled for a batch, the
-				     way fog is hidden from a Player. -->
-					{#if count === 1}
-						<div class="flex flex-col gap-2">
-							<Label>Party</Label>
-							<div class="flex gap-2">
-								<Button
-									type="button"
-									variant={inParty ? 'outline' : 'default'}
-									aria-pressed={!inParty}
-									onclick={() => (inParty = false)}
-									class="flex-1"
-								>
-									Not in the party
-								</Button>
-								<Button
-									type="button"
-									variant={inParty ? 'default' : 'outline'}
-									aria-pressed={inParty}
-									onclick={() => (inParty = true)}
-									class="flex-1"
-								>
-									In the party
-								</Button>
-							</div>
-						</div>
-					{/if}
 				{/if}
 			</div>
 			<!-- Outside the scrolling box, so Create token never scrolls away. -->

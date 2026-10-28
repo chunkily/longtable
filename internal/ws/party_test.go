@@ -2,6 +2,7 @@ package ws
 
 import (
 	"encoding/json"
+	"fmt"
 	"slices"
 	"testing"
 	"time"
@@ -9,14 +10,16 @@ import (
 	"longtable/internal/store"
 )
 
-// The party is a roster of characters keyed across scenes, so most of
-// what can go wrong is about copies: one too many, one on the wrong
-// scene, or one left behind in the party after its character left.
+// The party is defined by the GM, member by member, and party.add puts
+// down a copy of each one not already on the scene. What's pinned here is
+// the boundary (GM-only, and the roster is never sent to a Player), the
+// checks a member shares with a token, and what a copy is.
 
 type partyToken struct {
 	ID                 string           `json:"id"`
 	SceneID            string           `json:"sceneId"`
 	Name               string           `json:"name"`
+	ImageAssetID       *string          `json:"imageAssetId"`
 	X                  float64          `json:"x"`
 	Y                  float64          `json:"y"`
 	Width              float64          `json:"width"`
@@ -28,18 +31,43 @@ type partyToken struct {
 	Conditions         []string         `json:"conditions"`
 }
 
-func readPartyToken(t *testing.T, c *testClient, wantType string) partyToken {
+type partyMemberShape struct {
+	ID                 string  `json:"id"`
+	Name               string  `json:"name"`
+	ImageAssetID       *string `json:"imageAssetId"`
+	Width              float64 `json:"width"`
+	OwnerParticipantID *string `json:"ownerParticipantId"`
+	Attending          bool    `json:"attending"`
+}
+
+func readPartyToken(t *testing.T, c *testClient) partyToken {
 	t.Helper()
 
 	env := c.readEnvelope(t)
-	if env.Type != wantType {
-		t.Fatalf("type = %q, want %s", env.Type, wantType)
+	if env.Type != "token.created" {
+		t.Fatalf("type = %q, want token.created", env.Type)
 	}
 	var tok partyToken
 	if err := json.Unmarshal(env.Payload, &tok); err != nil {
-		t.Fatalf("unmarshal %s: %v", wantType, err)
+		t.Fatalf("unmarshal token.created: %v", err)
 	}
 	return tok
+}
+
+func readParty(t *testing.T, c *testClient) []partyMemberShape {
+	t.Helper()
+
+	env := c.readEnvelope(t)
+	if env.Type != "party.updated" {
+		t.Fatalf("type = %q, want party.updated", env.Type)
+	}
+	var payload struct {
+		Members []partyMemberShape `json:"members"`
+	}
+	if err := json.Unmarshal(env.Payload, &payload); err != nil {
+		t.Fatalf("unmarshal party.updated: %v", err)
+	}
+	return payload.Members
 }
 
 func readPartyAdded(t *testing.T, c *testClient) []string {
@@ -58,13 +86,13 @@ func readPartyAdded(t *testing.T, c *testClient) []string {
 	return payload.TokenIDs
 }
 
-// partyRoom is a tokenTestRoom with a second scene to stamp onto, and a
-// GM and a Player both connected and past their state.sync.
+// partyRoom is a tokenTestRoom with a second scene to put the party on,
+// and a GM and a Player both connected and past their state.sync.
 type partyRoom struct {
 	tokenTestRoom
-	next   store.Scene
-	gmc    *testClient
-	pc     *testClient
+	next store.Scene
+	gmc  *testClient
+	pc   *testClient
 }
 
 func newPartyRoom(t *testing.T) partyRoom {
@@ -82,300 +110,307 @@ func newPartyRoom(t *testing.T) partyRoom {
 	return partyRoom{tokenTestRoom: r, next: next, gmc: gmc, pc: pc}
 }
 
-// flag ticks a token into the party the way the edit dialog does: a full
-// token.update carrying everything it already had, plus inParty.
-func (r partyRoom) flag(t *testing.T, tok store.Token, inParty bool) partyToken {
+// member adds a party member as the GM's dialog would, and returns the
+// roster that comes back.
+func (r partyRoom) member(t *testing.T, fields map[string]any) []partyMemberShape {
 	t.Helper()
 
-	r.gmc.send(t, "token.update", map[string]any{
-		"tokenId": tok.ID, "name": tok.Name, "imageAssetId": tok.ImageAssetID,
-		"width": tok.Width, "height": tok.Height, "ownerParticipantId": tok.OwnerParticipantID,
-		"visibility": string(tok.Visibility), "inParty": inParty,
-	})
-	return readPartyToken(t, r.gmc, "token.updated")
+	r.gmc.send(t, "party.memberCreate", fields)
+	return readParty(t, r.gmc)
 }
 
-func (r partyRoom) partyToken(t *testing.T, name string, w float64, owner *string, visibility store.Visibility) store.Token {
+func (r partyRoom) add(t *testing.T, sceneID string) {
 	t.Helper()
-
-	tok, err := r.ts.store.CreateToken(store.Token{
-		SceneID: r.scene.ID, Name: name, X: 1, Y: 1, Width: w, Height: w,
-		OwnerParticipantID: owner, Visibility: visibility,
-		Trackers:   []store.Tracker{{Label: "HP", Value: new(int)}},
-		Conditions: []string{"Poisoned"},
-	})
-	if err != nil {
-		t.Fatalf("CreateToken: %v", err)
-	}
-	return tok
+	r.gmc.send(t, "party.add", map[string]any{"sceneId": sceneID, "x": 5, "y": 5})
 }
 
-func TestPartyFlag_GivesTheTokenAKeyEveryoneIsToldAbout(t *testing.T) {
+// The roster goes to GMs only — on every change and in state.sync — so a
+// Player's client never holds it. The copies, once down, are everyone's.
+func TestPartyMember_TheRosterIsTheGMsAlone(t *testing.T) {
 	r := newPartyRoom(t)
-	aria := r.partyToken(t, "Aria", 1, &r.player.ID, store.VisibilityVisible)
 
-	got := r.flag(t, aria, true)
-	if got.PartyKey == nil || *got.PartyKey == "" {
-		t.Fatalf("partyKey = %v, want a key", got.PartyKey)
-	}
-	if seen := readPartyToken(t, r.pc, "token.updated"); seen.PartyKey == nil || *seen.PartyKey != *got.PartyKey {
-		t.Fatalf("player saw partyKey %v, want %q", seen.PartyKey, *got.PartyKey)
+	members := r.member(t, map[string]any{"name": "Aria", "ownerParticipantId": r.player.ID})
+	if len(members) != 1 || members[0].Name != "Aria" || *members[0].OwnerParticipantID != r.player.ID {
+		t.Fatalf("roster = %+v", members)
 	}
 
-	// Saving the dialog again with the box still ticked keeps the key it
-	// has: a fresh one would make the token a different character from
-	// the copies it already has on other scenes.
-	again := r.flag(t, aria, true)
-	if again.PartyKey == nil || *again.PartyKey != *got.PartyKey {
-		t.Fatalf("partyKey changed on re-save: %v -> %v", *got.PartyKey, again.PartyKey)
+	gmAgain := r.ts.connect(t, r.room.Slug, r.gm.SessionToken)
+	var gmSync struct {
+		Party []partyMemberShape `json:"party"`
 	}
+	if err := json.Unmarshal(gmAgain.readEnvelope(t).Payload, &gmSync); err != nil {
+		t.Fatalf("unmarshal GM state.sync: %v", err)
+	}
+	if len(gmSync.Party) != 1 {
+		t.Fatalf("GM's state.sync party = %+v, want Aria", gmSync.Party)
+	}
+
+	playerAgain := r.ts.connect(t, r.room.Slug, r.player.SessionToken)
+	var playerSync map[string]json.RawMessage
+	if err := json.Unmarshal(playerAgain.readEnvelope(t).Payload, &playerSync); err != nil {
+		t.Fatalf("unmarshal Player state.sync: %v", err)
+	}
+	if _, ok := playerSync["party"]; ok {
+		t.Fatal("a Player's state.sync carried the party")
+	}
+
+	r.pc.expectNoMessage(t, 200*time.Millisecond)
 }
 
-// What a copy is: the character, not the evening. Name, art, size, owner
-// and visibility come with it; hit points, conditions and position don't.
-func TestPartyAdd_CopiesTheCharacterButNotTheirState(t *testing.T) {
+func TestPartyMember_PlayersCantTouchIt(t *testing.T) {
 	r := newPartyRoom(t)
-	ownerID := r.player.ID
-	aria := r.partyToken(t, "Aria", 1, &ownerID, store.VisibilityVisible)
-	brute := r.partyToken(t, "Brute", 2, nil, store.VisibilityVisible)
-	ariaKey := *r.flag(t, aria, true).PartyKey
-	r.pc.readEnvelope(t)
-	bruteKey := *r.flag(t, brute, true).PartyKey
-	r.pc.readEnvelope(t)
+	id := r.member(t, map[string]any{"name": "Aria"})[0].ID
 
-	r.gmc.send(t, "party.add", map[string]any{"sceneId": r.next.ID, "x": 5, "y": 5})
-
-	byName := map[string]partyToken{}
-	for range 2 {
-		tok := readPartyToken(t, r.gmc, "token.created")
-		byName[tok.Name] = tok
-	}
-	ids := readPartyAdded(t, r.gmc)
-
-	copied := byName["Aria"]
-	if copied.SceneID != r.next.ID || copied.ID == aria.ID {
-		t.Fatalf("Aria's copy = %+v, want a new token on the boss room", copied)
-	}
-	if copied.OwnerParticipantID == nil || *copied.OwnerParticipantID != ownerID {
-		t.Errorf("owner = %v, want %s", copied.OwnerParticipantID, ownerID)
-	}
-	if copied.PartyKey == nil || *copied.PartyKey != ariaKey {
-		t.Errorf("partyKey = %v, want the original's %q — a copy is the same character", copied.PartyKey, ariaKey)
-	}
-	if v := copied.Trackers[0].Value; v != nil {
-		t.Errorf("hit points came along as %d, want a blank slot", *v)
-	}
-	if len(copied.Conditions) != 0 {
-		t.Errorf("conditions came along: %v", copied.Conditions)
-	}
-	if b := byName["Brute"]; b.Width != 2 || b.Height != 2 || *b.PartyKey != bruteKey {
-		t.Errorf("Brute's copy = %+v, want 2x2 under its own key", b)
-	}
-
-	want := []string{byName["Aria"].ID, byName["Brute"].ID}
-	slices.Sort(ids)
-	slices.Sort(want)
-	if !slices.Equal(ids, want) {
-		t.Errorf("party.added = %v, want %v", ids, want)
-	}
-
-	// The Player hears about both, the same as any token made in the room.
-	for range 2 {
-		readPartyToken(t, r.pc, "token.created")
-	}
-}
-
-// A Large companion beside a Medium character mustn't be put down
-// overlapping it — the reason party.add spawns by footprint rather than
-// as a batch of one size.
-func TestPartyAdd_SpreadsMixedSizesWithoutOverlap(t *testing.T) {
-	r := newPartyRoom(t)
-	for _, w := range []float64{2, 1, 1} {
-		tok := r.partyToken(t, "Member", w, nil, store.VisibilityVisible)
-		r.flag(t, tok, true)
-		r.pc.readEnvelope(t)
-	}
-
-	r.gmc.send(t, "party.add", map[string]any{"sceneId": r.next.ID, "x": 5, "y": 5})
-	var placed []partyToken
-	for range 3 {
-		placed = append(placed, readPartyToken(t, r.gmc, "token.created"))
-	}
-	for i, a := range placed {
-		for _, b := range placed[i+1:] {
-			if overlaps(cell{a.X, a.Y}, a.Width, a.Height, cell{b.X, b.Y}, b.Width, b.Height) {
-				t.Fatalf("%+v overlaps %+v", a, b)
-			}
+	for _, cmd := range []struct {
+		typ     string
+		payload map[string]any
+	}{
+		{"party.memberCreate", map[string]any{"name": "Mine"}},
+		{"party.memberUpdate", map[string]any{"memberId": id, "name": "Mine"}},
+		{"party.memberDelete", map[string]any{"memberId": id}},
+		{"party.add", map[string]any{"sceneId": r.next.ID}},
+	} {
+		r.pc.send(t, cmd.typ, cmd.payload)
+		if msg := errorMessage(t, r.pc.readEnvelope(t)); msg != "that action is GM-only" {
+			t.Fatalf("%s from a Player: %q", cmd.typ, msg)
 		}
 	}
 }
 
-// Anyone already on the scene is skipped, which is what makes a second
-// press harmless and lets a late arrival be added by pressing it again.
-func TestPartyAdd_SkipsCharactersAlreadyOnTheScene(t *testing.T) {
+// A member is what a token will be made from, so it gets a GM token's
+// checks: art from this room's library, an owner sitting in this room.
+func TestPartyMember_IsCheckedLikeAToken(t *testing.T) {
 	r := newPartyRoom(t)
-	aria := r.partyToken(t, "Aria", 1, nil, store.VisibilityVisible)
-	r.flag(t, aria, true)
-	r.pc.readEnvelope(t)
+	other, _, err := r.ts.store.CreateRoom("Other", "GM", "password")
+	if err != nil {
+		t.Fatalf("CreateRoom: %v", err)
+	}
+	stranger, err := r.ts.store.JoinRoom(other.ID, "Stranger", "")
+	if err != nil {
+		t.Fatalf("JoinRoom: %v", err)
+	}
 
-	r.gmc.send(t, "party.add", map[string]any{"sceneId": r.next.ID, "x": 0, "y": 0})
-	readPartyToken(t, r.gmc, "token.created")
+	for _, c := range []struct {
+		payload map[string]any
+		want    string
+	}{
+		{map[string]any{"name": "   "}, "A party member needs a name."},
+		{map[string]any{"name": "Aria", "imageAssetId": "not-in-this-room"}, "asset not found"},
+		{map[string]any{"name": "Aria", "ownerParticipantId": stranger.ID}, "owner not found"},
+	} {
+		r.gmc.send(t, "party.memberCreate", c.payload)
+		if msg := errorMessage(t, r.gmc.readEnvelope(t)); msg != c.want {
+			t.Errorf("%v: got %q, want %q", c.payload, msg, c.want)
+		}
+	}
+}
+
+func TestPartyMember_HasACap(t *testing.T) {
+	r := newPartyRoom(t)
+	for i := range maxPartySize {
+		r.member(t, map[string]any{"name": fmt.Sprintf("Member %d", i+1)})
+	}
+	r.gmc.send(t, "party.memberCreate", map[string]any{"name": "One too many"})
+	want := fmt.Sprintf("A party can have up to %d members.", maxPartySize)
+	if msg := errorMessage(t, r.gmc.readEnvelope(t)); msg != want {
+		t.Fatalf("got %q, want %q", msg, want)
+	}
+}
+
+func TestPartyMember_EditAndRemove(t *testing.T) {
+	r := newPartyRoom(t)
+	id := r.member(t, map[string]any{"name": "Aria"})[0].ID
+	r.member(t, map[string]any{"name": "Brom"})
+
+	r.gmc.send(t, "party.memberUpdate", map[string]any{"memberId": id, "name": "Aria the Bold", "width": 2, "height": 2})
+	members := readParty(t, r.gmc)
+	if members[0].Name != "Aria the Bold" || members[0].Width != 2 {
+		t.Fatalf("after edit: %+v", members)
+	}
+
+	r.gmc.send(t, "party.memberDelete", map[string]any{"memberId": id})
+	if members := readParty(t, r.gmc); len(members) != 1 || members[0].Name != "Brom" {
+		t.Fatalf("after delete: %+v", members)
+	}
+
+	r.gmc.send(t, "party.memberDelete", map[string]any{"memberId": id})
+	if msg := errorMessage(t, r.gmc.readEnvelope(t)); msg != "party member not found" {
+		t.Fatalf("deleting it twice: %q", msg)
+	}
+}
+
+// What a copy is: the member, and not the evening. Name, art, size and
+// owner; visible, blank trackers, no conditions; the member's id as its
+// key. Spread by footprint, so the Large companion doesn't land on anyone.
+func TestPartyAdd_PutsDownACopyOfEachMember(t *testing.T) {
+	r := newPartyRoom(t)
+	r.member(t, map[string]any{"name": "Aria", "ownerParticipantId": r.player.ID})
+	r.member(t, map[string]any{"name": "Wolf", "width": 2, "height": 2})
+	members := r.member(t, map[string]any{"name": "Brom"})
+
+	r.add(t, r.next.ID)
+	var placed []partyToken
+	for range 3 {
+		placed = append(placed, readPartyToken(t, r.gmc))
+	}
+	ids := readPartyAdded(t, r.gmc)
+
+	if got := []string{placed[0].Name, placed[1].Name, placed[2].Name}; !slices.Equal(got, []string{"Aria", "Wolf", "Brom"}) {
+		t.Fatalf("put down %v, want the party in the order it was added", got)
+	}
+	aria := placed[0]
+	if aria.SceneID != r.next.ID || aria.Visibility != "visible" {
+		t.Errorf("Aria's copy = %+v", aria)
+	}
+	if aria.OwnerParticipantID == nil || *aria.OwnerParticipantID != r.player.ID {
+		t.Errorf("owner = %v, want %s", aria.OwnerParticipantID, r.player.ID)
+	}
+	if aria.PartyKey == nil || *aria.PartyKey != members[0].ID {
+		t.Errorf("partyKey = %v, want the member's id %s", aria.PartyKey, members[0].ID)
+	}
+	if aria.Trackers[0].Value != nil || len(aria.Conditions) != 0 {
+		t.Errorf("a copy came with state: %+v", aria)
+	}
+	for i, a := range placed {
+		for _, b := range placed[i+1:] {
+			if overlaps(cell{a.X, a.Y}, a.Width, a.Height, cell{b.X, b.Y}, b.Width, b.Height) {
+				t.Fatalf("%s overlaps %s", a.Name, b.Name)
+			}
+		}
+	}
+
+	want := []string{placed[0].ID, placed[1].ID, placed[2].ID}
+	if !slices.Equal(ids, want) {
+		t.Errorf("party.added = %v, want %v", ids, want)
+	}
+
+	// The Player hears about the tokens like any others — just never the
+	// roster they came from.
+	for range 3 {
+		readPartyToken(t, r.pc)
+	}
+}
+
+// Anyone already on the scene is skipped, which makes a second press
+// harmless and lets a member added since be put down on its own.
+func TestPartyAdd_SkipsMembersAlreadyOnTheScene(t *testing.T) {
+	r := newPartyRoom(t)
+	r.member(t, map[string]any{"name": "Aria"})
+
+	r.add(t, r.next.ID)
+	readPartyToken(t, r.gmc)
 	readPartyAdded(t, r.gmc)
 
-	r.gmc.send(t, "party.add", map[string]any{"sceneId": r.next.ID, "x": 0, "y": 0})
+	r.add(t, r.next.ID)
 	if msg := errorMessage(t, r.gmc.readEnvelope(t)); msg != "The whole party is already here." {
 		t.Fatalf("second press: %q", msg)
 	}
 
-	// A character flagged since is the only one the next press brings.
-	brom := r.partyToken(t, "Brom", 1, nil, store.VisibilityVisible)
-	r.flag(t, brom, true)
-	r.gmc.send(t, "party.add", map[string]any{"sceneId": r.next.ID, "x": 0, "y": 0})
-	if tok := readPartyToken(t, r.gmc, "token.created"); tok.Name != "Brom" {
-		t.Fatalf("added %q, want only Brom", tok.Name)
+	r.member(t, map[string]any{"name": "Brom"})
+	r.add(t, r.next.ID)
+	if tok := readPartyToken(t, r.gmc); tok.Name != "Brom" {
+		t.Fatalf("put down %q, want only Brom", tok.Name)
 	}
 	if ids := readPartyAdded(t, r.gmc); len(ids) != 1 {
 		t.Fatalf("party.added = %v, want one id", ids)
 	}
 }
 
-// The newest copy is what's copied, so art or a name changed on the boss
-// room's Aria is what the scene after it gets.
-func TestPartyAdd_CopiesTheNewestVersionOfEachCharacter(t *testing.T) {
+// Editing a member changes the next copy, not the ones already down.
+func TestPartyAdd_CopiesTheMemberAsItIsNow(t *testing.T) {
 	r := newPartyRoom(t)
-	aria := r.partyToken(t, "Aria", 1, nil, store.VisibilityVisible)
-	r.flag(t, aria, true)
-	r.gmc.send(t, "party.add", map[string]any{"sceneId": r.next.ID, "x": 0, "y": 0})
-	copied := readPartyToken(t, r.gmc, "token.created")
+	id := r.member(t, map[string]any{"name": "Aria"})[0].ID
+	r.add(t, r.scene.ID)
+	first := readPartyToken(t, r.gmc)
 	readPartyAdded(t, r.gmc)
 
-	renamed, err := r.ts.store.GetToken(copied.ID)
-	if err != nil {
-		t.Fatalf("GetToken: %v", err)
-	}
-	renamed.Name = "Aria the Bold"
-	r.flag(t, renamed, true)
+	r.gmc.send(t, "party.memberUpdate", map[string]any{"memberId": id, "name": "Aria the Bold"})
+	readParty(t, r.gmc)
 
-	third, err := r.ts.store.CreateScene(r.room.ID, "Epilogue", nil, 70, 10, 10)
-	if err != nil {
-		t.Fatalf("CreateScene: %v", err)
+	r.add(t, r.next.ID)
+	if tok := readPartyToken(t, r.gmc); tok.Name != "Aria the Bold" {
+		t.Fatalf("copied %q, want the member as edited", tok.Name)
 	}
-	r.gmc.send(t, "party.add", map[string]any{"sceneId": third.ID, "x": 0, "y": 0})
-	if tok := readPartyToken(t, r.gmc, "token.created"); tok.Name != "Aria the Bold" {
-		t.Fatalf("copied %q, want the newest name", tok.Name)
+	if kept, err := r.ts.store.GetToken(first.ID); err != nil || kept.Name != "Aria" {
+		t.Fatalf("the copy already down changed: %+v, %v", kept, err)
 	}
 }
 
-func TestPartyAdd_SaysSoWhenNobodyIsInTheParty(t *testing.T) {
+func TestPartyAdd_SaysSoWhenThereIsNoParty(t *testing.T) {
 	r := newPartyRoom(t)
-	r.partyToken(t, "Goblin", 1, nil, store.VisibilityVisible)
-
-	r.gmc.send(t, "party.add", map[string]any{"sceneId": r.next.ID, "x": 0, "y": 0})
-	if msg := errorMessage(t, r.gmc.readEnvelope(t)); msg != "No tokens are in the party yet." {
+	r.add(t, r.next.ID)
+	if msg := errorMessage(t, r.gmc.readEnvelope(t)); msg != "No one is in the party yet." {
 		t.Fatalf("got %q", msg)
 	}
 }
 
-// Both halves are a GM's: a Player can't add the party, and an inParty a
-// Player's client sends on a token they own is ignored like the other
-// GM fields on token.update.
-func TestParty_IsTheGMs(t *testing.T) {
-	r := newPartyRoom(t)
-	ownerID := r.player.ID
-	mine := r.partyToken(t, "Bob's Fighter", 1, &ownerID, store.VisibilityVisible)
-
-	r.pc.send(t, "party.add", map[string]any{"sceneId": r.next.ID, "x": 0, "y": 0})
-	if msg := errorMessage(t, r.pc.readEnvelope(t)); msg != "that action is GM-only" {
-		t.Fatalf("party.add from a Player: %q", msg)
-	}
-
-	r.pc.send(t, "token.update", map[string]any{
-		"tokenId": mine.ID, "inParty": true,
-		"trackers": []map[string]any{{"label": "HP", "value": 3}},
-	})
-	if got := readPartyToken(t, r.pc, "token.updated"); got.PartyKey != nil {
-		t.Fatalf("a Player put their token in the party: key %q", *got.PartyKey)
-	}
-}
-
-// Unticking is about the character, so every copy on every scene leaves
-// with it and the room is told about each — including copies on a scene
-// nobody here is looking at, which their clients drop on arrival. A hidden
-// copy is still withheld from the Player.
-func TestPartyLeave_TakesEveryCopyOutAndTellsTheRoom(t *testing.T) {
-	r := newPartyRoom(t)
-	aria := r.partyToken(t, "Aria", 1, nil, store.VisibilityVisible)
-	key := *r.flag(t, aria, true).PartyKey
-	r.pc.readEnvelope(t)
-
-	elsewhere, err := r.ts.store.CreateToken(store.Token{
-		SceneID: r.next.ID, Name: "Aria", Width: 1, Height: 1, PartyKey: key,
-	})
-	if err != nil {
-		t.Fatalf("CreateToken: %v", err)
-	}
-	hiddenCopy, err := r.ts.store.CreateToken(store.Token{
-		SceneID: r.next.ID, Name: "Aria", Width: 1, Height: 1, PartyKey: key, Visibility: store.VisibilityHidden,
-	})
-	if err != nil {
-		t.Fatalf("CreateToken: %v", err)
-	}
-
-	r.flag(t, aria, false) // the GM's own echo of the edit itself
-	told := map[string]bool{}
-	for range 2 {
-		tok := readPartyToken(t, r.gmc, "token.updated")
-		if tok.PartyKey != nil {
-			t.Errorf("%s still keyed", tok.ID)
-		}
-		told[tok.ID] = true
-	}
-	if !told[elsewhere.ID] || !told[hiddenCopy.ID] {
-		t.Fatalf("GM told about %v, want both other copies", told)
-	}
-
-	for _, id := range []string{aria.ID, elsewhere.ID, hiddenCopy.ID} {
-		got, err := r.ts.store.GetToken(id)
-		if err != nil {
-			t.Fatalf("GetToken: %v", err)
-		}
-		if got.PartyKey != "" {
-			t.Errorf("%s still has party key %q", id, got.PartyKey)
-		}
-	}
-
-	// The Player: the edited token, then the visible copy — and nothing
-	// about the hidden one.
-	gotIDs := []string{}
-	for range 2 {
-		gotIDs = append(gotIDs, readPartyToken(t, r.pc, "token.updated").ID)
-	}
-	if slices.Contains(gotIDs, hiddenCopy.ID) {
-		t.Fatalf("the Player was told about a hidden copy")
-	}
-	r.pc.expectNoMessage(t, 200*time.Millisecond)
-}
-
-// Undoing the deletion of a party character puts it back in the party,
-// under the key its other copies still carry — which only a GM can do.
+// Undoing the deletion of a party copy puts it back under the member it
+// came from, so the next Add party still skips it — which only a GM can
+// do.
 func TestTokenCreate_GMCanRestoreAPartyKey(t *testing.T) {
 	r := newPartyRoom(t)
 	key := "0b6f5c4e-6a4f-4a8e-9c1d-2f3e4a5b6c7d"
 
 	r.gmc.send(t, "token.create", map[string]any{"sceneId": r.scene.ID, "name": "Aria", "partyKey": key})
-	if got := readPartyToken(t, r.gmc, "token.created"); got.PartyKey == nil || *got.PartyKey != key {
+	if got := readPartyToken(t, r.gmc); got.PartyKey == nil || *got.PartyKey != key {
 		t.Fatalf("GM restore: partyKey %v, want %q", got.PartyKey, key)
 	}
 	r.pc.readEnvelope(t)
 
 	r.pc.send(t, "token.create", map[string]any{"sceneId": r.scene.ID, "name": "Mine", "partyKey": key})
-	if got := readPartyToken(t, r.pc, "token.created"); got.PartyKey != nil {
-		t.Fatalf("a Player joined the party through token.create: %q", *got.PartyKey)
+	if got := readPartyToken(t, r.pc); got.PartyKey != nil {
+		t.Fatalf("a Player's token.create set a party key: %q", *got.PartyKey)
 	}
 
 	r.gmc.readEnvelope(t) // the Player's token.created
 	r.gmc.send(t, "token.create", map[string]any{"sceneId": r.scene.ID, "name": "Bad", "partyKey": "{" + key + "}"})
 	if msg := errorMessage(t, r.gmc.readEnvelope(t)); msg != "partyKey must be a canonical UUID" {
 		t.Fatalf("non-canonical key: %q", msg)
+	}
+}
+
+// A new member is attending, so a GM who never touches the checkbox gets
+// the behaviour from before it existed.
+func TestPartyMember_StartsAttending(t *testing.T) {
+	r := newPartyRoom(t)
+	if m := r.member(t, map[string]any{"name": "Aria"})[0]; !m.Attending {
+		t.Fatalf("new member = %+v, want attending", m)
+	}
+}
+
+// Only who's at the table tonight is put down — and someone unticked who
+// is later ticked is put down on the next press, like anyone missing.
+func TestPartyAdd_SkipsMembersWhoAreNotAttending(t *testing.T) {
+	r := newPartyRoom(t)
+	r.member(t, map[string]any{"name": "Aria"})
+	brom := r.member(t, map[string]any{"name": "Brom", "attending": false})[1]
+	if brom.Attending {
+		t.Fatalf("Brom = %+v, want not attending", brom)
+	}
+
+	r.add(t, r.next.ID)
+	if tok := readPartyToken(t, r.gmc); tok.Name != "Aria" {
+		t.Fatalf("put down %q, want only Aria", tok.Name)
+	}
+	if ids := readPartyAdded(t, r.gmc); len(ids) != 1 {
+		t.Fatalf("party.added = %v, want one id", ids)
+	}
+
+	r.gmc.send(t, "party.memberUpdate", map[string]any{"memberId": brom.ID, "name": "Brom", "attending": true})
+	readParty(t, r.gmc)
+	r.add(t, r.next.ID)
+	if tok := readPartyToken(t, r.gmc); tok.Name != "Brom" {
+		t.Fatalf("put down %q, want Brom now he's here", tok.Name)
+	}
+}
+
+// Nobody ticked is its own answer: "the whole party is already here"
+// would be untrue of a scene with nobody on it.
+func TestPartyAdd_SaysSoWhenNobodyIsAttending(t *testing.T) {
+	r := newPartyRoom(t)
+	r.member(t, map[string]any{"name": "Aria", "attending": false})
+	r.add(t, r.next.ID)
+	if msg := errorMessage(t, r.gmc.readEnvelope(t)); msg != "No one in the party is ticked as attending." {
+		t.Fatalf("got %q", msg)
 	}
 }

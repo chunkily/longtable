@@ -63,3 +63,27 @@ export function ownerOptions(
 	// select shows whichever option is chosen regardless of position.
 	return [...options, { participant: kept, online: connected.some((p) => p.id === ownerId) }];
 }
+
+/**
+ * Who a party member may belong to: every Player seat in the room,
+ * connected or not — plus the member's current owner, for the reason
+ * `ownerOptions` keeps one.
+ *
+ * Wider than `ownerOptions` on purpose. That one answers "who is at the
+ * table right now?" for a token being made mid-game. A party is set up
+ * ahead of time, usually before anyone has arrived, and "who is here" is
+ * then nobody — which would leave a GM unable to give Aria to the player
+ * who plays her. Since seats (ADR-0008) the roster is the room's seats
+ * rather than one row per visit, so the whole list is a list a GM can
+ * read.
+ */
+export function partyOwnerOptions(
+	connected: Participant[],
+	roster: Participant[],
+	ownerId: string | null
+): OwnerOption[] {
+	const online = new Set(connected.map((p) => p.id));
+	return roster
+		.filter((p) => p.role !== 'gm' || p.id === ownerId)
+		.map((participant) => ({ participant, online: online.has(participant.id) }));
+}

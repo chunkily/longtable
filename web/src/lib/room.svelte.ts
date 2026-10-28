@@ -82,6 +82,26 @@ export interface Token {
 	partyKey?: string | null;
 }
 
+/**
+ * A character in the party, as the GM defined it in the Party dialog.
+ * Not a token: the tokens on maps are copies made from it, each carrying
+ * this id as its `partyKey`. Only ever held by a GM's client — the server
+ * sends the roster to nobody else.
+ */
+export interface PartyMember {
+	id: string;
+	name: string;
+	imageAssetId: string | null;
+	width: number;
+	height: number;
+	ownerParticipantId: string | null;
+	/** At the table tonight. Add to this scene puts down only these. */
+	attending: boolean;
+}
+
+/** What the dialog sends to make or change a member. */
+export type PartyMemberFields = Omit<PartyMember, 'id'>;
+
 export const TRACKER_SLOTS = 3;
 
 // The one place that copes with a token arriving without trackers, so
@@ -297,6 +317,8 @@ export interface RoomSettings {
 interface StateSyncPayload {
 	room: RoomSettings;
 	initiative?: InitiativeState;
+	// A GM's sync only. Absent for a Player, who is never sent the roster.
+	party?: PartyMember[];
 	you: You;
 	messages?: ChatMessage[];
 	scenes?: Scene[];
@@ -426,6 +448,13 @@ export class RoomClient {
 	status = $state<ConnectionStatus>('connecting');
 	error = $state('');
 	/**
+	 * Bumped on every error, so the page can show the same message twice.
+	 * `error` alone can't: assigning a string it already holds changes
+	 * nothing, so a refusal repeated — Add to this scene pressed again on a
+	 * scene the party is already on — used to go unsaid the second time.
+	 */
+	errorCount = $state(0);
+	/**
 	 * Set when the server says the session itself is the problem, not the
 	 * connection. Retrying can't fix it — the only way out is rejoining.
 	 */
@@ -478,6 +507,9 @@ export class RoomClient {
 	// unlike everything above it this survives a scene change — a GM
 	// flipping to the battle map mid-fight doesn't reload the encounter.
 	initiative = $state<InitiativeState>({ ...EMPTY_INITIATIVE });
+	// The party roster — a GM's alone, empty for everyone else. Room-wide
+	// like the tracker, so a scene change leaves it be.
+	party = $state<PartyMember[]>([]);
 
 	private socket: WebSocket | null = null;
 
@@ -547,6 +579,11 @@ export class RoomClient {
 		this.openSocket();
 	}
 
+	private fail(message: string) {
+		this.error = message;
+		this.errorCount++;
+	}
+
 	private openSocket() {
 		this.status = this.attempt === 0 ? 'connecting' : 'reconnecting';
 		this.error = '';
@@ -571,7 +608,7 @@ export class RoomClient {
 			void this.scheduleReconnect();
 		};
 		socket.onerror = () => {
-			this.error = 'connection error';
+			this.fail('connection error');
 		};
 		socket.onmessage = (event) => {
 			this.handleEnvelope(JSON.parse(event.data));
@@ -600,7 +637,7 @@ export class RoomClient {
 		const session = await checkSession(this.slug, this.sessionToken);
 		if (session === 'invalid') {
 			this.sessionExpired = true;
-			this.error = 'your session is no longer valid — rejoin the room';
+			this.fail('your session is no longer valid — rejoin the room');
 			return;
 		}
 
@@ -756,21 +793,10 @@ export class RoomClient {
 		x: number,
 		y: number,
 		visibility: 'visible' | 'hidden' = 'visible',
-		options: {
-			squares?: number;
-			ownerParticipantId?: string | null;
-			count?: number;
-			inParty?: boolean;
-		} = {}
+		options: { squares?: number; ownerParticipantId?: string | null; count?: number } = {}
 	) {
 		const count = Math.max(1, Math.min(MAX_TOKENS_PER_CREATE, Math.round(options.count ?? 1)));
 		const tokenIds = Array.from({ length: count }, () => randomId());
-		// A new party character is a new key, minted here because
-		// token.create takes the key itself (for undo's sake) rather than a
-		// yes/no. One key for the whole batch would make eight monkeys one
-		// character, so a batch can't join — the dialog only offers the box
-		// to a GM making one token. A Player's is ignored by the server.
-		const partyKey = options.inParty && count === 1 ? randomId() : null;
 
 		if (
 			!this.send('token.create', {
@@ -784,8 +810,7 @@ export class RoomClient {
 				height: options.squares ?? 1,
 				ownerParticipantId: options.ownerParticipantId ?? null,
 				count,
-				tokenIds,
-				partyKey
+				tokenIds
 			})
 		) {
 			return;
@@ -806,6 +831,22 @@ export class RoomClient {
 	 */
 	addParty(sceneId: string, x: number, y: number) {
 		this.send('party.add', { sceneId, x, y });
+	}
+
+	// The roster's three edits. Not optimistic: they're one click each in a
+	// dialog, and the whole roster comes straight back in party.updated.
+	// Not on the undo stack either — that is for the map, and a member
+	// removed by mistake is one New member away.
+	createPartyMember(fields: PartyMemberFields) {
+		this.send('party.memberCreate', fields);
+	}
+
+	updatePartyMember(memberId: string, fields: PartyMemberFields) {
+		this.send('party.memberUpdate', { memberId, ...fields });
+	}
+
+	deletePartyMember(memberId: string) {
+		this.send('party.memberDelete', { memberId });
 	}
 
 	revealFog(sceneId: string, cells: FogCell[]) {
@@ -1059,10 +1100,6 @@ export class RoomClient {
 			height: token.height,
 			ownerParticipantId: token.ownerParticipantId,
 			visibility: token.visibility,
-			// Carried through untouched like the rest. Left out, a GM
-			// changing a party character's hit points from the details
-			// panel would take them out of the party.
-			inParty: !!token.partyKey,
 			trackers,
 			conditions
 		});
@@ -1418,6 +1455,7 @@ export class RoomClient {
 				this.ownerOnlyMovement = payload.room.ownerOnlyMovement ?? false;
 				this.joinPasswordSet = payload.room.joinPasswordSet ?? false;
 				this.initiative = payload.initiative ?? { ...EMPTY_INITIATIVE };
+				this.party = payload.party ?? [];
 				this.you = payload.you;
 				// server returns newest-first; the log reads top-to-bottom.
 				this.messages = [...(payload.messages ?? [])].reverse();
@@ -1682,6 +1720,12 @@ export class RoomClient {
 				this.initiative = env.payload as InitiativeState;
 				break;
 
+			// The whole roster every time, like the tracker. Only a GM is
+			// ever sent one.
+			case 'party.updated':
+				this.party = (env.payload as { members: PartyMember[] }).members;
+				break;
+
 			// The whole room, the same shape state.sync opens with, so a
 			// setting added later needs no new case here.
 			case 'room.updated': {
@@ -1757,7 +1801,7 @@ export class RoomClient {
 
 			case 'error': {
 				const payload = env.payload as ErrorPayload;
-				this.error = payload.message;
+				this.fail(payload.message);
 				if (payload.drawingId) {
 					// Either an erase was refused, so the stroke goes back, or
 					// a drawing was, so the one shown locally comes off.

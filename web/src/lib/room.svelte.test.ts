@@ -1726,6 +1726,83 @@ describe('RoomClient', () => {
 	// on this side quietly takes a character out of the party, and that an
 	// Add party is undoable like the batch it resembles.
 
+	// The page toasts when the error changes, and the same string assigned
+	// twice is no change — so a repeated refusal was silent the second time.
+	it('counts every error, so the same message twice is seen twice', () => {
+		const { client, socket } = connectedClient();
+		const refusal = { type: 'error', payload: { message: 'The whole party is already here.' } };
+		socket.emit(refusal);
+		socket.emit(refusal);
+		expect(client.error).toBe('The whole party is already here.');
+		expect(client.errorCount).toBe(2);
+	});
+
+	it("holds a GM's party roster from state.sync and replaces it on party.updated", () => {
+		const { client, socket } = connectedClient();
+		const aria = {
+			id: 'm1',
+			name: 'Aria',
+			imageAssetId: null,
+			width: 1,
+			height: 1,
+			ownerParticipantId: 'p2',
+			attending: true
+		};
+		socket.emit({
+			type: 'state.sync',
+			payload: {
+				room: { slug: 'abc123', name: 'Room' },
+				you: { participantId: 'p1', displayName: 'A', role: 'gm' },
+				party: [aria]
+			}
+		});
+		expect(client.party.map((m) => m.name)).toEqual(['Aria']);
+
+		socket.emit({
+			type: 'party.updated',
+			payload: { members: [aria, { ...aria, id: 'm2', name: 'Brom' }] }
+		});
+		expect(client.party.map((m) => m.name)).toEqual(['Aria', 'Brom']);
+	});
+
+	// A Player's sync has no party key at all, and a stale roster from a
+	// previous GM session in this tab mustn't survive into it.
+	it('empties the roster for a sync that carries none', () => {
+		const { client, socket } = connectedClient();
+		socket.emit({
+			type: 'party.updated',
+			payload: { members: [{ id: 'm1', name: 'Aria' }] }
+		});
+		socket.emit({
+			type: 'state.sync',
+			payload: {
+				room: { slug: 'abc123', name: 'Room' },
+				you: { participantId: 'p2', displayName: 'B', role: 'player' }
+			}
+		});
+		expect(client.party).toEqual([]);
+	});
+
+	it('sends the three roster edits the way the hub reads them', () => {
+		const { client, socket } = connectedClient();
+		const fields = {
+			name: 'Aria',
+			imageAssetId: 'art',
+			width: 2,
+			height: 2,
+			ownerParticipantId: 'p2',
+			attending: false
+		};
+		client.createPartyMember(fields);
+		client.updatePartyMember('m1', fields);
+		client.deletePartyMember('m1');
+		expect(socket.sent.map((m) => JSON.parse(m))).toEqual([
+			{ type: 'party.memberCreate', payload: fields },
+			{ type: 'party.memberUpdate', payload: { memberId: 'm1', ...fields } },
+			{ type: 'party.memberDelete', payload: { memberId: 'm1' } }
+		]);
+	});
+
 	it('records each token a party.add made as its own undo', () => {
 		const { client, socket } = roomWithTokens([]);
 		client.addParty('s1', 4, 5);
@@ -1754,12 +1831,6 @@ describe('RoomClient', () => {
 		expect(client.canUndo).toBe(false);
 	});
 
-	it('keeps a party character in the party when its trackers are changed inline', () => {
-		const { client, socket } = roomWithTokens([{ ...goblin, partyKey: 'k' }]);
-		client.setTokenTrackers('t1', [{ label: 'HP', value: 3 }], []);
-		expect(JSON.parse(socket.sent[0]).payload).toMatchObject({ tokenId: 't1', inParty: true });
-	});
-
 	it('puts a deleted party character back in the party on undo', () => {
 		const { client, socket } = roomWithTokens([{ ...goblin, partyKey: 'k' }]);
 		client.deleteToken('t1');
@@ -1769,19 +1840,6 @@ describe('RoomClient', () => {
 			type: 'token.create',
 			payload: { tokenIds: ['t1'], partyKey: 'k' }
 		});
-	});
-
-	// One key per character, so a batch can't share one: eight monkeys under
-	// a single key would be one character the next Add party puts down once.
-	it('mints a party key for a single new token only', () => {
-		const { client, socket } = roomWithTokens([]);
-		client.createToken('s1', 'Aria', null, 0, 0, 'visible', { inParty: true });
-		client.createToken('s1', 'Monkey', null, 0, 0, 'visible', { inParty: true, count: 3 });
-		const [single, batch] = socket.sent.map((m) => JSON.parse(m).payload);
-		expect(single.partyKey).toMatch(
-			/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
-		);
-		expect(batch.partyKey).toBeNull();
 	});
 
 	it('sends every editable field on token.update, so a cleared image stays cleared', () => {
@@ -1794,7 +1852,6 @@ describe('RoomClient', () => {
 			height: 2,
 			ownerParticipantId: null,
 			visibility: 'hidden',
-			inParty: false,
 			trackers: [{ label: 'HP', value: 0 }],
 			conditions: ['Prone']
 		});
@@ -1809,7 +1866,6 @@ describe('RoomClient', () => {
 				height: 2,
 				ownerParticipantId: null,
 				visibility: 'hidden',
-				inParty: false,
 				// A tracker reading 0 has to survive JSON as 0 rather than
 				// being dropped — it's a creature on nought hit points, not an
 				// empty slot.
@@ -1861,7 +1917,6 @@ describe('RoomClient', () => {
 				height: 2,
 				ownerParticipantId: 'p2',
 				visibility: 'visible',
-				inParty: false,
 				trackers: [
 					{ label: 'HP', value: 4 },
 					{ label: 'AC', value: 15 },

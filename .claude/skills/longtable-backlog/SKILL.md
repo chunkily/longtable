@@ -66,8 +66,8 @@ ephemeral-broadcast plumbing that the area-of-effect tool needs.
 
 `open` covers both "not started" and "started, not finished". There is deliberately no third
 state — items are meant to be small enough to land in one session, so the case barely comes up.
-The cost is that frontmatter alone won't tell you whether someone has already been in here, and
-other sessions do work in this same checkout. When that matters,
+The cost is that frontmatter alone won't tell you whether someone has already been in here — an
+earlier session may have started it and stopped. When that matters,
 `git log -- planning/backlog/<slug>.md` and the item's own prose are the only signals there are.
 
 Items name the files and line numbers they concern, and that's often the fastest orientation

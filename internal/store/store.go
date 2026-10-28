@@ -20,6 +20,9 @@ func New(db *sql.DB) (*Store, error) {
 	if err := s.addMissingColumns(); err != nil {
 		return nil, fmt.Errorf("add columns: %w", err)
 	}
+	if err := s.dropDeadColumns(); err != nil {
+		return nil, fmt.Errorf("drop columns: %w", err)
+	}
 	return s, nil
 }
 
@@ -71,7 +74,21 @@ var addedColumns = []struct{ table, column, definition string }{
 	{"participant", "color", "TEXT NOT NULL DEFAULT ''"},
 	{"room", "join_password_hash", "TEXT NOT NULL DEFAULT ''"},
 	{"token", "party_key", "TEXT NOT NULL DEFAULT ''"},
-	{"token", "updated_at", "TEXT NOT NULL DEFAULT ''"},
+}
+
+// Columns taken back out of a table some database out there already has
+// — the other direction from addedColumns, and as rare. Dropped when
+// present and ignored when not, so a database made before the column
+// existed and one made after it was removed both come out the same.
+//
+// Only for a column nothing reads any more and no index or constraint
+// touches, which SQLite's DROP COLUMN refuses. Data in it is lost, which
+// is the point: each entry names what made it dead.
+var droppedColumns = []struct{ table, column string }{
+	// Which copy of a party character was edited last. The party moved
+	// into its own table (party_member), where a character is edited in
+	// one place, so there is no newest copy to find.
+	{"token", "updated_at"},
 }
 
 func (s *Store) addMissingColumns() error {
@@ -89,6 +106,24 @@ func (s *Store) addMissingColumns() error {
 		// constant. Nothing from a request may ever reach this.
 		_, err = s.db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", c.table, c.column, c.definition))
 		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Store) dropDeadColumns() error {
+	for _, c := range droppedColumns {
+		has, err := s.hasColumn(c.table, c.column)
+		if err != nil {
+			return err
+		}
+		if !has {
+			continue
+		}
+		// Interpolated for addMissingColumns' reason: identifiers can't be
+		// bound, and every value here is a compile-time constant.
+		if _, err := s.db.Exec(fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", c.table, c.column)); err != nil {
 			return err
 		}
 	}
@@ -224,16 +259,13 @@ func (s *Store) createTables() error {
 			visibility             TEXT NOT NULL DEFAULT 'visible',
 			trackers               TEXT NOT NULL DEFAULT '[]',
 			conditions             TEXT NOT NULL DEFAULT '[]',
-			-- Which party character this token is a copy of, or '' for none.
-			-- Every copy of one character shares the key, which is what
-			-- lets party.add put one of each on a scene rather than one of
-			-- every copy ever made. See ListPartyMembers.
-			party_key              TEXT NOT NULL DEFAULT '',
-			-- Set on create and on edit, not on move: it answers "which copy
-			-- of this character is the newest version of them?", and where
-			-- a token stands has nothing to do with that. '' on a row from
-			-- before the column, which sorts as oldest.
-			updated_at             TEXT NOT NULL DEFAULT ''
+			-- The party_member this token was copied from, or '' for none.
+			-- What lets party.add skip a character already on the scene.
+			-- Not a foreign key, deliberately: deleting a member leaves its
+			-- copies on the map as ordinary tokens, and a key naming a member
+			-- that no longer exists matches nothing. (A key from before
+			-- party_member existed is the same — it matches nothing.)
+			party_key              TEXT NOT NULL DEFAULT ''
 		);
 		CREATE INDEX IF NOT EXISTS idx_token_scene ON token(scene_id);
 
@@ -297,6 +329,30 @@ func (s *Store) createTables() error {
 			created_at  TEXT NOT NULL
 		);
 		CREATE INDEX IF NOT EXISTS idx_initiative_room ON initiative_entry(room_id);
+
+		-- The party: the characters a GM puts on a new scene in one go.
+		-- Each row is a character as the GM defined it, not a token — the
+		-- tokens on maps are copies made from it, and editing a member
+		-- changes what the next copy looks like and nothing already down.
+		-- Per room, in the order the GM added them, which is the order
+		-- they're listed and put down in. width and height are squares,
+		-- as on a token, and always equal today.
+		CREATE TABLE IF NOT EXISTS party_member (
+			id                    TEXT PRIMARY KEY,
+			room_id               TEXT NOT NULL REFERENCES room(id) ON DELETE CASCADE,
+			name                  TEXT NOT NULL,
+			image_asset_id        TEXT REFERENCES asset(id) ON DELETE SET NULL,
+			width                 REAL NOT NULL DEFAULT 1,
+			height                REAL NOT NULL DEFAULT 1,
+			owner_participant_id  TEXT REFERENCES participant(id) ON DELETE SET NULL,
+			-- Whether they're at the table tonight. party.add puts down only
+			-- the ones who are. Stored rather than kept in the dialog, because
+			-- a night's attendance holds for every scene that night, and a
+			-- tick that cleared on every open would be re-ticked per scene.
+			attending             INTEGER NOT NULL DEFAULT 1,
+			created_at            TEXT NOT NULL
+		);
+		CREATE INDEX IF NOT EXISTS idx_party_member_room ON party_member(room_id);
 
 		-- Which assets a room's library holds. The asset row itself stays
 		-- global and content-addressed, so identical uploads share one

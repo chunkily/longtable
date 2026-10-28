@@ -79,6 +79,16 @@ func (h *Hub) sendStateSync(ctx context.Context, c *client, room store.Room) {
 	// a GM flipping scenes mid-fight doesn't reload the encounter.
 	payload["initiative"] = h.initiativeStatePayload(room.ID, c.participant.Role)
 
+	// The party is the GM's to configure and nobody else's to see, so it
+	// rides only a GM's sync — a Player's carries no "party" key at all.
+	if c.participant.Role == store.RoleGM {
+		if party, err := h.partyPayload(room.ID); err != nil {
+			slog.Error("ws: list party failed", "error", err)
+		} else {
+			payload["party"] = party
+		}
+	}
+
 	// A connection always opens on the room's scene, never on whatever
 	// this participant was looking at last. Where someone is looking is
 	// this browser's business and the hub keeps none of it — a scene.view

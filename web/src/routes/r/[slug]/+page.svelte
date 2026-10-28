@@ -42,6 +42,7 @@
 	import RoomCodeDialog from '$lib/components/room-code-dialog.svelte';
 	import SceneManagerDialog from '$lib/components/scene-manager-dialog.svelte';
 	import CreateTokenDialog from '$lib/components/create-token-dialog.svelte';
+	import PartyDialog from '$lib/components/party-dialog.svelte';
 	import TokenDetailDialog from '$lib/components/token-detail-dialog.svelte';
 	import TokenTrackerStrip from '$lib/components/token-tracker-strip.svelte';
 	import InitiativePanel from '$lib/components/initiative-panel.svelte';
@@ -260,8 +261,10 @@
 		client?.disconnect();
 	});
 
+	// Keyed on the count as well as the text, so the same refusal twice is
+	// two toasts — see errorCount.
 	$effect(() => {
-		if (client?.error) toast.error(client.error);
+		if (client?.errorCount && client.error) toast.error(client.error);
 	});
 
 	// Everyone who didn't press the button. The GM's own click goes
@@ -1157,12 +1160,6 @@
 						{isGM}
 						bind:highContrastGrid
 						onResetView={() => canvasRef?.resetView()}
-						onAddParty={isGM && sceneId
-							? () => {
-									const { x, y } = canvasRef?.viewCenterCell() ?? { x: 0, y: 0 };
-									client?.addParty(sceneId, x, y);
-								}
-							: undefined}
 					>
 						{#snippet newToken()}
 							<!-- Everyone's, not just the GM's: a Player's summons and
@@ -1173,6 +1170,17 @@
 									{room}
 									{sceneId}
 									{isGM}
+									roomSlug={joined.roomSlug}
+									sessionToken={joined.sessionToken}
+									spawnCell={() => canvasRef?.viewCenterCell() ?? { x: 0, y: 0 }}
+								/>
+							{/if}
+						{/snippet}
+						{#snippet party()}
+							{#if joined && isGM}
+								<PartyDialog
+									{room}
+									{sceneId}
 									roomSlug={joined.roomSlug}
 									sessionToken={joined.sessionToken}
 									spawnCell={() => canvasRef?.viewCenterCell() ?? { x: 0, y: 0 }}

@@ -311,8 +311,8 @@ applying would leave a test that passes while checking nothing), and it reloads 
 what matters isn't that the client stopped throwing but that the *server accepted* what the
 fallback produced.
 
-Port: **:8080** only, since vite is no longer in the picture — still shared with other sessions in
-this checkout, so ask before killing anything sitting on it. Runs write to
+Port: **:8080** only, since vite is no longer in the picture. One session works in this checkout
+at a time now, but look before killing anything on it — it may be the GM's own server. Runs write to
 `web/.e2e-data/longtable.db`, **which is wiped at the start of every run** (`e2e/run-app.mjs`), so
 what's in there afterwards is the last run's and nobody else's. Set `LONGTABLE_E2E_KEEP_DB=1` to
 append to the previous run instead.

@@ -300,7 +300,6 @@ export async function createToken(
 		owner?: string;
 		hidden?: boolean;
 		size?: string;
-		inParty?: boolean;
 	} = {}
 ): Promise<Point> {
 	await page.getByRole('button', { name: 'New token' }).click();
@@ -311,8 +310,6 @@ export async function createToken(
 	if (options.size) await page.getByRole('button', { name: options.size }).click();
 	if (options.owner) await page.getByLabel('Owner').selectOption({ label: options.owner });
 	if (options.hidden) await page.getByRole('button', { name: 'Hidden from players' }).click();
-	if (options.inParty)
-		await page.getByRole('button', { name: 'In the party', exact: true }).click();
 
 	await page.getByRole('button', { name: 'Create token' }).click();
 	await expect(page.getByRole('button', { name: 'Create token' })).toBeHidden();

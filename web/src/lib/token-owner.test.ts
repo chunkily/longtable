@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ownerOptions } from './token-owner';
+import { ownerOptions, partyOwnerOptions } from './token-owner';
 import type { Participant } from './room.svelte';
 
 const alice: Participant = { id: 'p1', displayName: 'Alice', color: '', role: 'gm' };
@@ -70,5 +70,24 @@ describe('ownerOptions', () => {
 
 	it('offers nobody at all when nobody is connected and the token is unowned', () => {
 		expect(ownerOptions([], [alice, bob], null)).toEqual([]);
+	});
+});
+
+describe('partyOwnerOptions', () => {
+	// A party is set up before the session, when the people it's for
+	// mostly aren't here yet — the opposite case from a token made mid-game.
+	it('offers every Player seat, marking who is connected', () => {
+		const options = partyOwnerOptions([alice, bob], [alice, bob, carol], null);
+
+		expect(options.map((o) => [o.participant.displayName, o.online])).toEqual([
+			['Bob', true],
+			['Carol', false]
+		]);
+	});
+
+	it('keeps a GM who already owns the member, so a save does not unassign them', () => {
+		const options = partyOwnerOptions([], [alice, bob], alice.id);
+
+		expect(options.map((o) => o.participant.displayName)).toEqual(['Alice', 'Bob']);
 	});
 });

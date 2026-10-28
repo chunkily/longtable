@@ -34,7 +34,10 @@ Envelope both ways:
 | `token.move` | anyone, or owners only when the room is locked | yes | `token.moved` |
 | `token.update` | GM, or the token's owner for trackers/conditions | yes | `token.updated` (+ `token.deleted` to Players on hiding) |
 | `token.delete` | GM, or the token's owner | yes | `token.deleted` (GM-only if hidden) |
-| `party.add` | GM only | yes | one `token.created` per character added, then `party.added` to the sender only |
+| `party.memberCreate` | GM only | yes | `party.updated` to GMs only |
+| `party.memberUpdate` | GM only | yes | `party.updated` to GMs only |
+| `party.memberDelete` | GM only | yes | `party.updated` to GMs only |
+| `party.add` | GM only | yes | one `token.created` per member added, then `party.added` to the sender only |
 | `fog.reveal` | GM only | yes | `fog.revealed` |
 | `fog.hide` | GM only | yes | `fog.hidden` |
 | `fog.revealAll` | GM only | yes | `fog.revealed` |
@@ -361,35 +364,40 @@ Player's new token belongs to, and — when the room is locked — `token.move`.
 
 ## The party
 
-`internal/ws/party.go`, and `store.ListPartyMembers` / `store.LeaveParty` behind it. **The party is
-a roster of characters keyed across scenes**, not a flag on tokens: a party token carries a
-`party_key`, every copy of that character shares it, and the payload exposes it as `partyKey`
-(null for a token that isn't one). Flagging the copies too would make `party.add` on the third
-scene copy everyone twice, and flagging only the originals would lose the party with the scene it
-was flagged on.
+`internal/ws/party.go`, with `internal/store/party.go` behind it. **A party member is defined, not
+marked**: the GM's Party dialog keeps a roster of `party_member` rows per room — name, art, size,
+owner, in the order added — and the tokens on maps are copies made from them. Each copy carries the
+member's id as `party_key`, exposed on the token payload as `partyKey` (null for a token that isn't
+one). It is not a foreign key: deleting a member leaves its copies on their maps as ordinary
+tokens, and a key naming nobody matches nothing.
 
-- **Joining and leaving are `token.update`'s `inParty`**, a GM field like visibility and ignored
-  from a Player. `true` on a token without a key mints one; `false` on a token with one takes the
-  character out **everywhere** — every copy in the room is unkeyed and each gets its own
-  `token.updated` after the edit's own echo, hidden ones withheld from Players as usual. Those
-  copies are usually on other scenes, which is fine because clients drop other scenes' token
-  events (see Delivery).
-- **`party.add {sceneId, x, y}`** puts one copy of each party character not already on the scene
-  onto it, spread out from `(x, y)` by each one's own footprint (`spawnFootprints`). It copies the
-  *newest* copy of each character — by `updated_at`, which create and edit set and a move doesn't —
-  and copies name, art, size, owner and visibility only: trackers, conditions and position are the
-  evening's, not the character's. Nothing to add is an error rather than a no-op, worded for the
-  GM (`The whole party is already here.`, `No tokens are in the party yet.`).
+(The first version made the party a mark on tokens — `token.update`'s `inParty`, with the newest
+copy of each marked character standing in for it. It put a character's details on whichever map it
+was last edited on, and was replaced the same week. A `party_key` from then names no member, and is
+inert.)
+
+- **The roster is a GM's alone.** `party.memberCreate`, `party.memberUpdate {memberId, …}` and
+  `party.memberDelete {memberId}` each answer with `party.updated {members}` — the whole roster,
+  like `initiative.updated` — sent to GMs only, and only a GM's `state.sync` carries `party`. A
+  member is `{id, name, imageAssetId, width, height, ownerParticipantId, attending}`, checked the way a GM's
+  `token.create` checks the same fields (art in the room's library, owner in the room), plus a
+  non-blank name and a cap of `maxPartySize` (20). A member id from another room is "not found".
+- **`attending`** is whether they're at the table tonight, stored on the member so a night's ticks
+  hold for every scene. Absent on a create or update means `true`. The dialog's checkbox sends a
+  `party.memberUpdate` with the member's other fields unchanged.
+- **`party.add {sceneId, x, y}`** puts a copy of each *attending* member not already on the scene
+  onto it,
+  spread from `(x, y)` by each one's own footprint (`spawnFootprints`), in roster order. A copy is
+  name, art, size and owner; it is visible, with blank trackers and no conditions. Nothing to add
+  is an error worded for the GM (`The whole party is already here.`, `No one is in the party
+  yet.`, `No one in the party is ticked as attending.`). It is a copy, not a link — editing a member changes the next copy only.
 - **`party.added {tokenIds}`** goes to the sender alone, after the `token.created` events, so
   `RoomClient` can put one undo entry per token on its stack. It can't mint the ids in advance the
-  way `token.create`'s caller does — how many characters arrive is the server's answer.
-- **`token.create` takes an optional `partyKey`, from a GM only**, for undo: a deleted party
-  character comes back in the party under the key its other copies still carry. Any canonical UUID
-  is accepted, since the deleted copy may have been the character's last. The New token dialog
-  mints one client-side for a single token, never for a batch.
-
-Known and accepted: undoing "take them out of the party" re-mints a key for that one token, so the
-copies on other scenes stay out. `token.update` names one token and can't restore the others.
+  way `token.create`'s caller does, not knowing how many members are already on the scene.
+- **`token.create` takes an optional `partyKey`, from a GM only**, so undoing the deletion of a
+  copy puts it back under its member and the next `party.add` still skips it.
+- "Add from this scene" in the dialog is the client filling the member form from a token it holds;
+  there is no command for it.
 
 ## The initiative tracker
 
@@ -524,7 +532,7 @@ picture and `resetAfterSync` drops anything in flight, so a reconnect converges 
 ## Events (server → client)
 
 `state.sync`, `chat.posted`, `chat.deleted`, `chat.purged`, `token.created`, `token.moved`,
-`token.updated`, `token.deleted`, `party.added`, `participant.connected`, `participant.disconnected`,
+`token.updated`, `token.deleted`, `party.added`, `party.updated`, `participant.connected`, `participant.disconnected`,
 `fog.revealed`, `fog.hidden`, `scene.activated`, `scene.viewed`, `scene.created`,
 `scene.updated`, `scene.deleted`, `room.updated`, `initiative.updated`, `drawing.created`,
 `drawing.deleted`, `ping`, `measure.updated`, `measure.ended`, `error`.
@@ -581,6 +589,10 @@ is the opposite of the point: replacing a map keeps the tokens, fog and drawings
 7. Broadcast.
 
 ## Errors
+
+`RoomClient` keeps the last message in `error` **and bumps `errorCount`** on every one; the room
+page toasts on the pair. The count is what lets the same refusal show twice — a string assigned
+the value it already holds is no change to `$state`, so repeating one used to be silent.
 
 `sendError` gives `{"message": "…"}`. `sendDrawingError` adds `{"drawingId": "…"}` so a client
 that already rendered a stroke optimistically knows exactly which one to take back — the same
