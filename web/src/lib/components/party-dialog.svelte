@@ -7,14 +7,14 @@
 	// dialog rather than a second dialog or a popover, for the reason the
 	// Scenes dialog gives: one dialog on screen at a time, and a popover
 	// inside a dialog comes out unpositioned and under the overlay.
-	import { assetUrl } from '$lib/api';
 	import type { PartyMember, RoomClient } from '$lib/room.svelte';
 	import { partyOwnerOptions } from '$lib/token-owner';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as Dialog from '$lib/components/ui/dialog';
-	import AssetPicker from '$lib/components/asset-picker.svelte';
+	import TokenLookPicker from '$lib/components/token-look-picker.svelte';
+	import TokenAvatar from '$lib/components/token-avatar.svelte';
 	import TokenOwnerPicker from '$lib/components/token-owner-picker.svelte';
 	import TokenSizePicker, { sizeForSquares } from '$lib/components/token-size-picker.svelte';
 	import Users from '@lucide/svelte/icons/users';
@@ -50,6 +50,8 @@
 	let imageAssetId = $state<string | null>(null);
 	let squares = $state(1);
 	let ownerId = $state<string | null>(null);
+	let icon = $state('');
+	let color = $state('');
 
 	// Removing is armed by the first click and done by the second, like
 	// deleting a scene. Nothing on a map goes with it — the copies stay as
@@ -62,6 +64,8 @@
 		imageAssetId = from.imageAssetId ?? null;
 		squares = sizeForSquares(from.width ?? 1).squares;
 		ownerId = from.ownerParticipantId ?? null;
+		icon = from.icon ?? '';
+		color = from.color ?? '';
 		editing = { id };
 	}
 
@@ -81,6 +85,8 @@
 			width: squares,
 			height: squares,
 			ownerParticipantId: ownerId,
+			icon,
+			color,
 			// Not on the form — the checkbox in the list is where it's set —
 			// so an edit carries what the member already had, and someone new
 			// is here unless the GM says otherwise.
@@ -165,18 +171,14 @@
 						options={partyOwnerOptions(room.connectedParticipants, room.participants, ownerId)}
 						idPrefix="party"
 					/>
-					<div class="flex flex-col gap-2">
-						<Label>Image (optional)</Label>
-						<AssetPicker
-							{roomSlug}
-							{sessionToken}
-							idPrefix="party"
-							kind="token"
-							lockKind
-							bind:selectedId={imageAssetId}
-							emptyHint="Nothing in the library yet — add art on the assets page, or leave blank for a plain marker."
-						/>
-					</div>
+					<TokenLookPicker
+						bind:imageAssetId
+						bind:icon
+						bind:color
+						{roomSlug}
+						{sessionToken}
+						idPrefix="party"
+					/>
 				</div>
 				<Dialog.Footer class="justify-between">
 					<Button type="button" variant="ghost" onclick={() => (editing = null)}>Cancel</Button>
@@ -223,20 +225,14 @@
 										!member.attending && 'opacity-50'
 									]}
 								>
-									{#if member.imageAssetId}
-										<img
-											src={assetUrl(member.imageAssetId)}
-											alt=""
-											class="h-8 w-8 shrink-0 rounded-full object-cover"
-										/>
-									{:else}
-										<span
-											class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold"
-											aria-hidden="true"
-										>
-											{member.name.slice(0, 2).toUpperCase()}
-										</span>
-									{/if}
+									<TokenAvatar
+										id={member.id}
+										name={member.name}
+										imageAssetId={member.imageAssetId}
+										icon={member.icon}
+										color={member.color}
+										class="h-8 w-8"
+									/>
 									<span class="flex min-w-0 flex-1 flex-col">
 										<span class="truncate text-sm">{member.name}</span>
 										<span class="truncate text-xs text-muted-foreground">

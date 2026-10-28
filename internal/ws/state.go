@@ -203,6 +203,11 @@ func tokenPayload(t store.Token) map[string]any {
 		// the same character, and the client needs it to undo a deletion
 		// without the character quietly leaving the party.
 		"partyKey": nullableString(t.PartyKey),
+		// Keys, drawn by the client from its own copy of the two lists.
+		// Empty strings rather than null: "no icon" and "the colour the id
+		// picks" are values a token has, not missing data.
+		"icon":  t.Icon,
+		"color": t.Color,
 	}
 }
 

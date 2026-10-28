@@ -362,6 +362,17 @@ the client nothing.
 Ownership now governs four things: `token.update`'s trackers and conditions, `token.delete`, who a
 Player's new token belongs to, and — when the room is locked — `token.move`.
 
+## Token icons and colours
+
+`token.create` and `token.update` carry `icon` (a `store.TokenIcons` key, namespaced like
+`lucide:sword`) and `color` (an `IdentityColors` key) — `''` for none, which for colour means the
+one the token's id hashes to. Both are on every token payload. Validated by
+`requireIconAndColor` on every command that sets them, since both are drawn on everyone's screen:
+`unknown token icon` / `unknown token colour`. Permissions are art's: anyone sets them on a token
+they create; on `token.update` they're GM fields, ignored from a Player. Party members carry the
+same pair through `party.memberCreate`/`Update` and `party.add` copies them. Linked
+`initiative.updated` entries carry the token's `icon` and `color` beside its `imageAssetId`.
+
 ## The party
 
 `internal/ws/party.go`, with `internal/store/party.go` behind it. **A party member is defined, not

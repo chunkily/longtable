@@ -54,6 +54,10 @@ type Token struct {
 	// PartyKey is the id of the PartyMember this token was copied from,
 	// or empty. See the column's note for why it isn't a foreign key.
 	PartyKey string
+	// Icon and Color are what the token wears when it has no art: a
+	// TokenIcons key and an IdentityColors key, either empty.
+	Icon  string
+	Color string
 }
 
 // normalizeTrackers pads or truncates to exactly TrackerSlots, so a row
@@ -105,13 +109,14 @@ func decodeTokenExtras(t *Token, trackersJSON, conditionsJSON string) error {
 // tokenColumns is every column a Token is read from, in the order
 // scanToken reads them.
 const tokenColumns = `token.id, token.scene_id, token.name, token.image_asset_id, token.x, token.y, token.width, token.height,
-	token.owner_participant_id, token.visibility, token.trackers, token.conditions, token.party_key`
+	token.owner_participant_id, token.visibility, token.trackers, token.conditions, token.party_key,
+	token.icon, token.color`
 
 func scanToken(row rowScanner) (Token, error) {
 	var t Token
 	var visibility, trackersJSON, conditionsJSON string
 	if err := row.Scan(&t.ID, &t.SceneID, &t.Name, &t.ImageAssetID, &t.X, &t.Y, &t.Width, &t.Height, &t.OwnerParticipantID, &visibility,
-		&trackersJSON, &conditionsJSON, &t.PartyKey); err != nil {
+		&trackersJSON, &conditionsJSON, &t.PartyKey, &t.Icon, &t.Color); err != nil {
 		return Token{}, err
 	}
 	t.Visibility = Visibility(visibility)
@@ -138,10 +143,10 @@ func (s *Store) CreateToken(t Token) (Token, error) {
 	}
 	_, err = s.db.Exec(
 		`INSERT INTO token (id, scene_id, name, image_asset_id, x, y, width, height, owner_participant_id, visibility, trackers, conditions,
-		                    party_key)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		                    party_key, icon, color)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ID, t.SceneID, t.Name, t.ImageAssetID, t.X, t.Y, t.Width, t.Height, t.OwnerParticipantID, string(t.Visibility),
-		trackersJSON, conditionsJSON, t.PartyKey,
+		trackersJSON, conditionsJSON, t.PartyKey, t.Icon, t.Color,
 	)
 	if err != nil {
 		return Token{}, err
@@ -170,10 +175,10 @@ func (s *Store) UpdateToken(t Token) error {
 	}
 	_, err = s.db.Exec(
 		`UPDATE token SET name = ?, image_asset_id = ?, width = ?, height = ?, owner_participant_id = ?, visibility = ?,
-		        trackers = ?, conditions = ?, party_key = ?
+		        trackers = ?, conditions = ?, party_key = ?, icon = ?, color = ?
 		 WHERE id = ?`,
 		t.Name, t.ImageAssetID, t.Width, t.Height, t.OwnerParticipantID, string(t.Visibility),
-		trackersJSON, conditionsJSON, t.PartyKey, t.ID,
+		trackersJSON, conditionsJSON, t.PartyKey, t.Icon, t.Color, t.ID,
 	)
 	return err
 }

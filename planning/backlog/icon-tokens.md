@@ -1,7 +1,7 @@
 ---
 title: Tokens made from an icon and a colour
 created: 2026-10-06
-status: open
+status: done
 tags: [tokens, canvas, protocol, playtest]
 story: room-member-makes-a-token-without-art
 ---
@@ -64,3 +64,45 @@ and art" and so take its icon and colour too.
       `internal/ws/party.go` copying them onto each new token alongside name and art
 
 Out of scope: a coloured ring around art tokens, and defaulting a token to its owner's colour.
+
+## What shipped
+
+New token, the edit dialog and a party member's form all carry a **Look** section: `Art` or
+`Icon`. Icon is a searchable grid of sixty Lucide icons — "undead" finds the skull, bone and ghost,
+"wolf" the dog and the paw print — over sixteen colour swatches (the seat palette) plus `Any`, the
+colour the token's id picks. A Player chooses on a token they make; changing it afterwards is a
+GM's edit, like art. Party members carry an icon and colour too, and their copies wear them.
+
+On the map a disc token — icon or initials — gets the two-tone ring, inside its edge, and its icon
+or initials in whichever ink reads on its colour. Everywhere else a token is pictured goes through
+one `token-avatar.svelte`: the initiative tracker (entries now carry the token's icon and colour
+from the server, since the token may be on another scene), the selected token's panel, the party
+dialog.
+
+Things worth not rediscovering:
+
+- **Keys, validated in Go, mirrored in TypeScript.** `store.TokenIcons` and `TOKEN_ICONS`
+  (`web/src/lib/token-icons.ts`) hold the same keys in the same order, and
+  `TestTokenIcons_MatchTheClientList` fails if they drift — the arrangement the seat palette
+  already had. Keys are namespaced (`lucide:sword`), so game-icons.net is more keys, not a
+  migration. Colours reuse `IdentityColors`; `ValidTokenColor` is the check.
+- **The ink is stored per colour**, as `ink` beside each hex in `identity-color.ts`, and
+  `token-look.test.ts` checks each is the higher-contrast choice by WCAG luminance. More of the
+  sixteen want dark ink than looked likely when this was planned: orange, olive, green and pink
+  as well as yellow, gold, teal, cyan and white.
+- **`token-look.ts` is the one answer** for a disc's fill and ink, map and DOM alike. It took over
+  the canvas's own `colorFor`, which always drew white on its hashed colour and vanished on the
+  yellow half of the wheel — so an existing initials token on a light colour now gets dark ink.
+- **Konva can't draw a component, and Lucide doesn't export its path data**, so
+  `token-icon-image.ts` mounts the icon into a detached element, reads the SVG back, and loads it
+  as an image — cached per icon and ink, with a second map of loaded images so a re-render draws
+  a known icon in the same frame. Mounting under test needed Vitest to resolve Svelte's browser
+  build (`resolve.conditions` in `vitest.config.ts`); nothing else in the suite changed.
+- **The ring is a fraction of the radius, not screen pixels with a floor** as planned above:
+  tokens aren't re-rendered on zoom, so a screen-pixel width would be frozen at the zoom they were
+  drawn at.
+- **The colour radios are laid invisibly over their swatches**, not shrunk to a screen-reader-only
+  pixel: a click anywhere on a swatch is a click on its radio, for a pointer and for Playwright
+  alike. The first version used `sr-only`, and Playwright couldn't check them.
+- `token-icons.spec.ts` round-trips a choice through the server into the edit dialog, and checks a
+  Player can choose one.

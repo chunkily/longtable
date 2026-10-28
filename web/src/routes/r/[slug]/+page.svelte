@@ -43,6 +43,7 @@
 	import SceneManagerDialog from '$lib/components/scene-manager-dialog.svelte';
 	import CreateTokenDialog from '$lib/components/create-token-dialog.svelte';
 	import PartyDialog from '$lib/components/party-dialog.svelte';
+	import TokenAvatar from '$lib/components/token-avatar.svelte';
 	import TokenDetailDialog from '$lib/components/token-detail-dialog.svelte';
 	import TokenTrackerStrip from '$lib/components/token-tracker-strip.svelte';
 	import InitiativePanel from '$lib/components/initiative-panel.svelte';
@@ -936,6 +937,17 @@
 				     what the map can't show a GM at a glance — so that half
 				     stayed, as a badge. -->
 				<div class="flex items-center gap-1.5">
+					<!-- The token as the map draws it — its art, or its icon on its
+					     disc — so the panel and the map agree on which token this is
+					     even when two share a name. -->
+					<TokenAvatar
+						id={token.id}
+						name={token.name}
+						imageAssetId={token.imageAssetId}
+						icon={token.icon}
+						color={token.color}
+						class="h-6 w-6"
+					/>
 					<p class="truncate text-sm font-medium">{token.name}</p>
 					{#if token.visibility === 'hidden'}
 						<Badge variant="outline" class="shrink-0">hidden from players</Badge>

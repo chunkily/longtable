@@ -20,5 +20,10 @@ Two things make it more than a list of keys:
   a curation job as much as a technical one, and search words matter more here than in the Lucide
   pool.
 
+**Groundwork exists (2026-10-28):** `store.TokenIcons` and `TOKEN_ICONS` in
+`web/src/lib/token-icons.ts` are the two lists to extend, and `token-icon-image.ts` turns an icon
+component into something the canvas can draw — a vendored SVG could skip the mounting and go
+straight to the data URL. The picker searches `words`, which matters far more at four thousand.
+
 `icon-tokens` namespaces keys (`lucide:sword`) precisely so this is additive: a `game-icons:` prefix
 and a second list, no migration, and every existing token unchanged.

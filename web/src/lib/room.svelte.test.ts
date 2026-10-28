@@ -1569,7 +1569,9 @@ describe('RoomClient', () => {
 				{ label: '', value: null }
 			],
 			conditions: ['Prone'],
-			partyKey: null
+			partyKey: null,
+			icon: '',
+			color: ''
 		});
 
 		// And redo deletes it again, once the recreation has landed.
@@ -1791,7 +1793,9 @@ describe('RoomClient', () => {
 			width: 2,
 			height: 2,
 			ownerParticipantId: 'p2',
-			attending: false
+			attending: false,
+			icon: 'lucide:sword',
+			color: 'red'
 		};
 		client.createPartyMember(fields);
 		client.updatePartyMember('m1', fields);
@@ -1852,6 +1856,8 @@ describe('RoomClient', () => {
 			height: 2,
 			ownerParticipantId: null,
 			visibility: 'hidden',
+			icon: '',
+			color: '',
 			trackers: [{ label: 'HP', value: 0 }],
 			conditions: ['Prone']
 		});
@@ -1866,6 +1872,8 @@ describe('RoomClient', () => {
 				height: 2,
 				ownerParticipantId: null,
 				visibility: 'hidden',
+				icon: '',
+				color: '',
 				// A tracker reading 0 has to survive JSON as 0 rather than
 				// being dropped — it's a creature on nought hit points, not an
 				// empty slot.
@@ -1917,6 +1925,8 @@ describe('RoomClient', () => {
 				height: 2,
 				ownerParticipantId: 'p2',
 				visibility: 'visible',
+				icon: '',
+				color: '',
 				trackers: [
 					{ label: 'HP', value: 4 },
 					{ label: 'AC', value: 15 },

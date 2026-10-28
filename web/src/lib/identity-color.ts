@@ -48,25 +48,34 @@ export interface IdentityColor {
 	key: string;
 	label: string;
 	hex: string;
+	/**
+	 * Which ink reads on this colour when it's a token's disc — the icon or
+	 * initials drawn on it. Stored next to the hex rather than worked out at
+	 * render, so a retuned shade is a visible decision about its ink too;
+	 * `token-look.test.ts` checks each one is the higher-contrast choice.
+	 * More of the sixteen want dark ink than looks likely: orange, olive,
+	 * green and pink as well as the obviously light ones.
+	 */
+	ink: 'dark' | 'light';
 }
 
 export const IDENTITY_COLORS: IdentityColor[] = [
-	{ key: 'red', label: 'Blood Red', hex: '#dc2626' },
-	{ key: 'orange', label: 'Sunset Orange', hex: '#f97316' },
-	{ key: 'gold', label: 'Honey Gold', hex: '#f59e0b' },
-	{ key: 'yellow', label: 'Lantern Yellow', hex: '#eab308' },
-	{ key: 'olive', label: 'Swamp Olive', hex: '#65a30d' },
-	{ key: 'green', label: 'Forest Green', hex: '#10b981' },
-	{ key: 'teal', label: 'Lagoon Teal', hex: '#2dd4bf' },
-	{ key: 'cyan', label: 'Frost Cyan', hex: '#06b6d4' },
-	{ key: 'blue', label: 'Royal Blue', hex: '#2563eb' },
-	{ key: 'indigo', label: 'Midnight Indigo', hex: '#4f46e5' },
-	{ key: 'violet', label: 'Arcane Violet', hex: '#8b5cf6' },
-	{ key: 'magenta', label: 'Dusk Magenta', hex: '#c026d3' },
-	{ key: 'pink', label: 'Rose Pink', hex: '#ec4899' },
-	{ key: 'brown', label: 'Rust Brown', hex: '#b45309' },
-	{ key: 'grey', label: 'Storm Grey', hex: '#64748b' },
-	{ key: 'white', label: 'Bone White', hex: '#e7e5e4' }
+	{ key: 'red', label: 'Blood Red', hex: '#dc2626', ink: 'light' },
+	{ key: 'orange', label: 'Sunset Orange', hex: '#f97316', ink: 'dark' },
+	{ key: 'gold', label: 'Honey Gold', hex: '#f59e0b', ink: 'dark' },
+	{ key: 'yellow', label: 'Lantern Yellow', hex: '#eab308', ink: 'dark' },
+	{ key: 'olive', label: 'Swamp Olive', hex: '#65a30d', ink: 'dark' },
+	{ key: 'green', label: 'Forest Green', hex: '#10b981', ink: 'dark' },
+	{ key: 'teal', label: 'Lagoon Teal', hex: '#2dd4bf', ink: 'dark' },
+	{ key: 'cyan', label: 'Frost Cyan', hex: '#06b6d4', ink: 'dark' },
+	{ key: 'blue', label: 'Royal Blue', hex: '#2563eb', ink: 'light' },
+	{ key: 'indigo', label: 'Midnight Indigo', hex: '#4f46e5', ink: 'light' },
+	{ key: 'violet', label: 'Arcane Violet', hex: '#8b5cf6', ink: 'light' },
+	{ key: 'magenta', label: 'Dusk Magenta', hex: '#c026d3', ink: 'light' },
+	{ key: 'pink', label: 'Rose Pink', hex: '#ec4899', ink: 'dark' },
+	{ key: 'brown', label: 'Rust Brown', hex: '#b45309', ink: 'light' },
+	{ key: 'grey', label: 'Storm Grey', hex: '#64748b', ink: 'light' },
+	{ key: 'white', label: 'Bone White', hex: '#e7e5e4', ink: 'dark' }
 ];
 
 /**

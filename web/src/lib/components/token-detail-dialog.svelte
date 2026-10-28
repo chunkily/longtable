@@ -12,7 +12,7 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { ownerOptions } from '$lib/token-owner';
 	import SquarePen from '@lucide/svelte/icons/square-pen';
-	import AssetPicker from '$lib/components/asset-picker.svelte';
+	import TokenLookPicker from '$lib/components/token-look-picker.svelte';
 	import TokenOwnerPicker from '$lib/components/token-owner-picker.svelte';
 	import TokenSizePicker, { sizeForSquares } from '$lib/components/token-size-picker.svelte';
 	import TokenTrackerFields from '$lib/components/token-tracker-fields.svelte';
@@ -41,6 +41,8 @@
 	let name = $state('');
 	let visibility = $state<'visible' | 'hidden'>('visible');
 	let imageAssetId = $state<string | null>(null);
+	let icon = $state('');
+	let color = $state('');
 	let squares = $state(1);
 	let ownerParticipantId = $state<string | null>(null);
 	let trackers = $state<Tracker[]>([]);
@@ -58,6 +60,8 @@
 		name = token.name;
 		visibility = token.visibility;
 		imageAssetId = token.imageAssetId;
+		icon = token.icon ?? '';
+		color = token.color ?? '';
 		squares = sizeForSquares(token.width).squares;
 		ownerParticipantId = token.ownerParticipantId;
 		// Copied rather than referenced: the fields bind straight into these
@@ -76,6 +80,8 @@
 			height: squares,
 			ownerParticipantId,
 			visibility,
+			icon,
+			color,
 			trackers,
 			conditions
 		};
@@ -224,19 +230,14 @@
 						)}
 						idPrefix="edit-token"
 					/>
-					<div class="flex flex-col gap-2">
-						<Label>Image (optional)</Label>
-						<!-- Token art only, like the create dialog beside it. -->
-						<AssetPicker
-							{roomSlug}
-							{sessionToken}
-							idPrefix="edit-token"
-							kind="token"
-							lockKind
-							bind:selectedId={imageAssetId}
-							emptyHint="Nothing in the library yet — add art on the assets page, or leave blank for a plain marker."
-						/>
-					</div>
+					<TokenLookPicker
+						bind:imageAssetId
+						bind:icon
+						bind:color
+						{roomSlug}
+						{sessionToken}
+						idPrefix="edit-token"
+					/>
 				{/if}
 				<TokenTrackerFields bind:trackers bind:conditions idPrefix="edit-token" />
 				{#if canEditAll}

@@ -6,7 +6,7 @@
 	// the controls left off rather than a different component. Keeping it
 	// one component is what stops the two drifting into disagreeing about
 	// what the order *is*.
-	import { assetUrl } from '$lib/api';
+	import TokenAvatar from '$lib/components/token-avatar.svelte';
 	import type { InitiativeEntry, RoomClient } from '$lib/room.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -183,13 +183,13 @@
 						title="Find {entry.name} on the map"
 						onclick={() => (selectedTokenId = tokenId)}
 					>
-						{#if entry.imageAssetId}
-							<img
-								src={assetUrl(entry.imageAssetId)}
-								alt=""
-								class="h-6 w-6 shrink-0 rounded-full object-cover"
-							/>
-						{/if}
+						<TokenAvatar
+							id={tokenId}
+							name={entry.name}
+							imageAssetId={entry.imageAssetId}
+							icon={entry.icon}
+							color={entry.color}
+						/>
 						<span class="truncate">{entry.name}</span>
 					</button>
 				{:else}

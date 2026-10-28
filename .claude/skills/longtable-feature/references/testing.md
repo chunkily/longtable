@@ -311,6 +311,11 @@ applying would leave a test that passes while checking nothing), and it reloads 
 what matters isn't that the client stopped throwing but that the *server accepted* what the
 fallback produced.
 
+**Vitest resolves Svelte's browser build** (`resolve.conditions: ['browser']` in
+`vitest.config.ts`). The unit tests run in jsdom, and without it `svelte` resolves to its server
+entry, where `mount` throws — which first mattered when `token-icon-image.ts` mounted an icon to
+read its SVG back.
+
 Port: **:8080** only, since vite is no longer in the picture. One session works in this checkout
 at a time now, but look before killing anything on it — it may be the GM's own server. Runs write to
 `web/.e2e-data/longtable.db`, **which is wiped at the start of every run** (`e2e/run-app.mjs`), so

@@ -7,7 +7,7 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { ownerOptions } from '$lib/token-owner';
 	import UserRoundPlus from '@lucide/svelte/icons/user-round-plus';
-	import AssetPicker from '$lib/components/asset-picker.svelte';
+	import TokenLookPicker from '$lib/components/token-look-picker.svelte';
 	import TokenOwnerPicker from '$lib/components/token-owner-picker.svelte';
 	import TokenSizePicker from '$lib/components/token-size-picker.svelte';
 
@@ -39,6 +39,8 @@
 	let name = $state('');
 	let visibility = $state<'visible' | 'hidden'>('visible');
 	let imageAssetId = $state<string | null>(null);
+	let icon = $state('');
+	let color = $state('');
 	let squares = $state(1);
 	let ownerParticipantId = $state<string | null>(null);
 	let count = $state(1);
@@ -56,11 +58,15 @@
 			room.createToken(sceneId, name, imageAssetId, x, y, visibility, {
 				squares,
 				ownerParticipantId,
+				icon,
+				color,
 				count
 			});
 			open = false;
 			name = '';
 			imageAssetId = null;
+			icon = '';
+			color = '';
 			squares = 1;
 			ownerParticipantId = null;
 			visibility = 'visible';
@@ -145,21 +151,14 @@
 						options={ownerOptions(room.connectedParticipants, room.participants, null)}
 					/>
 				{/if}
-				<div class="flex flex-col gap-2">
-					<Label>Image (optional)</Label>
-					<!-- Token art only. What goes on a token is one question with one
-				     kind of answer, and a Maps tab here is an invitation to put a
-				     battle map on a goblin. -->
-					<AssetPicker
-						{roomSlug}
-						{sessionToken}
-						idPrefix="token"
-						kind="token"
-						lockKind
-						bind:selectedId={imageAssetId}
-						emptyHint="Nothing in the library yet — add art on the assets page, or leave blank for a plain marker."
-					/>
-				</div>
+				<TokenLookPicker
+					bind:imageAssetId
+					bind:icon
+					bind:color
+					{roomSlug}
+					{sessionToken}
+					idPrefix="token"
+				/>
 				{#if isGM}
 					<div class="flex flex-col gap-2">
 						<Label>Visibility</Label>

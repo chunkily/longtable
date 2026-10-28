@@ -982,6 +982,25 @@ type tokenCreateRequest struct {
 	// reason again: undoing the deletion of a party character has to put
 	// it back *in* the party, under the key its other copies still carry.
 	PartyKey *string `json:"partyKey"`
+	// What the token wears when it has no art. Anyone's to choose on a
+	// token they're making, the way its art is.
+	Icon  string `json:"icon"`
+	Color string `json:"color"`
+}
+
+// requireIconAndColor refuses a key that isn't in TokenIcons or the seat
+// palette. Shared by every command that sets them, since both end up
+// drawn on everyone's screen.
+func (h *Hub) requireIconAndColor(ctx context.Context, c *client, icon, color string) bool {
+	if !store.ValidTokenIcon(icon) {
+		h.sendError(ctx, c, "unknown token icon")
+		return false
+	}
+	if !store.ValidTokenColor(color) {
+		h.sendError(ctx, c, "unknown token colour")
+		return false
+	}
+	return true
 }
 
 // handleTokenCreate puts one or more tokens on a scene.
@@ -1037,6 +1056,9 @@ func (h *Hub) handleTokenCreate(ctx context.Context, c *client, raw json.RawMess
 		return
 	}
 	if !h.requireAssetInRoom(ctx, c, req.ImageAssetID) {
+		return
+	}
+	if !h.requireIconAndColor(ctx, c, req.Icon, req.Color) {
 		return
 	}
 
@@ -1132,6 +1154,8 @@ func (h *Hub) handleTokenCreate(ctx context.Context, c *client, raw json.RawMess
 			Trackers:           trackers,
 			Conditions:         conditions,
 			PartyKey:           partyKey,
+			Icon:               req.Icon,
+			Color:              req.Color,
 		})
 		if err != nil {
 			// Whatever was made before the failure is real and stays: the
@@ -1174,6 +1198,9 @@ type tokenUpdateRequest struct {
 	Visibility         string           `json:"visibility"`
 	Trackers           []trackerRequest `json:"trackers"`
 	Conditions         []string         `json:"conditions"`
+	// GM fields, like the art they stand in for.
+	Icon  string `json:"icon"`
+	Color string `json:"color"`
 }
 
 // handleTokenUpdate edits a token in place.
@@ -1256,6 +1283,9 @@ func (h *Hub) handleTokenUpdate(ctx context.Context, c *client, raw json.RawMess
 		if !h.requireOwnerInRoom(ctx, c, req.OwnerParticipantID) {
 			return
 		}
+		if !h.requireIconAndColor(ctx, c, req.Icon, req.Color) {
+			return
+		}
 
 		visibility := store.Visibility(req.Visibility)
 		if visibility == "" {
@@ -1280,6 +1310,8 @@ func (h *Hub) handleTokenUpdate(ctx context.Context, c *client, raw json.RawMess
 		token.Height = height
 		token.OwnerParticipantID = req.OwnerParticipantID
 		token.Visibility = visibility
+		token.Icon = req.Icon
+		token.Color = req.Color
 	}
 
 	token.Trackers = trackers
@@ -1290,7 +1322,6 @@ func (h *Hub) handleTokenUpdate(ctx context.Context, c *client, raw json.RawMess
 		h.sendError(ctx, c, "failed to update token")
 		return
 	}
-
 
 	h.broadcastTokenUpdated(ctx, c.roomID, token)
 	nowHidden := token.Visibility == store.VisibilityHidden

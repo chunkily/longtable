@@ -31,6 +31,10 @@ type initiativeItem struct {
 	entry        store.InitiativeEntry
 	name         string
 	imageAssetID *string
+	// What the token wears without art, so the tracker can draw the same
+	// disc the map does. Empty for a freestanding entry, which has no
+	// picture at all.
+	icon, color string
 	// True when this entry stands for a token Players can't see. Kept
 	// apart from the entry's own Hidden flag because they mean different
 	// things: this one follows the token and can change without anyone
@@ -62,6 +66,8 @@ func (h *Hub) initiativeItems(roomID string) ([]initiativeItem, store.Initiative
 			}
 			item.name = token.Name
 			item.imageAssetID = token.ImageAssetID
+			item.icon = token.Icon
+			item.color = token.Color
 			item.tokenHidden = token.Visibility == store.VisibilityHidden
 		}
 		items = append(items, item)
@@ -90,6 +96,8 @@ func initiativePayload(items []initiativeItem, state store.InitiativeState, role
 			"initiative":   item.entry.Initiative,
 			"hidden":       item.entry.Hidden || item.tokenHidden,
 			"imageAssetId": item.imageAssetID,
+			"icon":         item.icon,
+			"color":        item.color,
 		})
 	}
 

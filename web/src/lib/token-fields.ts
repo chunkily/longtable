@@ -21,6 +21,9 @@ export interface TokenFields {
 	height: number;
 	ownerParticipantId: string | null;
 	visibility: 'visible' | 'hidden';
+	/** What it wears when it has no art — '' for none, and for the id's colour. */
+	icon: string;
+	color: string;
 	trackers: Tracker[];
 	conditions: string[];
 }
@@ -34,6 +37,8 @@ export function tokenFields(token: Token): TokenFields {
 		height: token.height,
 		ownerParticipantId: token.ownerParticipantId,
 		visibility: token.visibility,
+		icon: token.icon ?? '',
+		color: token.color ?? '',
 		// Padded to the full three slots, so a token stored before trackers
 		// existed compares equal to a form that shows three empty boxes.
 		trackers: tokenTrackers(token).map((t) => ({ ...t })),
@@ -57,6 +62,8 @@ export function sameTokenFields(a: TokenFields, b: TokenFields): boolean {
 		a.height === b.height &&
 		a.ownerParticipantId === b.ownerParticipantId &&
 		a.visibility === b.visibility &&
+		a.icon === b.icon &&
+		a.color === b.color &&
 		sameTrackers(a.trackers, b.trackers) &&
 		sameConditions(a.conditions, b.conditions)
 	);

@@ -80,6 +80,11 @@ export interface Token {
 	// returns to the party with it. Optional for a token from an older
 	// server, like the two above.
 	partyKey?: string | null;
+	// What it wears when it has no art: a TOKEN_ICONS key and an
+	// IDENTITY_COLORS key, '' for none. Optional for a token from an older
+	// server; read through discLook() and tokenIcon(), which cope.
+	icon?: string;
+	color?: string;
 }
 
 /**
@@ -97,6 +102,9 @@ export interface PartyMember {
 	ownerParticipantId: string | null;
 	/** At the table tonight. Add to this scene puts down only these. */
 	attending: boolean;
+	/** What its copies wear when it has no art — the keys a token takes. */
+	icon: string;
+	color: string;
 }
 
 /** What the dialog sends to make or change a member. */
@@ -279,6 +287,9 @@ export interface InitiativeEntry {
 	initiative: number;
 	hidden: boolean;
 	imageAssetId: string | null;
+	// The token's look without art, for a linked entry; '' otherwise.
+	icon?: string;
+	color?: string;
 }
 
 /**
@@ -793,7 +804,13 @@ export class RoomClient {
 		x: number,
 		y: number,
 		visibility: 'visible' | 'hidden' = 'visible',
-		options: { squares?: number; ownerParticipantId?: string | null; count?: number } = {}
+		options: {
+			squares?: number;
+			ownerParticipantId?: string | null;
+			count?: number;
+			icon?: string;
+			color?: string;
+		} = {}
 	) {
 		const count = Math.max(1, Math.min(MAX_TOKENS_PER_CREATE, Math.round(options.count ?? 1)));
 		const tokenIds = Array.from({ length: count }, () => randomId());
@@ -810,7 +827,9 @@ export class RoomClient {
 				height: options.squares ?? 1,
 				ownerParticipantId: options.ownerParticipantId ?? null,
 				count,
-				tokenIds
+				tokenIds,
+				icon: options.icon ?? '',
+				color: options.color ?? ''
 			})
 		) {
 			return;
@@ -1021,7 +1040,9 @@ export class RoomClient {
 			conditions: token.conditions ?? [],
 			// So a party character whose deletion is undone comes back in
 			// the party, as the same character its other copies are.
-			partyKey: token.partyKey ?? null
+			partyKey: token.partyKey ?? null,
+			icon: token.icon ?? '',
+			color: token.color ?? ''
 		});
 	}
 
@@ -1100,6 +1121,10 @@ export class RoomClient {
 			height: token.height,
 			ownerParticipantId: token.ownerParticipantId,
 			visibility: token.visibility,
+			// Carried through untouched, like the rest: left out, a GM changing
+			// a token's hit points from the details panel would wipe its icon.
+			icon: token.icon ?? '',
+			color: token.color ?? '',
 			trackers,
 			conditions
 		});

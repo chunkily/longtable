@@ -51,6 +51,8 @@ architecture and current state live here instead**, and keeping them true is par
 | `web/src/routes/r/[slug]/+page.svelte` | the room page — join form, then the full-bleed shell: map, floating toolbar, side rail (or bottom sheet) |
 | `web/e2e/fixtures/` | everything the specs are built on, so `e2e/` itself is just the tests: the `table` fixture (a room, a scene, a GM, and teardown that survives a failure), the canvas helpers, the room-chrome helpers (including `createRoom`, which every spec goes through), and the upload images. Its README is the starting point for a new spec |
 | `web/src/routes/r/[slug]/assets/+page.svelte` | the assets page — the only way art enters a room's library, and the only way one leaves: tabbed by token/map, with name, credit, grid alignment, search |
+| `web/src/lib/token-icons.ts`, `token-look.ts`, `token-icon-image.ts` | the icons a token can wear instead of art (mirrored by `store.TokenIcons` in Go, and kept in step by a test), the one answer for a disc's fill and ink everywhere a token is drawn, and turning an icon component into an image the canvas can draw |
+| `web/src/lib/components/token-look-picker.svelte`, `token-avatar.svelte` | the `Look` section (Art or Icon, with colour) shared by New token, the edit dialog and a party member's form; and a token's picture anywhere off the map |
 | `web/src/lib/components/token-cropper.svelte`, `crop-frame.ts` | framing token art before it's uploaded: a square, dragged and zoomed over the picture with everything outside the token's circle dimmed, which the server cuts out during the re-encode (`imageproc.ReencodeCrop`). Natural pixels throughout, for the grid aligner's reason below |
 | `web/src/lib/components/grid-aligner.svelte`, `grid-zoom.ts` | pushing a map's own squares onto the grid before it's uploaded, and the display maths behind the preview's zoom. Everything in the component is in *natural* image pixels and everything on screen goes through `scale` — mixing the two up is the bug it is easiest to introduce, which is why the arithmetic sits in a tested `.ts` the way `pinch.ts` and `pan.ts` do |
 | `web/e2e/` | Playwright specs; several read canvas pixels because Konva has no DOM |
@@ -144,7 +146,11 @@ set in the edit dialog — which **stages** its changes, unlike the panel: `Save
 three-way question (`Back`, `Discard changes`, `Save changes`) rather than stacking a second
 dialog. A GM may change all of it on any token while a Player may change the trackers and
 conditions on one they own; art that isn't square is **cropped to the token's circle, never
-stretched** — the centred region, by `web/src/lib/cover-crop.ts`),
+stretched** — the centred region, by `web/src/lib/cover-crop.ts`; and a token **without art can
+wear an icon** — one of sixty from Lucide, searched by what it's for ("undead", "wolf") — on a disc
+in one of the sixteen seat colours or the one its id picks, chosen under `Look` by whoever makes
+it and changed afterwards by a GM. Every disc token has a two-tone ring for the bold grid's
+reason, and its icon or initials in the ink stored with its colour),
 **the party** — the GM's to define, in a Party dialog behind an icon past the toolbar's divider
 beside fog: members with a name, art, size and owner, each started from nothing or from a token on
 the current scene (`Add from this scene`), with every Player seat offered as owner since a party is
@@ -152,8 +158,8 @@ set up before people arrive. `Add to this scene` at the top puts a copy of each 
 the GM is looking at, spread from the middle of their view; anyone already there is skipped, so a
 second press says so and a member added since is put down alone. Each member has a checkbox
 for whether they're **attending** tonight — stored, so it holds for every scene that night — and
-only ticked members are put down. A copy is name, art, size and
-owner — never hit points, conditions or position — and editing a member changes the next copy,
+only ticked members are put down. A copy is name, art, size,
+owner, icon and colour — never hit points, conditions or position — and editing a member changes the next copy,
 not ones already down. The roster is never sent to a Player,
 fog the GM reveals and hides by dragging a rectangle (a plain click covers just the one cell under
 it), starting fully revealed on a new scene rather than fully covered — a Player looking at a

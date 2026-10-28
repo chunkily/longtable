@@ -74,6 +74,10 @@ var addedColumns = []struct{ table, column, definition string }{
 	{"participant", "color", "TEXT NOT NULL DEFAULT ''"},
 	{"room", "join_password_hash", "TEXT NOT NULL DEFAULT ''"},
 	{"token", "party_key", "TEXT NOT NULL DEFAULT ''"},
+	{"token", "icon", "TEXT NOT NULL DEFAULT ''"},
+	{"token", "color", "TEXT NOT NULL DEFAULT ''"},
+	{"party_member", "icon", "TEXT NOT NULL DEFAULT ''"},
+	{"party_member", "color", "TEXT NOT NULL DEFAULT ''"},
 }
 
 // Columns taken back out of a table some database out there already has
@@ -265,7 +269,13 @@ func (s *Store) createTables() error {
 			-- copies on the map as ordinary tokens, and a key naming a member
 			-- that no longer exists matches nothing. (A key from before
 			-- party_member existed is the same — it matches nothing.)
-			party_key              TEXT NOT NULL DEFAULT ''
+			party_key              TEXT NOT NULL DEFAULT '',
+			-- A TokenIcons key worn instead of art, or '' for none, and an
+			-- IdentityColors key for the disc behind it, or '' for the colour
+			-- the token's id picks. Both drawn only when there's no art;
+			-- ValidTokenIcon and ValidTokenColor in Go are the authorities.
+			icon                   TEXT NOT NULL DEFAULT '',
+			color                  TEXT NOT NULL DEFAULT ''
 		);
 		CREATE INDEX IF NOT EXISTS idx_token_scene ON token(scene_id);
 
@@ -368,7 +378,10 @@ func (s *Store) createTables() error {
 			-- a night's attendance holds for every scene that night, and a
 			-- tick that cleared on every open would be re-ticked per scene.
 			attending             INTEGER NOT NULL DEFAULT 1,
-			created_at            TEXT NOT NULL
+			created_at            TEXT NOT NULL,
+			-- As on token: what a copy wears when the member has no art.
+			icon                  TEXT NOT NULL DEFAULT '',
+			color                 TEXT NOT NULL DEFAULT ''
 		);
 		CREATE INDEX IF NOT EXISTS idx_party_member_room ON party_member(room_id);
 

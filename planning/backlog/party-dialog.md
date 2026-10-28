@@ -46,6 +46,9 @@ Decisions worth not rediscovering:
 - **`Add from this scene` is a native select**, acting on change and resetting — a menu would be a
   popover, and a popover inside a dialog doesn't work here.
 
+Since [icon-tokens](icon-tokens.md) a member also has an icon and a colour, set in the same
+**Look** section as a token's, and its copies wear them.
+
 **Attendance** came the same day, as a checkbox at the head of each row: only ticked members are
 put down. It is a column on the member rather than state in the dialog, because a night's
 attendance holds for every scene that night — a tick that cleared on every open would be re-ticked

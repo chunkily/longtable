@@ -45,6 +45,9 @@ type partyMemberRequest struct {
 	// Absent means attending — what a new member is, and what a client
 	// that predates the checkbox would have meant.
 	Attending *bool `json:"attending"`
+	// What its copies wear when it has no art, as on a token.
+	Icon  string `json:"icon"`
+	Color string `json:"color"`
 }
 
 func (r partyMemberRequest) attending() bool {
@@ -60,6 +63,8 @@ func partyMemberPayload(m store.PartyMember) map[string]any {
 		"height":             m.Height,
 		"ownerParticipantId": m.OwnerParticipantID,
 		"attending":          m.Attending,
+		"icon":               m.Icon,
+		"color":              m.Color,
 	}
 }
 
@@ -111,6 +116,9 @@ func (h *Hub) decodeMember(ctx context.Context, c *client, raw json.RawMessage, 
 	if !h.requireOwnerInRoom(ctx, c, req.OwnerParticipantID) {
 		return req, false
 	}
+	if !h.requireIconAndColor(ctx, c, req.Icon, req.Color) {
+		return req, false
+	}
 	if req.Width == 0 {
 		req.Width = 1
 	}
@@ -146,6 +154,8 @@ func (h *Hub) handlePartyMemberCreate(ctx context.Context, c *client, raw json.R
 		Height:             req.Height,
 		OwnerParticipantID: req.OwnerParticipantID,
 		Attending:          req.attending(),
+		Icon:               req.Icon,
+		Color:              req.Color,
 	}); err != nil {
 		slog.Error("ws: create party member failed", "error", err)
 		h.sendError(ctx, c, "failed to add to the party")
@@ -171,6 +181,8 @@ func (h *Hub) handlePartyMemberUpdate(ctx context.Context, c *client, raw json.R
 		Height:             req.Height,
 		OwnerParticipantID: req.OwnerParticipantID,
 		Attending:          req.attending(),
+		Icon:               req.Icon,
+		Color:              req.Color,
 	})
 	if errors.Is(err, store.ErrNotFound) {
 		h.sendError(ctx, c, "party member not found")
@@ -223,7 +235,7 @@ type partyAddRequest struct {
 // scene onto it, spread out from (x, y) the way a batch from the New token dialog is
 // — though by footprint each, since a party mixes sizes.
 //
-// A copy is the member: name, art, size and owner. It is visible, has
+// A copy is the member: name, art, size, owner, icon and colour. It is visible, has
 // blank trackers and no conditions, and carries the member's id so a
 // second press skips it. It is a copy and not a link — editing the
 // member later changes the next copy, not this one.
@@ -312,6 +324,8 @@ func (h *Hub) handlePartyAdd(ctx context.Context, c *client, raw json.RawMessage
 			Height:             m.Height,
 			OwnerParticipantID: m.OwnerParticipantID,
 			PartyKey:           m.ID,
+			Icon:               m.Icon,
+			Color:              m.Color,
 		})
 		if err != nil {
 			// As in handleTokenCreate: what was made before the failure is

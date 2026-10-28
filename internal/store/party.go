@@ -26,13 +26,18 @@ type PartyMember struct {
 	// anyone who isn't. New members are attending.
 	Attending bool
 	CreatedAt string
+	// Icon and Color are what its copies wear when it has no art: the
+	// same keys a token takes.
+	Icon  string
+	Color string
 }
 
-const partyMemberColumns = `id, room_id, name, image_asset_id, width, height, owner_participant_id, attending, created_at`
+const partyMemberColumns = `id, room_id, name, image_asset_id, width, height, owner_participant_id, attending, created_at,
+	icon, color`
 
 func scanPartyMember(row rowScanner) (PartyMember, error) {
 	var m PartyMember
-	err := row.Scan(&m.ID, &m.RoomID, &m.Name, &m.ImageAssetID, &m.Width, &m.Height, &m.OwnerParticipantID, &m.Attending, &m.CreatedAt)
+	err := row.Scan(&m.ID, &m.RoomID, &m.Name, &m.ImageAssetID, &m.Width, &m.Height, &m.OwnerParticipantID, &m.Attending, &m.CreatedAt, &m.Icon, &m.Color)
 	return m, err
 }
 
@@ -72,8 +77,9 @@ func (s *Store) CreatePartyMember(m PartyMember) (PartyMember, error) {
 	m.ID = uuid.NewString()
 	m.CreatedAt = time.Now().UTC().Format(time.RFC3339Nano)
 	_, err := s.db.Exec(
-		`INSERT INTO party_member (`+partyMemberColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO party_member (`+partyMemberColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		m.ID, m.RoomID, m.Name, m.ImageAssetID, m.Width, m.Height, m.OwnerParticipantID, m.Attending, m.CreatedAt,
+		m.Icon, m.Color,
 	)
 	if err != nil {
 		return PartyMember{}, err
@@ -89,9 +95,10 @@ func (s *Store) CreatePartyMember(m PartyMember) (PartyMember, error) {
 // are tokens in their own right, and the GM edits those as tokens.
 func (s *Store) UpdatePartyMember(m PartyMember) error {
 	res, err := s.db.Exec(
-		`UPDATE party_member SET name = ?, image_asset_id = ?, width = ?, height = ?, owner_participant_id = ?, attending = ?
+		`UPDATE party_member SET name = ?, image_asset_id = ?, width = ?, height = ?, owner_participant_id = ?, attending = ?,
+		        icon = ?, color = ?
 		 WHERE id = ? AND room_id = ?`,
-		m.Name, m.ImageAssetID, m.Width, m.Height, m.OwnerParticipantID, m.Attending, m.ID, m.RoomID,
+		m.Name, m.ImageAssetID, m.Width, m.Height, m.OwnerParticipantID, m.Attending, m.Icon, m.Color, m.ID, m.RoomID,
 	)
 	if err != nil {
 		return err

@@ -3,6 +3,8 @@
 	import { mode } from 'mode-watcher';
 	import Konva from 'konva';
 	import { coverCrop } from '$lib/cover-crop';
+	import { DISC_RING, discLook, initials } from '$lib/token-look';
+	import { iconImage, loadedIconImage } from '$lib/token-icon-image';
 	import { assetUrl } from '$lib/api';
 	import { DRAWING_STROKE_WIDTH, isFilled, pickDrawing, strokeWidthOf } from '$lib/drawing-hit';
 	import { seatHex } from '$lib/identity-color';
@@ -284,11 +286,6 @@
 
 	// Deterministic color per token so untitled/imageless tokens are at
 	// least visually distinct from each other.
-	function colorFor(id: string): string {
-		let hash = 0;
-		for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
-		return `hsl(${hash % 360}, 65%, 55%)`;
-	}
 
 	onMount(() => {
 		// Konva ships with `dragButtons: [0, 1]`, so out of the box the
@@ -2555,27 +2552,97 @@
 	// Also what an art token shows while its image loads, which is why the
 	// icon is only drawn when there's no art: a slow icon load could
 	// otherwise land on top of art that arrived first.
-
 	function addTokenPlaceholder(group: Konva.Group, token: Token, w: number, h: number) {
+		const r = Math.min(w, h) / 2;
+		const look = discLook(token);
+		group.add(new Konva.Circle({ x: w / 2, y: h / 2, radius: r, fill: look.fill }));
+
+		// Inside the edge, so a token never reads bigger than its square and
+		// the solid ring is never mistaken for the dashed selection ring
+		// drawn outside it. A fraction of the radius rather than screen pixels
+		// with a floor: tokens aren't re-rendered on zoom, so a screen-pixel
+		// width would be frozen at whatever the zoom was when they were drawn.
+		const outer = r * 0.08;
+		const inner = r * 0.06;
 		group.add(
 			new Konva.Circle({
 				x: w / 2,
 				y: h / 2,
-				radius: Math.min(w, h) / 2,
-				fill: colorFor(token.id)
+				radius: r - outer / 2,
+				stroke: DISC_RING.outer,
+				strokeWidth: outer,
+				listening: false
 			})
 		);
 		group.add(
-			new Konva.Text({
-				text: token.name.slice(0, 2).toUpperCase(),
-				width: w,
-				height: h,
-				align: 'center',
-				verticalAlign: 'middle',
-				fill: 'white',
-				fontStyle: 'bold'
+			new Konva.Circle({
+				x: w / 2,
+				y: h / 2,
+				radius: r - outer - inner / 2,
+				stroke: DISC_RING.inner,
+				strokeWidth: inner,
+				listening: false
 			})
 		);
+
+		const glyph = r * 1.1;
+		const placeIcon = (img: HTMLImageElement) =>
+			group.add(
+				new Konva.Image({
+					image: img,
+					x: (w - glyph) / 2,
+					y: (h - glyph) / 2,
+					width: glyph,
+					height: glyph,
+					listening: false
+				})
+			);
+		const addInitials = () =>
+			group.add(
+				new Konva.Text({
+					text: initials(token.name),
+					width: w,
+					height: h,
+					align: 'center',
+					verticalAlign: 'middle',
+					fill: look.ink,
+					fontStyle: 'bold',
+					// Scaled with the token: a fixed 12px was lost on anything
+					// bigger than Medium.
+					fontSize: Math.max(10, r * 0.6),
+					listening: false
+				})
+			);
+
+		if (!token.icon || token.imageAssetId) {
+			addInitials();
+			return;
+		}
+		const ready = loadedIconImage(token.icon, look.ink);
+		if (ready) {
+			placeIcon(ready);
+			return;
+		}
+		const loading = iconImage(token.icon, look.ink);
+		if (!loading) {
+			// A key from a newer list, or one since retired: initials, the way
+			// a token with no icon has always looked.
+			addInitials();
+			return;
+		}
+		loading
+			.then((img) => {
+				// Gone already — renderTokens rebuilds every group whenever the
+				// tokens change, and this one may have been thrown away.
+				if (!group.getLayer()) return;
+				placeIcon(img);
+				group.getLayer()?.batchDraw();
+			})
+			.catch(() => {
+				if (!group.getLayer()) return;
+				addInitials();
+				group.getLayer()?.batchDraw();
+			});
 	}
 </script>
 
