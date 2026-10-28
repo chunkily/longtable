@@ -295,7 +295,8 @@ and the pickers only pick — their
 link out to the assets page carries the open tab with it (`?kind=`), so art added after following
 it is filed as the thing that was being looked for. Every
 upload is decoded and re-encoded to WebP, with any grid offset padded into the pixels on the way
-through, and joins the uploading room's library — content-addressed globally so identical uploads
+through — and the hash of the file *as it arrived* is recorded beside the asset (`asset_source`),
+since the output hash changes with every crop and offset and so can't block a re-upload alone — and joins the uploading room's library — content-addressed globally so identical uploads
 share one file, but a room only ever sees what it added itself, under its own name and credit.
 All of it syncs live; everything but pings and measurements persists.
 

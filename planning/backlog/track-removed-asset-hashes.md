@@ -29,5 +29,7 @@ without trying to, and walk straight past a block keyed on the output. The grid 
 the smaller version of this. Removing an asset should therefore block its output hash **and** every
 source hash [record-upload-source-hash](record-upload-source-hash.md) recorded against it, and an
 upload is refused if either matches. Assets uploaded before source hashes were recorded can only be
-blocked by output; that's a permanent gap for them, not something to backfill. An edited source
+blocked by output; that's a permanent gap for them, not something to backfill. Source hashes are
+recorded from 2026-10-28 on, in `asset_source` — which **cascades** with the asset row, so removal
+has to copy an asset's sources into the block list before deleting it. An edited source
 (resized, recompressed) is not caught either, knowingly — see that item's last paragraph.

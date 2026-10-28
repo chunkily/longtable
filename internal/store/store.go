@@ -330,6 +330,24 @@ func (s *Store) createTables() error {
 		);
 		CREATE INDEX IF NOT EXISTS idx_initiative_room ON initiative_entry(room_id);
 
+		-- What each stored asset was made from: a hash of the file as it
+		-- arrived, before decoding, alignment or cropping. asset.content_hash
+		-- is of the re-encoded output, which is right for dedup and wrong for
+		-- blocking — one portrait cropped two ways is two outputs, so a block
+		-- keyed on the output is walked past by framing it differently. Many
+		-- to many: two crops of one file are two assets with one source, and
+		-- a PNG and a JPEG of one picture are one asset with two. Cascades
+		-- with the asset, so whatever removes an asset for good has to copy
+		-- these somewhere first if it means to block them
+		-- (planning/backlog/track-removed-asset-hashes.md).
+		CREATE TABLE IF NOT EXISTS asset_source (
+			asset_id      TEXT NOT NULL REFERENCES asset(id) ON DELETE CASCADE,
+			source_hash   TEXT NOT NULL,
+			first_seen_at TEXT NOT NULL,
+			PRIMARY KEY (asset_id, source_hash)
+		);
+		CREATE INDEX IF NOT EXISTS idx_asset_source_hash ON asset_source(source_hash);
+
 		-- The party: the characters a GM puts on a new scene in one go.
 		-- Each row is a character as the GM defined it, not a token — the
 		-- tokens on maps are copies made from it, and editing a member

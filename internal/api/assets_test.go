@@ -2,6 +2,8 @@ package api
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"image"
 	"image/color"
 	"image/png"
@@ -527,3 +529,53 @@ func TestListRoomAssets_EmptyLibraryIsAnEmptyList(t *testing.T) {
 		t.Fatalf("body = %q, want []", body)
 	}
 }
+
+// One file made into two different assets — here by two grid offsets, and
+// soon by two crops — is one source behind both. That shared source is
+// what will let a Host block the file however it was framed, which the
+// output hash can't: the two assets have different ones.
+func TestUploadAsset_RecordsTheSourceBehindEveryAsset(t *testing.T) {
+	srv, st := newTestServer(t)
+	created := createTestRoom(t, srv)
+	content := testPNG(t, 40, 40, color.RGBA{R: 30, G: 90, B: 200, A: 255})
+
+	var plain, shifted, again assetPayloadT
+	decodeJSONBody(t, uploadTestAsset(t, srv, created.RoomSlug, created.SessionToken, "map.png", content), &plain)
+	decodeJSONBody(t, uploadWithFields(t, srv, created.RoomSlug, created.SessionToken, "map.png", content,
+		map[string]string{"gridOffsetX": "3"}), &shifted)
+	decodeJSONBody(t, uploadTestAsset(t, srv, created.RoomSlug, created.SessionToken, "map.png", content), &again)
+
+	if plain.ID == shifted.ID {
+		t.Fatal("an offset upload reused the plain asset — the test needs two different outputs")
+	}
+	if again.ID != plain.ID {
+		t.Fatalf("re-uploading the same file made a new asset %q", again.ID)
+	}
+
+	plainSources, err := st.AssetSources(plain.ID)
+	if err != nil {
+		t.Fatalf("AssetSources: %v", err)
+	}
+	shiftedSources, err := st.AssetSources(shifted.ID)
+	if err != nil {
+		t.Fatalf("AssetSources: %v", err)
+	}
+	// Once each, though the plain file arrived twice.
+	if len(plainSources) != 1 || len(shiftedSources) != 1 || plainSources[0] != shiftedSources[0] {
+		t.Fatalf("sources: plain %v, shifted %v — want one shared source", plainSources, shiftedSources)
+	}
+
+	sum := sha256.Sum256(content)
+	if want := hex.EncodeToString(sum[:]); plainSources[0] != want {
+		t.Fatalf("source hash %s, want the SHA-256 of the bytes as sent, %s", plainSources[0], want)
+	}
+
+	both, err := st.AssetsFromSource(plainSources[0])
+	if err != nil {
+		t.Fatalf("AssetsFromSource: %v", err)
+	}
+	if len(both) != 2 {
+		t.Fatalf("AssetsFromSource = %v, want both assets", both)
+	}
+}
+

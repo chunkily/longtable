@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"strconv"
 	"strings"
@@ -122,6 +123,16 @@ func (srv *Server) uploadAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The file as it arrived, hashed before anything changes it — the one
+	// moment its bytes exist. See asset_source in store.go for why the
+	// output hash alone can't block a re-upload.
+	sourceHash, err := hashSource(file)
+	if err != nil {
+		slog.Error("api: hash upload failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to process image")
+		return
+	}
+
 	// Re-encoded before anything else looks at it: from here on the only
 	// bytes in play are ones this program produced from the decoded
 	// pixels. See internal/imageproc for why that matters. Grid alignment
@@ -153,6 +164,12 @@ func (srv *Server) uploadAsset(w http.ResponseWriter, r *http.Request) {
 		slog.Error("api: upload asset failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to store upload")
 		return
+	}
+	// Logged rather than refused: the image is stored and usable, and what
+	// a missing row costs is a later block being easier to walk past — not
+	// worth failing someone's upload over.
+	if err := srv.store.RecordAssetSource(asset.ID, sourceHash); err != nil {
+		slog.Error("api: record asset source failed", "error", err)
 	}
 
 	// Every upload joins the uploading room's library, whether or not it
@@ -505,6 +522,21 @@ func (srv *Server) checkTotalStorage(w http.ResponseWriter, image imageproc.Resu
 		return false
 	}
 	return true
+}
+
+// hashSource is the SHA-256 of an uploaded file's bytes, leaving the file
+// rewound for the decoder. A multipart file is always seekable — small ones
+// are held in memory, large ones spooled to disk — so reading it twice
+// costs a second pass rather than holding a copy.
+func hashSource(file multipart.File) (string, error) {
+	h := sha256.New()
+	if _, err := io.Copy(h, file); err != nil {
+		return "", err
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // storeImage commits a re-encoded image, reusing an existing asset when
