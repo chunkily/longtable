@@ -122,6 +122,28 @@ func (srv *Server) uploadAsset(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	crop, ok := parseCrop(w, r)
+	if !ok {
+		return
+	}
+	// Read before the re-encode now, since it decides whether a crop is
+	// allowed at all.
+	kind, ok := parseAssetKind(w, r.FormValue("kind"))
+	if !ok {
+		return
+	}
+	// A crop is for framing token art and an offset for aligning a map, and
+	// neither means anything for the other: a map cut to a square has lost
+	// most of itself, and a token has no grid. Refused rather than ignored,
+	// since a client sending them is confused about what it's uploading.
+	if crop != nil && kind != store.AssetKindToken {
+		writeError(w, http.StatusBadRequest, "only token art can be cropped")
+		return
+	}
+	if crop != nil && (offset.X != 0 || offset.Y != 0) {
+		writeError(w, http.StatusBadRequest, "an upload can be cropped or aligned to the grid, not both")
+		return
+	}
 
 	// The file as it arrived, hashed before anything changes it — the one
 	// moment its bytes exist. See asset_source in store.go for why the
@@ -138,7 +160,12 @@ func (srv *Server) uploadAsset(w http.ResponseWriter, r *http.Request) {
 	// pixels. See internal/imageproc for why that matters. Grid alignment
 	// rides along here rather than being stored beside the image, so the
 	// pixels that get served are already aligned — see the Offset doc.
-	image, err := imageproc.ReencodeOffset(file, offset)
+	var image imageproc.Result
+	if crop != nil {
+		image, err = imageproc.ReencodeCrop(file, *crop)
+	} else {
+		image, err = imageproc.ReencodeOffset(file, offset)
+	}
 	if err != nil {
 		switch {
 		case errors.Is(err, imageproc.ErrUnsupportedFormat):
@@ -148,6 +175,8 @@ func (srv *Server) uploadAsset(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "image dimensions are too large")
 		case errors.Is(err, imageproc.ErrBadOffset):
 			writeError(w, http.StatusBadRequest, "that grid alignment would crop the whole image away")
+		case errors.Is(err, imageproc.ErrBadCrop):
+			writeError(w, http.StatusBadRequest, "that crop isn't inside the image")
 		default:
 			slog.Error("api: re-encode upload failed", "error", err)
 			writeError(w, http.StatusInternalServerError, "failed to process image")
@@ -187,10 +216,6 @@ func (srv *Server) uploadAsset(w http.ResponseWriter, r *http.Request) {
 		name = store.DisplayNameFromFilename(asset.Filename)
 	}
 	gridSize, ok := parseGridSize(w, r)
-	if !ok {
-		return
-	}
-	kind, ok := parseAssetKind(w, r.FormValue("kind"))
 	if !ok {
 		return
 	}
@@ -370,6 +395,43 @@ func parseGridOffset(w http.ResponseWriter, r *http.Request) (imageproc.Offset, 
 	}
 	return offset, true
 }
+
+// parseCrop reads the square a token upload is to be cut to: cropX,
+// cropY and cropSize, in the image's own pixels. All three or none —
+// absent is every map and every square piece of art, which goes in as it
+// is. Whether the square is inside the image is the decoder's to say,
+// since only it knows the image's size.
+func parseCrop(w http.ResponseWriter, r *http.Request) (*imageproc.Crop, bool) {
+	names := []string{"cropX", "cropY", "cropSize"}
+	raw := make([]string, len(names))
+	present := 0
+	for i, name := range names {
+		raw[i] = strings.TrimSpace(r.FormValue(name))
+		if raw[i] != "" {
+			present++
+		}
+	}
+	if present == 0 {
+		return nil, true
+	}
+	var vals [3]int
+	for i := range names {
+		n, err := strconv.Atoi(raw[i])
+		if present != len(names) || err != nil || n < 0 || n > maxCropCoordinate {
+			writeError(w, http.StatusBadRequest, "a crop needs a corner and a size, in whole pixels")
+			return nil, false
+		}
+		vals[i] = n
+	}
+	return &imageproc.Crop{X: vals[0], Y: vals[1], Size: vals[2]}, true
+}
+
+// maxCropCoordinate bounds the numbers parseCrop will take before the
+// decoder has looked at anything. An image within imageproc.MaxPixels can
+// be at most that many pixels along one side (a single row), so nothing
+// real is past it — it only keeps absurd numbers from reaching the
+// arithmetic.
+const maxCropCoordinate = imageproc.MaxPixels
 
 // listRoomAssets returns the room's library. Authenticated, unlike
 // serving an individual asset: a private room's library is a list of

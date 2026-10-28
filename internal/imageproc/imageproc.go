@@ -63,6 +63,9 @@ var (
 	// Padding has no equivalent failure — it only ever grows the canvas,
 	// and growing it too far is ErrTooLarge.
 	ErrBadOffset = errors.New("offset would crop the entire image")
+	// ErrBadCrop is a crop square that isn't wholly inside the image, or
+	// has no size.
+	ErrBadCrop = errors.New("crop is not inside the image")
 )
 
 // Result is a re-encoded image, ready to store.
@@ -106,6 +109,28 @@ type Offset struct {
 
 func (o Offset) zero() bool { return o.X == 0 && o.Y == 0 }
 
+// Crop is the square of an image to keep, in the decoded image's own
+// pixels: its top-left corner and its side.
+//
+// This is how token art gets framed. A portrait uploaded as a token is
+// cut to the square the uploader chose — dragged and zoomed over the
+// picture on the assets page — and stored already square, so the map,
+// the initiative panel, the library and every picker show the same
+// framing and none of them knows a crop happened. The same argument as
+// Offset's: the framing lives in the pixels, once, or it lives in every
+// renderer. It also means nothing outside the frame is stored or served,
+// so what a Host moderating the file sees is what the table saw.
+//
+// Square because tokens are: every size from Tiny to Gargantuan is N×N.
+type Crop struct {
+	X, Y, Size int
+}
+
+// ReencodeCrop is Reencode with the image cut to crop first.
+func ReencodeCrop(r io.Reader, crop Crop) (Result, error) {
+	return reencode(r, func(img image.Image) (image.Image, error) { return applyCrop(img, crop) })
+}
+
 // Reencode decodes r and returns its first frame as WebP. Everything
 // that isn't pixels is dropped in the process.
 func Reencode(r io.Reader) (Result, error) {
@@ -114,6 +139,16 @@ func Reencode(r io.Reader) (Result, error) {
 
 // ReencodeOffset is Reencode with the image shifted by offset first.
 func ReencodeOffset(r io.Reader, offset Offset) (Result, error) {
+	if offset.zero() {
+		return reencode(r, nil)
+	}
+	return reencode(r, func(img image.Image) (image.Image, error) { return applyOffset(img, offset) })
+}
+
+// reencode is the one decode-and-encode every upload goes through, with
+// transform — an offset, a crop, or nothing — applied to the decoded first
+// frame in between.
+func reencode(r io.Reader, transform func(image.Image) (image.Image, error)) (Result, error) {
 	data, err := io.ReadAll(r)
 	if err != nil {
 		return Result{}, err
@@ -139,8 +174,8 @@ func ReencodeOffset(r io.Reader, offset Offset) (Result, error) {
 		return Result{}, fmt.Errorf("%w: %v", ErrUnsupportedFormat, err)
 	}
 
-	if !offset.zero() {
-		first, err = applyOffset(first, offset)
+	if transform != nil {
+		first, err = transform(first)
 		if err != nil {
 			return Result{}, err
 		}
@@ -275,6 +310,28 @@ func applyOffset(img image.Image, offset Offset) (image.Image, error) {
 	// out's bounds, and draw.Draw clips it — which is exactly the crop.
 	draw.Draw(out, image.Rect(offset.X, offset.Y, offset.X+bounds.Dx(), offset.Y+bounds.Dy()),
 		img, bounds.Min, draw.Src)
+	return out, nil
+}
+
+// applyCrop returns the crop square of img as a new image. Unlike an
+// offset it can only shrink the picture, so MaxPixels — already checked
+// against the header — can't be exceeded here.
+//
+// Measured from the image's own bounds rather than (0,0): a decoded GIF
+// frame can start anywhere, and the uploader's square was drawn over the
+// picture as a browser shows it, top-left first.
+func applyCrop(img image.Image, crop Crop) (image.Image, error) {
+	bounds := img.Bounds()
+	if crop.Size <= 0 || crop.X < 0 || crop.Y < 0 ||
+		crop.X+crop.Size > bounds.Dx() || crop.Y+crop.Size > bounds.Dy() {
+		return nil, fmt.Errorf("%w: %d,%d size %d against a %dx%d image",
+			ErrBadCrop, crop.X, crop.Y, crop.Size, bounds.Dx(), bounds.Dy())
+	}
+	// NRGBA for the same reason applyOffset uses it, and draw.Src so a
+	// transparent pixel in token art stays transparent rather than being
+	// composited onto black.
+	out := image.NewNRGBA(image.Rect(0, 0, crop.Size, crop.Size))
+	draw.Draw(out, out.Bounds(), img, bounds.Min.Add(image.Pt(crop.X, crop.Y)), draw.Src)
 	return out, nil
 }
 

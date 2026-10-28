@@ -1,7 +1,7 @@
 ---
 title: Room Member frames their own token art
 created: 2026-10-06
-status: incomplete
+status: done
 ---
 
 As a Room Member

@@ -1,7 +1,7 @@
 ---
 title: Frame token art when it's uploaded
 created: 2026-10-06
-status: open
+status: done
 tags: [assets, tokens, upload, playtest]
 story: room-member-frames-token-art
 ---
@@ -53,3 +53,38 @@ and it is a decision rather than an oversight.
 
 Builds on [token-art-keeps-its-proportions](token-art-keeps-its-proportions.md), which stays as
 the fallback for art that never passed through here.
+
+## What shipped
+
+Token art that isn't square gets a cropper on the assets page, required the way the map aligner
+is: `Add to library` stays disabled until the picture has loaded and been framed. It opens on the
+largest square — centred across wide art, **anchored to the top** of tall art — with the token's
+circle drawn over the picture and everything outside it dimmed. The circle drags (pointer, or
+arrow keys at a twentieth of the frame per press, Shift for one pixel) and a `Zoom` slider shrinks
+it about its centre, down to a 32px frame. Square art shows no cropper at all.
+
+The square goes up as `cropX`/`cropY`/`cropSize` in natural pixels, and `imageproc.ReencodeCrop`
+cuts it out during the re-encode — the same transform slot the grid offset uses, which the
+decode/encode path was refactored into (`reencode(r, transform)`). The stored art is square, so
+the map, the initiative panel, the library and the pickers agree without knowing a crop happened.
+
+Things worth not rediscovering:
+
+- **The server refuses a crop that isn't for token art** — on a map, with no kind, alongside a grid
+  offset, half-specified, or outside the picture — each with its own message. The upload's kind is
+  now parsed before the re-encode for that reason.
+- **The source hash is recorded either way** ([record-upload-source-hash](record-upload-source-hash.md)
+  shipped first), so two framings of one portrait are two assets with one source.
+- **The arithmetic is `web/src/lib/crop-frame.ts`**, tested on its own: initial frame, clamping,
+  moving, resizing about the centre, zoom ↔ size. The component converts to the screen through
+  one `scale` and nothing else.
+- **The draggable circle is a `<button>`**, which is what gives it focus, a name ("Move the crop")
+  and key events without role-patching. The drag is measured from where it started, so per-move
+  rounding can't walk the frame away from the pointer.
+- **`portrait.png`** is a new fixture for this — 40x120 in three colour bands — and
+  `token-cropper.spec.ts` reads the stored image's size and middle colour in the page to prove
+  which square was kept: the top one by default, the middle one after twenty presses of
+  ArrowDown.
+
+Not built, as decided: re-framing art already in a library (upload the original again), and
+per-token crops.

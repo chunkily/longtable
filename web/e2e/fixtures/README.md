@@ -52,6 +52,8 @@ All 8x8 except `wide-map.png`, which is 40x12 because its _shape_ is what it's f
 page reads a staged file's dimensions and questions whether it's really the kind the open tab
 says, and only a decidedly non-square image exercises that. `gen-wide-map.go` is the program that
 produced it, kept beside it so the next odd-shaped fixture doesn't start from scratch.
+`portrait.png` is the other: 40x120 in three bands, red over green over blue, so a spec can read
+which square the token cropper kept off the stored image (`gen-portrait.go` makes it).
 
 Two rules, both of which have already cost someone an afternoon:
 

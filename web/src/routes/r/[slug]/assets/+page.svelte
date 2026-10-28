@@ -37,6 +37,8 @@
 	import AssetKindTabs from '$lib/components/asset-kind-tabs.svelte';
 	import AssetLibrary from '$lib/components/asset-library.svelte';
 	import GridAligner from '$lib/components/grid-aligner.svelte';
+	import TokenCropper from '$lib/components/token-cropper.svelte';
+	import type { CropSquare } from '$lib/crop-frame';
 
 	const slug = $derived(page.params.slug ?? '');
 
@@ -66,6 +68,10 @@
 		gridSize: number;
 		originX: number;
 		originY: number;
+		/** Token art's chosen square, from the cropper; null for square art. */
+		crop: CropSquare | null;
+		/** Whether the cropper has loaded the picture and decided — see its `ready`. */
+		cropReady: boolean;
 		uploading: boolean;
 	}
 
@@ -152,6 +158,8 @@
 				gridSize: 70,
 				originX: 0,
 				originY: 0,
+				crop: null,
+				cropReady: false,
 				uploading: false
 			};
 			staged.push(item);
@@ -194,7 +202,8 @@
 				kind: item.kind,
 				gridSize: aligned ? item.gridSize : null,
 				gridOffsetX: aligned ? paddingForOrigin(item.gridSize, item.originX) : 0,
-				gridOffsetY: aligned ? paddingForOrigin(item.gridSize, item.originY) : 0
+				gridOffsetY: aligned ? paddingForOrigin(item.gridSize, item.originY) : 0,
+				crop: item.kind === 'token' ? item.crop : null
 			});
 
 			// Front of the list, matching the server's newest-first order
@@ -377,6 +386,17 @@
 								bind:originX={item.originX}
 								bind:originY={item.originY}
 							/>
+						{:else}
+							<!-- Token art's counterpart, and required the same way: a
+							     portrait that isn't square is framed before it's added,
+							     never squeezed into a circle afterwards. Square art shows
+							     nothing here — there's nothing to choose. -->
+							<TokenCropper
+								src={item.url}
+								idPrefix="staged-{item.id}"
+								bind:crop={item.crop}
+								bind:ready={item.cropReady}
+							/>
 						{/if}
 
 						<div class="flex flex-wrap items-center gap-2">
@@ -393,7 +413,12 @@
 							<Button type="button" variant="ghost" size="sm" onclick={() => discard(item)}>
 								Discard
 							</Button>
-							<Button type="button" size="sm" disabled={item.uploading} onclick={() => add(item)}>
+							<Button
+								type="button"
+								size="sm"
+								disabled={item.uploading || (item.kind === 'token' && !item.cropReady)}
+								onclick={() => add(item)}
+							>
 								{item.uploading ? 'Adding…' : 'Add to library'}
 							</Button>
 						</div>

@@ -2,6 +2,7 @@
 // production the Go binary serves both the frontend and the API from
 // the same origin; in dev, vite.config.ts proxies /api to a locally
 // running `go run ./cmd/longtable`.
+import type { CropSquare } from './crop-frame';
 
 export interface Session {
 	roomSlug: string;
@@ -67,6 +68,13 @@ export interface AssetDetails {
 	 */
 	gridOffsetX: number;
 	gridOffsetY: number;
+	/**
+	 * The square to cut token art to, in image pixels — null or absent for
+	 * art that's already square. Baked into the pixels the same way an
+	 * offset is, so the stored art is square and nothing draws it any
+	 * differently for having been cropped.
+	 */
+	crop: CropSquare | null;
 }
 
 /**
@@ -333,6 +341,13 @@ export async function uploadAsset(
 	// the image is passed through untouched.
 	if (details.gridOffsetX) form.append('gridOffsetX', String(details.gridOffsetX));
 	if (details.gridOffsetY) form.append('gridOffsetY', String(details.gridOffsetY));
+	// Token art only, and only when it wasn't already square — the server
+	// refuses a crop on a map.
+	if (details.crop) {
+		form.append('cropX', String(details.crop.x));
+		form.append('cropY', String(details.crop.y));
+		form.append('cropSize', String(details.crop.size));
+	}
 
 	const res = await fetch(`/api/rooms/${encodeURIComponent(slug)}/assets`, {
 		method: 'POST',

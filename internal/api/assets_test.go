@@ -579,3 +579,66 @@ func TestUploadAsset_RecordsTheSourceBehindEveryAsset(t *testing.T) {
 	}
 }
 
+// Token art arrives already framed: the square the uploader chose is the
+// picture that's stored and served, and nothing outside it.
+func TestUploadAsset_CropsTokenArtToTheChosenSquare(t *testing.T) {
+	srv, _ := newTestServer(t)
+	created := createTestRoom(t, srv)
+	portrait := testPNG(t, 60, 120, color.RGBA{R: 200, G: 120, B: 40, A: 255})
+
+	resp := uploadWithFields(t, srv, created.RoomSlug, created.SessionToken, "aria.png", portrait,
+		map[string]string{"kind": "token", "cropX": "10", "cropY": "30", "cropSize": "40"})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status %d, want 201", resp.StatusCode)
+	}
+	var asset assetPayloadT
+	decodeJSONBody(t, resp, &asset)
+
+	cfg, err := webp.DecodeConfig(bytes.NewReader(getAssetBytes(t, srv, asset.ID)))
+	if err != nil {
+		t.Fatalf("served bytes are not webp: %v", err)
+	}
+	if cfg.Width != 40 || cfg.Height != 40 {
+		t.Fatalf("stored %dx%d, want the 40px square that was chosen", cfg.Width, cfg.Height)
+	}
+}
+
+// A crop is for framing token art: on a map, alongside a grid offset, half
+// specified or outside the picture, it's refused rather than guessed at.
+func TestUploadAsset_RefusesACropThatMakesNoSense(t *testing.T) {
+	srv, _ := newTestServer(t)
+	created := createTestRoom(t, srv)
+	portrait := testPNG(t, 60, 120, color.RGBA{R: 40, G: 120, B: 200, A: 255})
+
+	for _, c := range []struct {
+		name   string
+		fields map[string]string
+		want   string
+	}{
+		{"on a map", map[string]string{"kind": "map", "cropX": "0", "cropY": "0", "cropSize": "60"},
+			"only token art can be cropped"},
+		{"with no kind", map[string]string{"cropX": "0", "cropY": "0", "cropSize": "60"},
+			"only token art can be cropped"},
+		{"with an offset", map[string]string{"kind": "token", "cropX": "0", "cropY": "0", "cropSize": "60", "gridOffsetX": "3"},
+			"an upload can be cropped or aligned to the grid, not both"},
+		{"half given", map[string]string{"kind": "token", "cropX": "0", "cropSize": "60"},
+			"a crop needs a corner and a size, in whole pixels"},
+		{"negative", map[string]string{"kind": "token", "cropX": "-1", "cropY": "0", "cropSize": "60"},
+			"a crop needs a corner and a size, in whole pixels"},
+		{"past the edge", map[string]string{"kind": "token", "cropX": "0", "cropY": "70", "cropSize": "60"},
+			"that crop isn't inside the image"},
+	} {
+		resp := uploadWithFields(t, srv, created.RoomSlug, created.SessionToken, "art.png", portrait, c.fields)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("%s: status %d, want 400", c.name, resp.StatusCode)
+			continue
+		}
+		var body struct {
+			Error string `json:"error"`
+		}
+		decodeJSONBody(t, resp, &body)
+		if body.Error != c.want {
+			t.Errorf("%s: %q, want %q", c.name, body.Error, c.want)
+		}
+	}
+}
