@@ -5,8 +5,10 @@
 // sixty that mean something at a D&D table, each with words to search by,
 // since "undead" should find the skull and the ghost even though neither
 // is called that. A Lucide set is thin on monsters — no dragon, spider or
-// snake in this version — which is what the planned game-icons.net pool
-// is for (planning/backlog/game-icons-second-icon-pool.md).
+// snake in this version — so a second pool from game-icons.net follows
+// it: picked in game-icons.picks.json and vendored into
+// game-icons.generated.ts by scripts/vendor-game-icons.mjs. Those are
+// CC BY 3.0, which is why the picker credits them under its grid.
 //
 // `store.TokenIcons` in Go is the same list of keys and validates them,
 // since a key reaches everyone's screen. TestTokenIcons_MatchTheClientList
@@ -14,6 +16,7 @@
 // Keys are namespaced (`lucide:`) so a second pool is more keys, not a
 // migration.
 import type { Component } from 'svelte';
+import { GAME_ICONS } from './game-icons.generated';
 import Axe from '@lucide/svelte/icons/axe';
 import Baby from '@lucide/svelte/icons/baby';
 import Beer from '@lucide/svelte/icons/beer';
@@ -81,10 +84,13 @@ export interface TokenIcon {
 	label: string;
 	/** What else it can be found by. Lower case. */
 	words: string[];
-	icon: Component;
+	/** A Lucide icon's component. */
+	icon?: Component;
+	/** A vendored icon's SVG, drawn in currentColor. */
+	svg?: { viewBox: string; body: string };
 }
 
-export const TOKEN_ICONS: TokenIcon[] = [
+const LUCIDE_ICONS: TokenIcon[] = [
 	{
 		key: 'lucide:sword',
 		label: 'Sword',
@@ -391,6 +397,21 @@ export const TOKEN_ICONS: TokenIcon[] = [
 		icon: Beer
 	}
 ];
+
+export const TOKEN_ICONS: TokenIcon[] = [
+	...LUCIDE_ICONS,
+	...GAME_ICONS.map(({ key, label, words, viewBox, body }) => ({
+		key,
+		label,
+		words,
+		svg: { viewBox, body }
+	}))
+];
+
+/** Whether any icon in a list needs the game-icons.net credit. */
+export function needsGameIconsCredit(icons: TokenIcon[]): boolean {
+	return icons.some((i) => i.key.startsWith('game-icons:'));
+}
 
 /** The icon for a key, or undefined for '' or a key that's been retired. */
 export function tokenIcon(key: string | null | undefined): TokenIcon | undefined {

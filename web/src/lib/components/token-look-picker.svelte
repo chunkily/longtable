@@ -11,7 +11,8 @@
 	import { Label } from '$lib/components/ui/label';
 	import AssetPicker from '$lib/components/asset-picker.svelte';
 	import { IDENTITY_COLORS } from '$lib/identity-color';
-	import { searchTokenIcons } from '$lib/token-icons';
+	import { needsGameIconsCredit, searchTokenIcons } from '$lib/token-icons';
+	import TokenGlyph from '$lib/components/token-glyph.svelte';
 
 	let {
 		imageAssetId = $bindable(null),
@@ -108,10 +109,31 @@
 						title={match.label}
 						onclick={() => (icon = icon === match.key ? '' : match.key)}
 					>
-						<match.icon class="h-4 w-4" />
+						<TokenGlyph icon={match} class="h-4 w-4" />
 					</button>
 				{/each}
 			</div>
+			<!-- CC BY 3.0 asks for credit where the icons are seen, so it sits
+			     under the grid whenever one of theirs is in it. The set has no
+			     per-icon authors to name, so it names the two who drew most of
+			     it, the way game-icons.net's own credit line does. -->
+			{#if needsGameIconsCredit(matches)}
+				<p class="text-xs text-muted-foreground">
+					Some icons by Lorc, Delapouite and others from
+					<a
+						href="https://game-icons.net"
+						target="_blank"
+						rel="noreferrer"
+						class="underline underline-offset-2">game-icons.net</a
+					>,
+					<a
+						href="https://creativecommons.org/licenses/by/3.0/"
+						target="_blank"
+						rel="noreferrer"
+						class="underline underline-offset-2">CC BY 3.0</a
+					>
+				</p>
+			{/if}
 		{/if}
 
 		<fieldset class="flex flex-col gap-1">

@@ -51,7 +51,8 @@ architecture and current state live here instead**, and keeping them true is par
 | `web/src/routes/r/[slug]/+page.svelte` | the room page — join form, then the full-bleed shell: map, floating toolbar, side rail (or bottom sheet) |
 | `web/e2e/fixtures/` | everything the specs are built on, so `e2e/` itself is just the tests: the `table` fixture (a room, a scene, a GM, and teardown that survives a failure), the canvas helpers, the room-chrome helpers (including `createRoom`, which every spec goes through), and the upload images. Its README is the starting point for a new spec |
 | `web/src/routes/r/[slug]/assets/+page.svelte` | the assets page — the only way art enters a room's library, and the only way one leaves: tabbed by token/map, with name, credit, grid alignment, search |
-| `web/src/lib/token-icons.ts`, `token-look.ts`, `token-icon-image.ts` | the icons a token can wear instead of art (mirrored by `store.TokenIcons` in Go, and kept in step by a test), the one answer for a disc's fill and ink everywhere a token is drawn, and turning an icon component into an image the canvas can draw |
+| `web/src/lib/token-icons.ts`, `token-look.ts`, `token-icon-image.ts` | the icons a token can wear instead of art (mirrored by `store.TokenIcons` in Go, and kept in step by a test), the one answer for a disc's fill and ink everywhere a token is drawn, and turning an icon into an image the canvas can draw |
+| `web/src/lib/game-icons.picks.json`, `web/scripts/vendor-game-icons.mjs` | which game-icons.net icons are offered, and the script (`npm run icons`) that copies them out of the `@iconify-json/game-icons` dev dependency into `game-icons.generated.ts` and Go's `token_icon_game_icons.go`. **Edit the picks, never the generated files** — the package holds all four thousand icons, which is why they are copied rather than imported |
 | `web/src/lib/components/token-look-picker.svelte`, `token-avatar.svelte` | the `Look` section (Art or Icon, with colour) shared by New token, the edit dialog and a party member's form; and a token's picture anywhere off the map |
 | `web/src/lib/components/token-cropper.svelte`, `crop-frame.ts` | framing token art before it's uploaded: a square, dragged and zoomed over the picture with everything outside the token's circle dimmed, which the server cuts out during the re-encode (`imageproc.ReencodeCrop`). Natural pixels throughout, for the grid aligner's reason below |
 | `web/src/lib/components/grid-aligner.svelte`, `grid-zoom.ts` | pushing a map's own squares onto the grid before it's uploaded, and the display maths behind the preview's zoom. Everything in the component is in *natural* image pixels and everything on screen goes through `scale` — mixing the two up is the bug it is easiest to introduce, which is why the arithmetic sits in a tested `.ts` the way `pinch.ts` and `pan.ts` do |
@@ -147,7 +148,8 @@ three-way question (`Back`, `Discard changes`, `Save changes`) rather than stack
 dialog. A GM may change all of it on any token while a Player may change the trackers and
 conditions on one they own; art that isn't square is **cropped to the token's circle, never
 stretched** — the centred region, by `web/src/lib/cover-crop.ts`; and a token **without art can
-wear an icon** — one of sixty from Lucide, searched by what it's for ("undead", "wolf") — on a disc
+wear an icon** — sixty from Lucide plus monsters from game-icons.net, searched by what they're
+for ("undead", "wolf"), with the CC BY credit under the grid whenever one of the latter shows — on a disc
 in one of the sixteen seat colours or the one its id picks, chosen under `Look` by whoever makes
 it and changed afterwards by a GM. Every disc token has a two-tone ring for the bold grid's
 reason, and its icon or initials in the ink stored with its colour),

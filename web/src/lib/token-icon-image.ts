@@ -4,6 +4,7 @@
 // the Lucide package exposes its icons only as components — the path data
 // is private to each. So the component is mounted once into a detached
 // element, its SVG read back as text, and that text loaded as an image.
+// A vendored game-icons.net icon is already SVG text and skips the mount.
 // Cached per icon and ink: a room of goblins draws the skull once.
 import { mount, unmount } from 'svelte';
 import { tokenIcon } from './token-icons';
@@ -18,6 +19,15 @@ const ICON_PIXELS = 128;
 export function iconSvg(key: string, ink: string): string | null {
 	const icon = tokenIcon(key);
 	if (!icon) return null;
+	if (icon.svg) {
+		// Filled in currentColor, which is substituted outright rather than
+		// left to a `color` attribute: whether an image decoder resolves
+		// currentColor from one isn't something to find out on a player's
+		// tablet. The ink is always one of token-look's hexes.
+		const body = icon.svg.body.replaceAll('currentColor', ink);
+		return `<svg xmlns="http://www.w3.org/2000/svg" width="${ICON_PIXELS}" height="${ICON_PIXELS}" viewBox="${icon.svg.viewBox}">${body}</svg>`;
+	}
+	if (!icon.icon) return null;
 	const host = document.createElement('div');
 	const instance = mount(icon.icon, {
 		target: host,

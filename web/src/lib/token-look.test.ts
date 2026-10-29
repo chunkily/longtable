@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { IDENTITY_COLORS } from './identity-color';
 import { INK, betterInk, discLook, hexRgb, idHue, initials } from './token-look';
-import { TOKEN_ICONS, searchTokenIcons, tokenIcon } from './token-icons';
+import { GAME_ICONS } from './game-icons.generated';
+import { TOKEN_ICONS, needsGameIconsCredit, searchTokenIcons, tokenIcon } from './token-icons';
 
 describe('the palette inks', () => {
 	// Stored rather than computed, so a retuned shade is a decision about
@@ -50,7 +51,19 @@ describe('token icons', () => {
 	it('has no duplicate keys, and every key is namespaced', () => {
 		const keys = TOKEN_ICONS.map((i) => i.key);
 		expect(new Set(keys).size).toBe(keys.length);
-		expect(keys.every((k) => k.startsWith('lucide:'))).toBe(true);
+		expect(keys.every((k) => /^(lucide|game-icons):/.test(k))).toBe(true);
+	});
+
+	// Each pool draws its own way — a component or vendored SVG text — and
+	// an icon with neither would be a blank square in the picker.
+	it('gives every icon exactly one drawing', () => {
+		for (const i of TOKEN_ICONS) expect(!!i.icon !== !!i.svg, i.key).toBe(true);
+	});
+
+	it('credits game-icons.net only when one of its icons is in the list', () => {
+		const lucide = TOKEN_ICONS.filter((i) => i.key.startsWith('lucide:'));
+		expect(needsGameIconsCredit(lucide)).toBe(false);
+		expect(needsGameIconsCredit(TOKEN_ICONS)).toBe(GAME_ICONS.length > 0);
 	});
 
 	it('looks a key up, and gives nothing for none or a retired one', () => {

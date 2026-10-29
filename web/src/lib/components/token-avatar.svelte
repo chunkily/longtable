@@ -10,6 +10,7 @@
 	import { assetUrl } from '$lib/api';
 	import { discLook, initials } from '$lib/token-look';
 	import { tokenIcon } from '$lib/token-icons';
+	import TokenGlyph from '$lib/components/token-glyph.svelte';
 
 	let {
 		id,
@@ -46,7 +47,7 @@
 		aria-hidden="true"
 	>
 		{#if glyph}
-			<glyph.icon class="h-3/5 w-3/5" />
+			<TokenGlyph icon={glyph} class="h-3/5 w-3/5" />
 		{:else}
 			<span class="text-[10px] leading-none font-bold">{initials(name)}</span>
 		{/if}

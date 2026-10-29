@@ -13,13 +13,17 @@ import "slices"
 // client-side edit.
 //
 // **Namespaced by source** (`lucide:sword`). Lucide came first because it
-// was already a dependency; game-icons.net is the planned second pool
-// (planning/backlog/game-icons-second-icon-pool.md), and a prefix is what
-// lets it arrive as more keys rather than a migration.
+// was already a dependency; game-icons.net is the second pool, for the
+// monsters Lucide doesn't have, and the prefix is what let it arrive as
+// more keys rather than a migration. Its keys are generated
+// (token_icon_game_icons.go) from the picks the client's list is generated
+// from too — see web/scripts/vendor-game-icons.mjs.
 //
 // A key retired from this list doesn't break the tokens wearing it: they
 // draw as having no icon — their initials — until someone picks again.
-var TokenIcons = []string{
+var TokenIcons = slices.Concat(lucideIcons, gameIconKeys)
+
+var lucideIcons = []string{
 	"lucide:sword", "lucide:swords", "lucide:shield", "lucide:bow-arrow",
 	"lucide:axe", "lucide:hammer", "lucide:pickaxe", "lucide:wand-sparkles",
 	"lucide:flask-conical", "lucide:scroll-text", "lucide:book-open", "lucide:crown",

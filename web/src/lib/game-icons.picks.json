@@ -1,0 +1,432 @@
+[
+	{
+		"name": "dragon-head",
+		"label": "Dragon",
+		"words": ["wyrm", "drake", "monster"]
+	},
+	{
+		"name": "sea-dragon",
+		"label": "Sea dragon",
+		"words": ["dragon turtle", "serpent", "aquatic", "monster"]
+	},
+	{
+		"name": "wyvern",
+		"label": "Wyvern",
+		"words": ["dragon", "drake", "flying", "monster"]
+	},
+	{
+		"name": "hydra",
+		"label": "Hydra",
+		"words": ["many-headed", "serpent", "monster"]
+	},
+	{
+		"name": "giant",
+		"label": "Giant",
+		"words": ["hill giant", "stone giant", "frost giant", "fire giant", "monster"]
+	},
+	{
+		"name": "cyclops",
+		"label": "Cyclops",
+		"words": ["giant", "one-eyed", "monster"]
+	},
+	{
+		"name": "ogre",
+		"label": "Ogre",
+		"words": ["giant", "brute", "monster"]
+	},
+	{
+		"name": "troll",
+		"label": "Troll",
+		"words": ["giant", "regenerate", "monster"]
+	},
+	{
+		"name": "goblin-head",
+		"label": "Goblin",
+		"words": ["goblinoid", "hobgoblin", "bugbear", "monster"]
+	},
+	{
+		"name": "orc-head",
+		"label": "Orc",
+		"words": ["half-orc", "brute", "monster"]
+	},
+	{
+		"name": "bad-gnome",
+		"label": "Gnome",
+		"words": ["svirfneblin", "trickster", "npc"]
+	},
+	{
+		"name": "lizardman",
+		"label": "Lizardfolk",
+		"words": ["kobold", "reptile", "monster"]
+	},
+	{
+		"name": "troglodyte",
+		"label": "Troglodyte",
+		"words": ["caveman", "primitive", "monster"]
+	},
+	{
+		"name": "minotaur",
+		"label": "Minotaur",
+		"words": ["bull", "labyrinth", "monster"]
+	},
+	{
+		"name": "centaur",
+		"label": "Centaur",
+		"words": ["horse", "fey", "monster"]
+	},
+	{
+		"name": "harpy",
+		"label": "Harpy",
+		"words": ["bird", "flying", "monster"]
+	},
+	{
+		"name": "mermaid",
+		"label": "Merfolk",
+		"words": ["mermaid", "merrow", "aquatic", "sea"]
+	},
+	{
+		"name": "medusa-head",
+		"label": "Medusa",
+		"words": ["gorgon", "snake", "petrify", "monster"]
+	},
+	{
+		"name": "skeleton",
+		"label": "Skeleton",
+		"words": ["undead", "bones", "monster"]
+	},
+	{
+		"name": "shambling-zombie",
+		"label": "Zombie",
+		"words": ["undead", "ghoul", "ghast", "monster"]
+	},
+	{
+		"name": "mummy-head",
+		"label": "Mummy",
+		"words": ["undead", "tomb", "monster"]
+	},
+	{
+		"name": "vampire-dracula",
+		"label": "Vampire",
+		"words": ["undead", "spawn", "monster"]
+	},
+	{
+		"name": "crowned-skull",
+		"label": "Lich",
+		"words": ["undead", "demilich", "necromancer", "boss"]
+	},
+	{
+		"name": "spectre",
+		"label": "Wraith",
+		"words": ["undead", "spectre", "shadow", "ghost"]
+	},
+	{
+		"name": "imp",
+		"label": "Imp",
+		"words": ["fiend", "devil", "quasit", "familiar"]
+	},
+	{
+		"name": "devil-mask",
+		"label": "Devil",
+		"words": ["fiend", "infernal", "tiefling"]
+	},
+	{
+		"name": "daemon-skull",
+		"label": "Demon",
+		"words": ["fiend", "abyssal", "boss"]
+	},
+	{
+		"name": "fairy",
+		"label": "Fairy",
+		"words": ["fey", "sprite", "pixie"]
+	},
+	{
+		"name": "evil-eyes",
+		"label": "Beholder",
+		"words": ["eyes", "aberration", "eye tyrant", "spectator"]
+	},
+	{
+		"name": "beast-eye",
+		"label": "Eye monster",
+		"words": ["aberration", "gazer", "watcher"]
+	},
+	{
+		"name": "kraken-tentacle",
+		"label": "Kraken",
+		"words": ["tentacle", "aberration", "sea", "boss"]
+	},
+	{
+		"name": "octopus",
+		"label": "Octopus",
+		"words": ["tentacle", "aquatic", "beast"]
+	},
+	{
+		"name": "giant-squid",
+		"label": "Giant squid",
+		"words": ["tentacle", "aquatic", "beast"]
+	},
+	{
+		"name": "slime",
+		"label": "Ooze",
+		"words": ["slime", "pudding", "jelly"]
+	},
+	{
+		"name": "transparent-slime",
+		"label": "Gelatinous cube",
+		"words": ["ooze", "cube", "slime"]
+	},
+	{
+		"name": "jellyfish",
+		"label": "Jellyfish",
+		"words": ["aquatic", "sting", "beast"]
+	},
+	{
+		"name": "mimic-chest",
+		"label": "Mimic",
+		"words": ["chest", "shapechanger", "monster"]
+	},
+	{
+		"name": "golem-head",
+		"label": "Golem",
+		"words": ["construct", "flesh golem", "clay golem"]
+	},
+	{
+		"name": "rock-golem",
+		"label": "Stone golem",
+		"words": ["construct", "earth", "elemental"]
+	},
+	{
+		"name": "ice-golem",
+		"label": "Ice golem",
+		"words": ["construct", "frost", "cold"]
+	},
+	{
+		"name": "gargoyle",
+		"label": "Gargoyle",
+		"words": ["statue", "construct", "stone"]
+	},
+	{
+		"name": "tree-face",
+		"label": "Treant",
+		"words": ["tree", "forest", "plant", "druid"]
+	},
+	{
+		"name": "evil-tree",
+		"label": "Blighted tree",
+		"words": ["blight", "plant", "forest", "haunted"]
+	},
+	{
+		"name": "carnivorous-plant",
+		"label": "Carnivorous plant",
+		"words": ["plant", "shambling mound", "vine"]
+	},
+	{
+		"name": "griffin-symbol",
+		"label": "Griffon",
+		"words": ["griffin", "hippogriff", "flying", "mount"]
+	},
+	{
+		"name": "unicorn",
+		"label": "Unicorn",
+		"words": ["fey", "horse", "celestial"]
+	},
+	{
+		"name": "pegasus",
+		"label": "Pegasus",
+		"words": ["horse", "flying", "celestial", "mount"]
+	},
+	{
+		"name": "egyptian-sphinx",
+		"label": "Sphinx",
+		"words": ["riddle", "guardian", "monster"]
+	},
+	{
+		"name": "werewolf",
+		"label": "Werewolf",
+		"words": ["lycanthrope", "wolf", "shapechanger"]
+	},
+	{
+		"name": "direwolf",
+		"label": "Dire wolf",
+		"words": ["wolf", "winter wolf", "worg", "beast"]
+	},
+	{
+		"name": "wolf-head",
+		"label": "Wolf",
+		"words": ["hound", "beast", "animal"]
+	},
+	{
+		"name": "bear-head",
+		"label": "Bear",
+		"words": ["owlbear", "beast", "animal"]
+	},
+	{
+		"name": "boar",
+		"label": "Boar",
+		"words": ["pig", "beast", "animal"]
+	},
+	{
+		"name": "horse-head",
+		"label": "Horse",
+		"words": ["mount", "steed", "pony", "animal"]
+	},
+	{
+		"name": "eagle-head",
+		"label": "Eagle",
+		"words": ["hawk", "bird", "beast"]
+	},
+	{
+		"name": "barn-owl",
+		"label": "Owl",
+		"words": ["owlbear", "bird", "familiar"]
+	},
+	{
+		"name": "raven",
+		"label": "Raven",
+		"words": ["crow", "bird", "familiar"]
+	},
+	{
+		"name": "vulture",
+		"label": "Vulture",
+		"words": ["bird", "scavenger", "beast"]
+	},
+	{
+		"name": "bat",
+		"label": "Bat",
+		"words": ["swarm", "beast", "familiar"]
+	},
+	{
+		"name": "shark-jaws",
+		"label": "Shark",
+		"words": ["aquatic", "beast"]
+	},
+	{
+		"name": "croc-jaws",
+		"label": "Crocodile",
+		"words": ["alligator", "swamp", "beast"]
+	},
+	{
+		"name": "snake",
+		"label": "Snake",
+		"words": ["serpent", "viper", "naga", "beast"]
+	},
+	{
+		"name": "scorpion",
+		"label": "Scorpion",
+		"words": ["vermin", "desert", "beast"]
+	},
+	{
+		"name": "spider-face",
+		"label": "Giant spider",
+		"words": ["spider", "drider", "phase spider", "vermin"]
+	},
+	{
+		"name": "frog",
+		"label": "Frog",
+		"words": ["toad", "bullywug", "swamp"]
+	},
+	{
+		"name": "dinosaur-rex",
+		"label": "Dinosaur",
+		"words": ["tyrannosaurus", "dino", "beast"]
+	},
+	{
+		"name": "barbarian",
+		"label": "Barbarian",
+		"words": ["berserker", "warrior", "fighter"]
+	},
+	{
+		"name": "archer",
+		"label": "Archer",
+		"words": ["ranger", "scout", "bow"]
+	},
+	{
+		"name": "rogue",
+		"label": "Rogue",
+		"words": ["thief", "scout", "spy"]
+	},
+	{
+		"name": "monk-face",
+		"label": "Monk",
+		"words": ["acolyte", "priest", "martial"]
+	},
+	{
+		"name": "wizard-face",
+		"label": "Wizard",
+		"words": ["mage", "sorcerer", "archmage"]
+	},
+	{
+		"name": "witch-face",
+		"label": "Witch",
+		"words": ["hag", "warlock", "crone"]
+	},
+	{
+		"name": "hooded-assassin",
+		"label": "Assassin",
+		"words": ["rogue", "killer", "spy"]
+	},
+	{
+		"name": "cultist",
+		"label": "Cultist",
+		"words": ["cult", "fanatic", "priest"]
+	},
+	{
+		"name": "bandit",
+		"label": "Bandit",
+		"words": ["thug", "brigand", "outlaw"]
+	},
+	{
+		"name": "pirate-captain",
+		"label": "Pirate",
+		"words": ["captain", "sailor", "buccaneer"]
+	},
+	{
+		"name": "queen-crown",
+		"label": "Royalty",
+		"words": ["queen", "king", "noble", "ruler"]
+	},
+	{
+		"name": "guards",
+		"label": "Guards",
+		"words": ["guard", "soldier", "watch", "town"]
+	},
+	{
+		"name": "mounted-knight",
+		"label": "Knight",
+		"words": ["cavalry", "paladin", "rider"]
+	},
+	{
+		"name": "dwarf-face",
+		"label": "Dwarf",
+		"words": ["duergar", "npc"]
+	},
+	{
+		"name": "woman-elf-face",
+		"label": "Elf",
+		"words": ["drow", "half-elf", "npc"]
+	},
+	{
+		"name": "locked-chest",
+		"label": "Chest",
+		"words": ["locked", "container", "loot"]
+	},
+	{
+		"name": "open-treasure-chest",
+		"label": "Treasure",
+		"words": ["hoard", "gold", "loot"]
+	},
+	{
+		"name": "campfire",
+		"label": "Campfire",
+		"words": ["camp", "rest", "fire"]
+	},
+	{
+		"name": "tombstone",
+		"label": "Grave",
+		"words": ["tombstone", "graveyard", "crypt"]
+	},
+	{
+		"name": "overlord-helm",
+		"label": "Overlord",
+		"words": ["evil", "boss", "overlord", "knight", "armor"]
+	}
+]
