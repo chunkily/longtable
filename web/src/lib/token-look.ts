@@ -28,25 +28,26 @@ export interface DiscLook {
 }
 
 /**
- * A token's disc: its chosen colour if it has one, otherwise the colour
- * its id hashes to — the same one it has always had, so tokens from before
- * colours could be chosen don't change.
+ * A token's disc: its chosen colour if it has one, otherwise the palette
+ * colour its id hashes to.
+ *
+ * The fallback used to be a hue anywhere on the wheel, so a token left on
+ * `Any` came out in a colour none of the sixteen swatches showed — and
+ * one nobody could pick to match it. It is a palette colour now, with that
+ * colour's stored ink. Tokens from before that changed colour once
+ * (2026-10-29); a deliberate break while there was one table to break.
  */
 export function discLook(token: { id: string; color?: string | null }): DiscLook {
 	const chosen = token.color ? IDENTITY_COLORS.find((c) => c.key === token.color) : undefined;
-	if (chosen) return { fill: chosen.hex, ink: INK[chosen.ink] };
-	const [r, g, b] = hslToRgb(idHue(token.id), 0.65, 0.55);
-	return {
-		fill: `rgb(${r}, ${g}, ${b})`,
-		ink: INK[betterInk([r, g, b])]
-	};
+	const c = chosen ?? IDENTITY_COLORS[idHash(token.id) % IDENTITY_COLORS.length];
+	return { fill: c.hex, ink: INK[c.ink] };
 }
 
-/** The id's hue, 0-359 — what `colorFor` in the canvas always computed. */
-export function idHue(id: string): number {
+/** A stable hash of an id — what picks an unchosen token's colour. */
+export function idHash(id: string): number {
 	let hash = 0;
 	for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
-	return hash % 360;
+	return hash;
 }
 
 /** The first two letters of a name, as a disc without an icon shows them. */
@@ -78,11 +79,4 @@ function luminance([r, g, b]: [number, number, number]): number {
 function contrast(a: number, b: number): number {
 	const [hi, lo] = a > b ? [a, b] : [b, a];
 	return (hi + 0.05) / (lo + 0.05);
-}
-
-function hslToRgb(h: number, s: number, l: number): [number, number, number] {
-	const k = (n: number) => (n + h / 30) % 12;
-	const a = s * Math.min(l, 1 - l);
-	const f = (n: number) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
-	return [Math.round(f(0) * 255), Math.round(f(8) * 255), Math.round(f(4) * 255)];
 }

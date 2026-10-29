@@ -366,7 +366,7 @@ Player's new token belongs to, and — when the room is locked — `token.move`.
 
 `token.create` and `token.update` carry `icon` (a `store.TokenIcons` key, namespaced by pool:
 `lucide:sword`, `game-icons:dragon-head`) and `color` (an `IdentityColors` key) — `''` for none, which for colour means the
-one the token's id hashes to. Both are on every token payload. Validated by
+palette colour the token's id hashes to (client-side, in `discLook`). Both are on every token payload. Validated by
 `requireIconAndColor` on every command that sets them, since both are drawn on everyone's screen:
 `unknown token icon` / `unknown token colour`. Permissions are art's: anyone sets them on a token
 they create; on `token.update` they're GM fields, ignored from a Player. Party members carry the

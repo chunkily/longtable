@@ -106,3 +106,8 @@ Things worth not rediscovering:
   alike. The first version used `sr-only`, and Playwright couldn't check them.
 - `token-icons.spec.ts` round-trips a choice through the server into the edit dialog, and checks a
   Player can choose one.
+
+**Correction (2026-10-29):** "an unpicked colour stays the hash colour" still holds, but the hash
+now lands on one of the sixteen palette colours rather than anywhere on the hue wheel, since a
+token left on `Any` came out in a colour nobody could pick to match. Every old token changed colour
+once. `discLook` in `web/src/lib/token-look.ts` has the detail.

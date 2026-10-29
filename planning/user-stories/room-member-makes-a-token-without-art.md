@@ -16,9 +16,16 @@ So that I can put something recognisable on the map without having prepared any 
 - [ ] The icon is always readable on whatever colour I picked
 - [ ] An icon token stands out from the map whatever the map art looks like
 - [ ] The token looks the same on the map, in the initiative tracker and in its details
-- [ ] Tokens I made before this keep the colour they had
+- [ ] A token I leave on `Any` still gets one of the colours I could have picked
 
 ## Notes
+
+The last criterion was rewritten a second time on 2026-10-29. It read "Tokens I made before this
+keep the colour they had", which held while `Any` meant the hue the token's id hashed to anywhere
+on the wheel. That turned out to be the problem: an unchosen token came out in a colour none of the
+sixteen swatches showed. `Any` now hashes the id into the palette instead, which recoloured every
+old token once — accepted knowingly, with one table in existence to break. The paragraph below is
+the first rewrite, kept for its reasoning.
 
 The last criterion first read "look exactly as they did", and was rewritten when this shipped
 (2026-10-28) because two deliberate changes made it untrue. A token without art now has the

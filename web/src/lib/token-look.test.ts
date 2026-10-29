@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { IDENTITY_COLORS } from './identity-color';
-import { INK, betterInk, discLook, hexRgb, idHue, initials } from './token-look';
+import { INK, betterInk, discLook, hexRgb, initials } from './token-look';
 import { GAME_ICONS } from './game-icons.generated';
 import { TOKEN_ICONS, needsGameIconsCredit, searchTokenIcons, tokenIcon } from './token-icons';
 
@@ -18,27 +18,32 @@ describe('discLook', () => {
 		expect(discLook({ id: 't1', color: 'indigo' })).toEqual({ fill: '#4f46e5', ink: INK.light });
 	});
 
-	// A token from before colours, or one nobody picked for, keeps the
-	// colour its id has always hashed to — nothing on the map changes.
-	it('falls back to the colour the id picks', () => {
+	// `Any` is a swatch someone could have picked: one of the sixteen, with
+	// that colour's own ink, and the same one every time for the same token.
+	it('falls back to the palette colour the id picks', () => {
 		const look = discLook({ id: 'goblin-1' });
 		expect(look).toEqual(discLook({ id: 'goblin-1', color: '' }));
-		expect(look.fill).toMatch(/^rgb\(/);
+		const swatch = IDENTITY_COLORS.find((c) => c.hex === look.fill);
+		expect(swatch).toBeDefined();
+		expect(look.ink).toBe(INK[swatch!.ink]);
 		// A key nobody knows draws like no key at all, rather than as nothing.
 		expect(discLook({ id: 'goblin-1', color: 'chartreuse' })).toEqual(look);
 	});
 
-	// The old disc was always white ink, which disappeared on the yellow
-	// half of the wheel; an id that hashes to yellow now gets dark ink.
-	it('picks dark ink for a light hashed colour', () => {
-		const yellowish = Array.from({ length: 200 }, (_, n) => `id-${n}`).find((id) => {
-			const h = idHue(id);
-			return h > 45 && h < 75;
-		});
-		expect(yellowish).toBeDefined();
-		expect(discLook({ id: yellowish! }).ink).toBe(INK.dark);
+	// A batch of unchosen tokens shouldn't all come out one colour.
+	it('spreads unchosen tokens across the palette', () => {
+		const fills = new Set(
+			Array.from({ length: 64 }, (_, n) => discLook({ id: randomLikeId(n) }).fill)
+		);
+		expect(fills.size).toBeGreaterThan(8);
 	});
 });
+
+/** A UUID-shaped id, varied the way real token ids are. */
+function randomLikeId(n: number): string {
+	const hex = (n * 2654435761).toString(16).padStart(8, '0').slice(-8);
+	return `${hex}-${hex.slice(0, 4)}-4${hex.slice(1, 4)}-8${hex.slice(4, 7)}-${hex}${hex.slice(0, 4)}`;
+}
 
 describe('initials', () => {
 	it('is the first two letters, upper case', () => {

@@ -150,7 +150,7 @@ conditions on one they own; art that isn't square is **cropped to the token's ci
 stretched** — the centred region, by `web/src/lib/cover-crop.ts`; and a token **without art can
 wear an icon** — sixty from Lucide plus monsters from game-icons.net, searched by what they're
 for ("undead", "wolf"), with the CC BY credit under the grid whenever one of the latter shows — on a disc
-in one of the sixteen seat colours or the one its id picks, chosen under `Look` by whoever makes
+in one of the sixteen seat colours — picked, or left on `Any` for the one its id hashes to — chosen under `Look` by whoever makes
 it and changed afterwards by a GM. Every disc token has a two-tone ring for the bold grid's
 reason, and its icon or initials in the ink stored with its colour),
 **the party** — the GM's to define, in a Party dialog behind an icon past the toolbar's divider
