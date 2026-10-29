@@ -25,3 +25,8 @@ So that I can moderate content without building a full administration interface
 Added 2026-10-06, with token cropping planned ([frame-token-art-at-upload](../backlog/frame-token-art-at-upload.md)):
 once one file can become several stored assets, a flat list fills with near-duplicates. Grouping
 needs [record-upload-source-hash](../backlog/record-upload-source-hash.md).
+
+Noted 2026-10-29: the criterion ruling out a web admin UI predates the admin surface
+([ADR-0009](../decisions/0009-admin-ui-and-database-config.md)), and
+[admin-rooms-and-assets-pages](../backlog/admin-rooms-and-assets-pages.md) plans to do this there.
+Rewrite it when that ships rather than before.
