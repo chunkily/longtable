@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures/table';
-import { openRoomMenu } from './fixtures/room';
+import { HASH_TIMEOUT, openRoomMenu } from './fixtures/room';
 
 // A GM's own join password, separate from the GM password: it gates
 // joining as a Player rather than the GM seat, and is optional — a link
@@ -137,7 +137,7 @@ test('a join password set at room creation gates joining from the start', async 
 	await page.getByRole('button', { name: 'Yes', exact: true }).click();
 	await page.getByLabel('Join password').fill('tablesecret');
 	await page.getByRole('button', { name: 'Create room' }).click();
-	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
+	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/, { timeout: HASH_TIMEOUT });
 	const slug = new URL(page.url()).pathname.split('/').pop()!;
 
 	const context = await browser.newContext();
@@ -148,6 +148,10 @@ test('a join password set at room creation gates joining from the start', async 
 	await expect(playerPage.getByLabel('Room password')).toBeVisible();
 	await playerPage.getByLabel('Room password').fill('tablesecret');
 	await playerPage.getByRole('button', { name: 'Continue' }).click();
+	// The room password is checked against its hash before the seats come.
+	await expect(playerPage.getByRole('button', { name: "I'm new here" })).toBeVisible({
+		timeout: HASH_TIMEOUT
+	});
 	await playerPage.getByRole('button', { name: "I'm new here" }).click();
 	await playerPage.getByLabel('Your name').fill('Bob');
 	await playerPage.getByRole('button', { name: 'Join', exact: true }).click();
@@ -169,5 +173,5 @@ test('leaving the create-room toggle on "No" creates a room nobody needs a passw
 	await page.getByLabel('GM password').fill('hunter2');
 	await expect(page.getByLabel('Join password')).toHaveCount(0);
 	await page.getByRole('button', { name: 'Create room' }).click();
-	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
+	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/, { timeout: HASH_TIMEOUT });
 });

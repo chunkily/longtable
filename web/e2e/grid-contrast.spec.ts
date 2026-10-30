@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { createRoom, createScene } from './fixtures/room';
+import { HASH_TIMEOUT, createRoom, createScene } from './fixtures/room';
 import { LAYER } from './fixtures/map';
 
 // The bold grid: a viewing preference, so everything here is about one
@@ -69,7 +69,8 @@ test('the bold grid is thicker, stays on across a reload, and is this browser al
 	await otherPage.getByRole('button', { name: 'Join', exact: true }).click();
 	await expect(otherPage.getByRole('button', { name: 'Bold grid' })).toHaveAttribute(
 		'aria-pressed',
-		'false'
+		'false',
+		{ timeout: HASH_TIMEOUT }
 	);
 	expect(await gridInk(otherPage)).toBe(faint);
 

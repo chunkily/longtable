@@ -214,6 +214,27 @@ test('the alignment preview zooms, and the grid keeps describing the art at ever
 			};
 		});
 
+	// The image has to have decoded before any of that means anything:
+	// until it has, naturalWidth is 0, the expected size divides by it, and
+	// the overlay is still at its unscaled default. Waiting on the Fit
+	// button alone let a loaded run measure that state (2026-10-30, and
+	// this is the spec e2e-flakes.md first named).
+	await expect
+		.poll(() =>
+			page.evaluate(
+				() =>
+					document.querySelector<HTMLImageElement>('img[alt="The map being aligned"]')
+						?.naturalWidth ?? 0
+			)
+		)
+		.toBeGreaterThan(0);
+	// And the overlay follows the image's size a frame or so later.
+	await expect
+		.poll(async () => {
+			const m = await measured();
+			return Math.abs(m.drawn - m.expected);
+		})
+		.toBeLessThan(0.05);
 	const fit = await measured();
 	expect(fit.drawn).toBeCloseTo(fit.expected, 1);
 

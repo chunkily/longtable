@@ -28,6 +28,25 @@ import { expect, type Page } from '@playwright/test';
  * why the fills below it can't be reconciled back to empty the way they
  * could when the form was on the page from the start.
  */
+/**
+ * How long a step that waits on a password hash may take: creating a room
+ * (the GM password is hashed) and signing in as the GM (it's checked).
+ *
+ * bcrypt is the one CPU-heavy thing the server does, and it's slowest
+ * exactly when the suite is busiest. Measured across two full runs
+ * (2026-10-30, five workers on ten cores): room creation's median was
+ * about 200ms and its 95th percentile about 1.5s, but the slowest were
+ * 3.5s and 3.9s, nearly all of it the hash waiting for a core — against
+ * the 5s default `expect` timeout this used to wait with. Runs that
+ * crossed it were the suite's long-standing "flaky createRoom" failures,
+ * which reused room names were once suspected of and weren't. The
+ * database wait was under 5ms throughout.
+ *
+ * Longer here rather than a cheaper hash in the test build, so the suite
+ * keeps exercising the cost that ships.
+ */
+export const HASH_TIMEOUT = 20_000;
+
 export async function createRoom(
 	page: Page,
 	roomName: string,
@@ -50,7 +69,7 @@ export async function createRoom(
 	await page.getByLabel('Your name').fill(gmName);
 	await page.getByLabel('GM password').fill(password);
 	await page.getByRole('button', { name: 'Create room' }).click();
-	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/);
+	await expect(page).toHaveURL(/\/r\/[a-z0-9]+/, { timeout: HASH_TIMEOUT });
 
 	return new URL(page.url()).pathname.split('/').pop()!;
 }
@@ -107,7 +126,9 @@ export async function joinAsGM(page: Page, name: string, password: string) {
 	await page.getByLabel('Your name').fill(name);
 	await page.getByLabel('GM password').fill(password);
 	await page.getByRole('button', { name: 'Join', exact: true }).click();
-	await expect(page.getByRole('button', { name: 'Join', exact: true })).toBeHidden();
+	await expect(page.getByRole('button', { name: 'Join', exact: true })).toBeHidden({
+		timeout: HASH_TIMEOUT
+	});
 }
 
 /**

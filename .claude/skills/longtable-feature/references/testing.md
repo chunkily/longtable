@@ -130,7 +130,7 @@ modules, the first two newer than most of the specs:
   doing, but as its own change with the whole suite run behind it, not as a rider on a feature.
 
   **When a raw-coordinate gesture behaves as though it never reached the canvas, read the page
-  snapshot in `test-results/<test>/error-context.md` before theorising.** It renders what was
+  snapshot in `test-results/<run>/<test>/error-context.md` before theorising.** It renders what was
   actually on screen, and would have answered that one in one round instead of three.
 - **`e2e/fixtures/map.ts`** — everything about the canvas: `LAYER`, `layerInk`, `inkAt`/`tokenInkAt`,
   `canvasBox`, `spawnCentre`, `dragToken`, `settleAt`, `watchInkAt`, `watchInkBetween`, `createToken`, `selectToken`,
@@ -191,7 +191,10 @@ twenty files.
   **Never spell this out in a spec.** Two of the steps are waits with reasons: `networkidle` before
   the click, because a click landing before hydration does nothing and leaves you waiting on a form
   that never opened, and the form's own appearance afterwards, which is what proves hydration
-  finished before anything gets filled in.
+  finished before anything gets filled in. The wait for the room page after submitting — and
+  `joinAsGM`'s wait after signing in — use `HASH_TIMEOUT` (20s) rather than the 5s default: both
+  wait on bcrypt, which under a full run's CPU load has been measured at nearly 4s. See
+  `planning/backlog/room-creation-waits-on-the-hash.md`.
 - `joinAsNewPlayer(page, name)` / `takeSeat(page, seatName)` / `joinAsGM(page, name, password)` /
   `openSeatPicker(page)` — the pre-join screen asks which side of the screen you're on before it
   asks anything else, so getting into a room is never one `fill` and one click any more. Filling
@@ -247,11 +250,17 @@ Two things that quietly make a pixel assertion measure nothing:
   sized to the stroke width that tracks the pointer whether or not a stroke is in progress.
 - **A failing run leaves a trace behind**, which is the fastest way into anything that only fails
   under a loaded suite. `trace: 'retain-on-failure'` in `playwright.config.ts` records every test
-  and keeps the recording only for the ones that fail:
+  and keeps the recording only for the ones that fail. **Each run gets its own folder**, named for
+  when it started — `test-results/<run>/` and an HTML report in `playwright-report/<run>/` — so a
+  flake's evidence survives the next run rather than being wiped by it. The report is the way in:
+  each failure with its screenshot and a link to its trace.
 
   ```bash
-  npx playwright show-trace web/test-results/<test-dir>/trace.zip
+  npx playwright show-report web/playwright-report/<run>
+  npx playwright show-trace web/test-results/<run>/<test-dir>/trace.zip
   ```
+
+  Nothing deletes old runs; clear the two folders by hand now and then.
 
   It plays back per-action screenshots with the DOM, network and console at each step — which for
   a canvas assertion is the only thing that answers "had it painted yet?". `retain-on-failure`

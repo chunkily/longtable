@@ -1,5 +1,5 @@
 import { expect, test } from './fixtures/table';
-import { openRoomMenu } from './fixtures/room';
+import { HASH_TIMEOUT, openRoomMenu } from './fixtures/room';
 
 // Rotating the room's own GM password from inside the room, which is
 // what a GM used to have to ask their Host to do at the command line.
@@ -60,11 +60,11 @@ test('a GM changes the room password, and the next GM login needs the new one', 
 	await page.getByLabel('Your name').fill('Alice');
 	await page.getByLabel('GM password').fill(OLD);
 	await page.getByRole('button', { name: 'Join', exact: true }).click();
-	await expect(page.getByText('incorrect password')).toBeVisible();
+	await expect(page.getByText('incorrect password')).toBeVisible({ timeout: HASH_TIMEOUT });
 
 	// And the new one lets the same person back into the same seat.
 	await page.getByLabel('GM password').fill(NEW);
 	await page.getByRole('button', { name: 'Join', exact: true }).click();
-	await expect(page.locator('canvas').first()).toBeVisible();
+	await expect(page.locator('canvas').first()).toBeVisible({ timeout: HASH_TIMEOUT });
 	await expect(page.getByText('playing as')).toContainText('Alice');
 });
