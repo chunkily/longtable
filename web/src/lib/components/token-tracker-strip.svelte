@@ -53,7 +53,7 @@
      token gets the identical box its owner does, just with `readonly`
      set, rather than a second, smaller rendering kept in step with the
      first by hand. -->
-<div class="mt-1.5 grid grid-cols-3 gap-1.5">
+<div class="mt-1 grid grid-cols-3 gap-1.5">
 	{#each trackers as tracker, i (i)}
 		<FloatingNumberInput
 			value={tracker.value}
@@ -65,8 +65,15 @@
 	{/each}
 </div>
 
+<!-- One row of tags, scrolled sideways when they don't fit. The panel is a
+     fixed height so the rail under it doesn't jump between selections, and
+     a fixed height that fitted every tag a token could carry would leave a
+     tall empty block on screen whenever nothing was selected. More than a
+     row is rare enough to be worth a scroll rather than that. Sideways
+     because a tag row is read along, and a thin scrollbar because a
+     classic one is taller than the gap it would have to fit in. -->
 {#if (token.conditions ?? []).length > 0}
-	<div class="mt-1.5 flex flex-wrap items-center gap-1">
+	<div class="mt-1 flex [scrollbar-width:thin] items-center gap-1 overflow-x-auto">
 		{#each token.conditions ?? [] as condition (condition)}
 			<Badge variant="secondary" class="text-xs">{condition}</Badge>
 		{/each}

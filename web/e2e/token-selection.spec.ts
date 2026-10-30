@@ -9,7 +9,10 @@ import {
 	dragToken,
 	inkAt,
 	layerInk,
+	openEditor,
+	saveEditor,
 	selectToken,
+	trackerBox,
 	type Point
 } from './fixtures/map';
 
@@ -97,4 +100,49 @@ test('the ring follows the token it marks when it is dragged', async ({ table })
 
 	await expect.poll(() => selectionInkAt(gm.page, to)).toBeGreaterThan(0);
 	expect(await selectionInkAt(gm.page, from)).toBe(0);
+});
+
+// The panel holds one height whether or not anything is selected, so the
+// session info and chat under it don't jump on every click. It used to
+// have a floor every selected token was taller than. An owned token is
+// the case that showed it: its owner line takes it past the old floor.
+// Conditions past one row scroll inside that row rather than growing it.
+test('selecting a token does not move the rest of the rail', async ({ table }) => {
+	const gm = table.gm.page;
+	await table.join('Bob');
+	await gm.keyboard.press('Escape');
+	const height = () => detailsPanel(gm).evaluate((el) => el.getBoundingClientRect().height);
+
+	const empty = await height();
+	const spot = await createToken(gm, 'Aragorn', { owner: 'Bob' });
+	await selectToken(gm, spot, 'Aragorn');
+	expect(await height()).toBe(empty);
+
+	await openEditor(gm);
+	for (const condition of ['Poisoned', 'Prone', 'Frightened', 'Restrained', 'Grappled']) {
+		await gm.getByLabel('Conditions').fill(condition);
+		await gm.getByRole('button', { name: 'Add condition' }).click();
+	}
+	await saveEditor(gm);
+	await expect(detailsPanel(gm)).toContainText('Grappled');
+	expect(await height()).toBe(empty);
+});
+
+// The owner line keeps its height on a token nobody owns, so the trackers
+// sit in the same place whichever kind is selected rather than jumping up
+// a line for every monster.
+test('the trackers sit in the same place on owned and unowned tokens', async ({ table }) => {
+	const gm = table.gm.page;
+	await table.join('Bob');
+	await gm.keyboard.press('Escape');
+	const top = () => trackerBox(gm, 'Tracker 1').evaluate((el) => el.getBoundingClientRect().top);
+
+	const owned = await createToken(gm, 'Aragorn', { owner: 'Bob' });
+	await selectToken(gm, owned, 'Aragorn');
+	const ownedTop = await top();
+	await gm.getByRole('button', { name: 'Delete token' }).first().click();
+
+	const unowned = await createToken(gm, 'Goblin');
+	await selectToken(gm, unowned, 'Goblin');
+	expect(await top()).toBe(ownedTop);
 });

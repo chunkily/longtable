@@ -927,77 +927,87 @@
 		</section>
 	{/snippet}
 
+	{#snippet tokenActions(room: RoomClient, token: Token)}
+		{#if canEditSelected && session}
+			<TokenDetailDialog
+				{room}
+				{token}
+				roomSlug={session.roomSlug}
+				sessionToken={session.sessionToken}
+				canEditAll={isGM}
+			/>
+		{/if}
+		<!-- A GM on anything, and anyone else on a token they own — the
+		     same rule as the Edit button beside it. Deletion used to be
+		     GM-only because creation was; now that a Player can conjure
+		     eight monkeys, leaving the clearing-up to the GM would be the
+		     busywork this was meant to remove. token.delete enforces it.
+
+		     Not behind a confirmation, unlike deleting a scene: the
+		     deletion is undoable, which is the cheaper answer to a
+		     misclick than a dialog on every deliberate one. -->
+		{#if canDeleteSelected}
+			<Button
+				variant="outline"
+				size="sm"
+				aria-label="Delete token"
+				title="Delete this token (Ctrl+Z to bring it back)"
+				onclick={() => room.deleteToken(token.id)}
+			>
+				<Trash2 class="h-4 w-4" />
+			</Button>
+		{/if}
+	{/snippet}
+
 	{#snippet tokenDetails(room: RoomClient, token: Token)}
-		<div class="flex items-start gap-2">
-			<div class="min-w-0 flex-1">
-				<!-- The size used to be spelled out under the name and isn't any
+		<!-- The edit and delete buttons sit in the name's row rather than in
+		     a column of their own down the right: that column took its width
+		     off every row under the name, squeezing the trackers and cutting
+		     the condition tags off in the middle of the panel. -->
+		<div class="min-w-0">
+			<!-- The size used to be spelled out under the name and isn't any
 				     more: a token's footprint is drawn on the map at the size it
 				     is, so the line said in words what the reader was already
 				     looking at. Being hidden is the opposite — it is precisely
 				     what the map can't show a GM at a glance — so that half
 				     stayed, as a badge. -->
-				<div class="flex items-center gap-1.5">
-					<!-- The token as the map draws it — its art, or its icon on its
+			<div class="flex min-h-8 items-center gap-1.5">
+				<!-- The token as the map draws it — its art, or its icon on its
 					     disc — so the panel and the map agree on which token this is
 					     even when two share a name. -->
-					<TokenAvatar
-						id={token.id}
-						name={token.name}
-						imageAssetId={token.imageAssetId}
-						icon={token.icon}
-						color={token.color}
-						class="h-6 w-6"
-					/>
-					<p class="truncate text-sm font-medium">{token.name}</p>
-					{#if token.visibility === 'hidden'}
-						<Badge variant="outline" class="shrink-0">hidden from players</Badge>
-					{/if}
-				</div>
-				<!-- Shown to everyone, not just the GM: whose token is whose is
+				<TokenAvatar
+					id={token.id}
+					name={token.name}
+					imageAssetId={token.imageAssetId}
+					icon={token.icon}
+					color={token.color}
+					class="h-6 w-6"
+				/>
+				<p class="min-w-0 flex-1 truncate text-sm font-medium">{token.name}</p>
+				{#if token.visibility === 'hidden'}
+					<Badge variant="outline" class="shrink-0">hidden from players</Badge>
+				{/if}
+				{@render tokenActions(room, token)}
+			</div>
+			<!-- Shown to everyone, not just the GM: whose token is whose is
 				     the point of an owner, and it's the roster that turns the
 				     stored id back into a name. Silent when nobody owns it —
 				     most tokens are monsters, and "Owner: nobody" on every one
-				     of them is noise. -->
+				     of them is noise. The line keeps its height when empty,
+				     though, so the trackers sit in the same place on every
+				     token rather than jumping up a line for a monster. Pulled up
+				     into the name row's spare height: that row is as tall as the
+				     buttons at its right, and the text here sits at its left. -->
+			<p class="-mt-1 h-4 truncate text-xs text-muted-foreground">
 				{#if token.ownerParticipantId}
-					<p class="truncate text-xs text-muted-foreground">
-						{ownerName(room, token.ownerParticipantId)}
-					</p>
+					{ownerName(room, token.ownerParticipantId)}
 				{/if}
-				<!-- Values editable in place for whoever may edit the token at
+			</p>
+			<!-- Values editable in place for whoever may edit the token at
 				     all — the same rule the Edit button follows. Labels and
 				     conditions stay in the dialog; damage is what changes
 				     every round and what shouldn't cost a dialog to change. -->
-				<TokenTrackerStrip {room} {token} editable={canEditSelected} />
-			</div>
-			{#if canEditSelected && session}
-				<TokenDetailDialog
-					{room}
-					{token}
-					roomSlug={session.roomSlug}
-					sessionToken={session.sessionToken}
-					canEditAll={isGM}
-				/>
-			{/if}
-			<!-- A GM on anything, and anyone else on a token they own — the
-			     same rule as the Edit button beside it. Deletion used to be
-			     GM-only because creation was; now that a Player can conjure
-			     eight monkeys, leaving the clearing-up to the GM would be the
-			     busywork this was meant to remove. token.delete enforces it.
-
-			     Not behind a confirmation, unlike deleting a scene: the
-			     deletion is undoable, which is the cheaper answer to a
-			     misclick than a dialog on every deliberate one. -->
-			{#if canDeleteSelected}
-				<Button
-					variant="outline"
-					size="sm"
-					aria-label="Delete token"
-					title="Delete this token (Ctrl+Z to bring it back)"
-					onclick={() => room.deleteToken(token.id)}
-				>
-					<Trash2 class="h-4 w-4" />
-				</Button>
-			{/if}
+			<TokenTrackerStrip {room} {token} editable={canEditSelected} />
 		</div>
 	{/snippet}
 
@@ -1239,11 +1249,22 @@
 			     that centred it — and overflow on a centred flex child spills
 			     off the *top*, taking the token's name with it, out of the
 			     panel and out of reach. Growing to `max-h-44` fits the usual
-			     case; anything past that scrolls, with the name staying put. -->
+			     case; anything past that scrolls, with the name staying put.
+
+			     Then one height, `h-40`, rather than that floor and ceiling:
+			     every selected token is taller than the 112px floor (a plain
+			     one 116px, one with an owner 132px), so the panel grew on every
+			     click and the session info and chat under it jumped with it —
+			     the jump this section exists to prevent. 160px fits an owned
+			     token with a row of conditions (158px measured); the owner
+			     line is kept even when empty, so every token lays out the
+			     same, and the conditions stay one row and scroll sideways
+			     (token-tracker-strip.svelte), so the block holds its height
+			     however many there are. -->
 			<section
 				aria-label="Selected token"
 				class={[
-					'flex max-h-44 min-h-28 shrink-0 flex-col overflow-y-auto border-b p-3',
+					'flex h-40 shrink-0 flex-col overflow-y-auto border-b p-3',
 					!selectedToken && 'bg-muted'
 				]}
 			>
