@@ -58,6 +58,24 @@
 		draft = '';
 	}
 
+	// Focus moves *before* the tag goes, to the next tag's remove button,
+	// else the previous one, else the box for adding one. Removing the
+	// button that has focus drops focus to nothing, and the dialog's focus
+	// trap answers that by focusing its first field — which scrolled a long
+	// dialog back to the top on every removal, so taking off three
+	// conditions meant scrolling down three times. Moved first, while the
+	// neighbour still exists, so there is never a moment with nothing
+	// focused for the trap to see.
+	function removeCondition(index: number) {
+		const neighbour = conditions[index + 1] !== undefined ? index + 1 : index - 1;
+		const target =
+			neighbour >= 0
+				? document.getElementById(`${idPrefix}-condition-remove-${neighbour}`)
+				: document.getElementById(`${idPrefix}-condition`);
+		target?.focus({ preventScroll: true });
+		conditions = conditions.filter((_, i) => i !== index);
+	}
+
 	// Enter adds a tag rather than submitting the dialog — inside a form,
 	// a bare Enter in a text input would otherwise save and close before
 	// the tag was ever added.
@@ -105,14 +123,15 @@
 	<Label for="{idPrefix}-condition">Conditions</Label>
 	{#if conditions.length}
 		<div class="flex flex-wrap gap-1">
-			{#each conditions as condition (condition)}
+			{#each conditions as condition, i (condition)}
 				<Badge variant="secondary" class="gap-1 pr-1">
 					{condition}
 					<button
 						type="button"
+						id="{idPrefix}-condition-remove-{i}"
 						aria-label="Remove {condition}"
 						class="rounded-sm opacity-70 hover:opacity-100"
-						onclick={() => (conditions = conditions.filter((c) => c !== condition))}
+						onclick={() => removeCondition(i)}
 					>
 						<XIcon class="h-3 w-3" />
 					</button>

@@ -4,6 +4,7 @@ import {
 	GRID,
 	LAYER,
 	canvasBox,
+	createToken,
 	detailsPanel,
 	layerInk,
 	openEditor,
@@ -431,4 +432,34 @@ test('a player gets no editor for a token they do not own', async ({ table }) =>
 	await expect(player.page.getByRole('button', { name: 'Edit token' })).toBeHidden();
 	await expect(player.page.getByRole('button', { name: 'Delete token' })).toBeHidden();
 	await expect(detailsPanel(player.page)).toContainText("Bob's Fighter");
+});
+
+// Removing a condition takes away the very button that had focus. The
+// dialog's focus trap used to answer that by focusing its first field,
+// which scrolled a long dialog back to the top on every removal; focus
+// now moves to the next tag first, so taking off several in a row is
+// several clicks in the same place.
+test('removing a condition keeps the dialog where it was', async ({ table }) => {
+	const gm = table.gm.page;
+	await gm.keyboard.press('Escape');
+	const spot = await createToken(gm, 'Orc');
+	await selectToken(gm, spot, 'Orc');
+	// Short enough that the dialog has to scroll to reach its conditions.
+	await gm.setViewportSize({ width: 1280, height: 520 });
+	await openEditor(gm);
+	for (const condition of ['Poisoned', 'Prone', 'Frightened']) {
+		await addCondition(gm, condition);
+	}
+	const scroller = gm.getByRole('dialog').locator('.overflow-y-auto').first();
+	await scroller.evaluate((el) => (el.scrollTop = el.scrollHeight));
+	expect(await scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+
+	await gm.getByRole('button', { name: 'Remove Poisoned' }).click();
+	await expect(gm.getByRole('button', { name: 'Remove Prone' })).toBeFocused();
+	expect(await scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+
+	// The last one hands focus back to the box for adding another.
+	await gm.getByRole('button', { name: 'Remove Prone' }).click();
+	await gm.getByRole('button', { name: 'Remove Frightened' }).click();
+	await expect(gm.getByLabel('Conditions')).toBeFocused();
 });
